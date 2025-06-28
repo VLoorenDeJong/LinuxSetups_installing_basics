@@ -3,6 +3,7 @@ It will do the following
 1. Update the OS
 2. Install UFW
 3. Install SSH
+4. Reboot if prefered
 
 ## Supported Linux versions
 1. Ubuntu 24.04.2 LTS
