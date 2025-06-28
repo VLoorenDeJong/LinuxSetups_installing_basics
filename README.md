@@ -32,6 +32,8 @@ It will do the following
 1. If the branch swich is succesfull → Switched to a new branch 'YOUR_BRANCH_NAME'
 1. To enable the scripts to run type → sudo chmod -R +x **.**  
 1. To install the basics type → ./start_install.sh
+1. This should run the scripts with color indidations
+1. Yopu can wait or → [Unlock dpkg lock-frontend](#Unlock_dpkg/lock-frontend)
 
 
 ## <span id="install_git">Install GIT</span>  
@@ -42,3 +44,16 @@ It will do the following
 1. Example result → **git version 2.43.0**
 1. [**Configure GIT**](#configure_git)
 1. [Setting up the basics](#setting_up_the_basics)
+
+
+## [Common issues](#common_issues) 
+## <span id="Unlock_dpkg/lock-frontend">Fix Unlock dpkg/lock-frontend</span>  
+1. CTRL + C 
+1. **sudo kill -9 YourProcessIdNumber**
+1. **sudo rm /var/lib/dpkg/lock-frontend**
+1. **sudo dpkg --configure -a**
+1. **sudo reboot**
+1. Update the system -> **sudo apt update && sudo apt upgrade -y**
+1. Enter the password
+1. If you get a lot of text and no Lock -> **uereka go to next step ;)**
+1. **Continue with** [Setting up the basics](#Setting_up_the_basics) 
