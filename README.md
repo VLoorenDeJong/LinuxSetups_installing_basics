@@ -8,7 +8,7 @@ It will do the following
 1. Ubuntu 24.04.2 LTS
 
 
-## Setting up the basics
+## <span id="setting_up_the_basics">Setting up the basics</span>   
 
 1. Log into your Linux server
 1. Check if GIT is installed type → **git version**
@@ -23,14 +23,14 @@ It will do the following
 ---
 1. In your Linux **Command Line Interface** (CLI) type → git clone https://github.com/VLoorenDeJong/LinuxSetups_installing_basics
 1. See if the folder is downloaded and type → ls -al
-1. If folder is downloaded go into the folder → cd LinuxSetups_Install_SSH  
+1. If folder is downloaded go into the folder → cd LinuxSetups_installing_basics  
     (TIP: You can just type → cd Li and then press TAB)
 1. To enable the scripts to run type → chmod X -R 
 1. To see what OS & version you are running type → lsb_release -a
 1. To see the available options type → git branch -r
 1. This will list the available branches
 1. To go to your configuration type → git checkout "YOUR_BRANCH_NO_QUOTES"
-1. To run the install script type → sudo chmod +x -R ~/LinuxSetups_Install_SSH
+1. To run the install script type → sudo chmod +x -R ~/LinuxSetups_installing_basics
 1. To install the basics type → ./start_install.sh
 
 
