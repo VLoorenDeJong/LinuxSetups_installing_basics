@@ -2,6 +2,17 @@
 
 echo -e "\e[34m🔍 Checking for dpkg/lock-frontend issues...\e[0m"
 
+# Function to run commands with appropriate privileges
+run_privileged() {
+    if [ "$EUID" -eq 0 ]; then
+        # Already running as root, no sudo needed
+        "$@"
+    else
+        # Not root, use sudo
+        sudo "$@"
+    fi
+}
+
 # Function to find processes using dpkg
 find_dpkg_processes() {
     local processes=$(lsof /var/lib/dpkg/lock-frontend 2>/dev/null | awk 'NR>1 {print $2}' | sort -u)
@@ -9,7 +20,7 @@ find_dpkg_processes() {
 }
 
 # Test if we can run a quick apt check to detect lock
-if timeout 5 sudo apt-get check >/dev/null 2>&1; then
+if timeout 5 run_privileged apt-get check >/dev/null 2>&1; then
     echo -e "\e[32m✅ No dpkg lock detected. System is ready for package operations.\e[0m"
     exit 0
 else
@@ -25,7 +36,7 @@ if [ -n "$dpkg_processes" ]; then
     echo -e "\e[34m🔫 Killing processes...\e[0m"
     for pid in $dpkg_processes; do
         echo -e "\e[33m  Killing process $pid\e[0m"
-        sudo kill -9 "$pid" 2>/dev/null || true
+        run_privileged kill -9 "$pid" 2>/dev/null || true
     done
     sleep 2
 else
@@ -44,7 +55,7 @@ lock_files=(
 for lock_file in "${lock_files[@]}"; do
     if [ -f "$lock_file" ]; then
         echo -e "\e[33m🗑️  Removing $lock_file\e[0m"
-        sudo rm -f "$lock_file"
+        run_privileged rm -f "$lock_file"
     else
         echo -e "\e[32m✅ $lock_file does not exist.\e[0m"
     fi
@@ -52,7 +63,7 @@ done
 
 # Step 3: Configure dpkg
 echo -e "\e[34m🔄 Step 3: Configuring dpkg...\e[0m"
-if sudo dpkg --configure -a; then
+if run_privileged dpkg --configure -a; then
     echo -e "\e[32m✅ dpkg configuration completed successfully.\e[0m"
 else
     echo -e "\e[31m❌ dpkg configuration failed. Manual intervention may be required.\e[0m"
@@ -60,7 +71,7 @@ fi
 
 # Step 4: Test if fix worked
 echo -e "\e[34m🔄 Step 4: Testing if fix worked...\e[0m"
-if timeout 10 sudo apt-get check >/dev/null 2>&1; then
+if timeout 10 run_privileged apt-get check >/dev/null 2>&1; then
     echo -e "\e[32m🎉 Success! dpkg lock issue has been resolved.\e[0m"
     echo -e "\e[32m✅ System is now ready for package operations.\e[0m"
 else

@@ -1,9 +1,20 @@
-## These scripts will cover the basics for the corresponding Linux versions automagicaly!
+## These scripts will cover the basics for the corresponding Linux versions automagically!
 It will do the following
-1. Update the OS
-2. Install UFW
-3. Install SSH
-4. Reboot if prefered
+1. Fix common dpkg lock issues
+2. Fix Xauthority file problems
+3. Update the OS
+4. Install UFW (Uncomplicated Firewall)
+5. Install SSH
+
+## Usage
+
+Run the main installation script with sudo privileges:
+
+```bash
+sudo ./start_install.sh
+```
+
+**Important:** The script requires sudo to avoid password prompts during installation.
 
 ## Supported Linux versions
 1. Ubuntu 24.04.2 LTS

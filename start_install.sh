@@ -1,5 +1,13 @@
 #!/bin/bash
 
+# Check if running with sudo privileges
+if [ "$EUID" -ne 0 ]; then
+    echo -e "\e[31m❌ This script requires sudo privileges to run properly.\e[0m"
+    echo -e "\e[33m💡 Please run with: \e[36msudo $0\e[0m"
+    echo -e "\e[33m   This will avoid password prompts during installation.\e[0m"
+    exit 1
+fi
+
 # Get the directory where this script resides
 INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/install_scripts"
 
