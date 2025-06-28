@@ -33,4 +33,5 @@ fi
 # Run the scripts
 for script in "${SCRIPTS[@]}"; do
     bash "$INSTALL_DIR/$script"
-    echo -e "\
+    echo -e "\e[32m✅ Finished: $script\e[0m"
+done
