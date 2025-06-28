@@ -15,7 +15,7 @@ It will do the following
 1. Example GIT installed → **git version 2.43.0**
 1. Example GIT not installed → **Command 'git' not found,**
 1. If command is not found → [Install GIT](#install_git)
-1. To confirm the internet is working type → ping 8.8.8.8
+1. To confirm the internet is working type → ping 8.8.8.8 (Keep in mind numpad does not work)
 1. If internet works you will get a response with at the end ttl=*** time=*** ms
 1. To stop the ping actions press → CTRL + C
 1. **If it does not work see how you can get your internet access working**  
