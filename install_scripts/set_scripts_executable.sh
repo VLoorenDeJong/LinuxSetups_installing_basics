@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define the directory
-REPO_DIR="$HOME/LinuxSetups/"
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Ensure the directory exists before applying permissions
 if [[ -d "$REPO_DIR" ]]; then
