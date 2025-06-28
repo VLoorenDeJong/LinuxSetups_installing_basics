@@ -4,6 +4,10 @@ It will do the following
 2. Install UFW
 3. Install SSH
 
+## Supported Linux versions
+1. Ubuntu 24.04.2 LTS
+
+
 ## Setting up the basics
 
 1. Log into your Linux server
