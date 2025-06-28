@@ -4,7 +4,20 @@
 1. Example GIT installed -> **git version 2.43.0**
 1. Example GIT not installed -> **Command 'git' not found,**
 1. If command is not found -> [Install GIT](#install_git) 
+1. To confirm the internet is working type -> ping 8.8.8.8
+1. If internet works you will get a respons with at the end ttl=*** time=*** ms 
+1. to stop the ping actions press ->  CTRL + C
 1. In you linux CLI type -> git clone https://github.com/VLoorenDeJong/LinuxSetups_Install_SSH.git
+1. see if the folder is downloaded and type -> ls -al
+1. if folder is downloaded go into the folder -> cd LinuxSetups_Install_SSH 
+(You can just type -> cd Li an then press TAB)
+1. To see the available options type -> git branches
+1. This will list the available branches, pick the branch that corresponds to your os & version
+1. To go to your configuration type -> git checkout "YOUR_BRANCH_NO_QUOTES"
+1. 
+1. to later run the install script type -> chmod -R ~
+
+
 
 
 ## <span id="install_git">Install GIT</span>  
