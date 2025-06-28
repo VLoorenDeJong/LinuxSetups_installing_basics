@@ -11,7 +11,7 @@ It will do the following
 ## Setting up the basics
 
 1. Log into your Linux server
-1. Check if GIT is installed → **git version**
+1. Check if GIT is installed type → **git version**
 1. Example GIT installed → **git version 2.43.0**
 1. Example GIT not installed → **Command 'git' not found,**
 1. If command is not found → [Install GIT](#install_git)
