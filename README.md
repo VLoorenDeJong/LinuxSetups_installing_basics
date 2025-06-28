@@ -19,7 +19,7 @@
 1. This will list the available branches
 1. To go to your configuration type → git checkout "YOUR_BRANCH_NO_QUOTES"
 1. To run the install script type → sudo chmod +x -R ~/LinuxSetups_Install_SSH
-1. To install the basics type →
+1. To install the basics type → ./start_install.sh
 
 
 ## <span id="install_git">Install GIT</span>  
