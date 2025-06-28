@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Get the directory where this script resides
-INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/install_scripts"
 
 # Array of scripts to run
 SCRIPTS=(
