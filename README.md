@@ -11,8 +11,9 @@
 1. see if the folder is downloaded and type -> ls -al
 1. if folder is downloaded go into the folder -> cd LinuxSetups_Install_SSH 
 (You can just type -> cd Li an then press TAB)
-1. To see the available options type -> git branches
-1. This will list the available branches, pick the branch that corresponds to your os & version
+1. To see what OS & version you are runing type -> lsb_release -a
+1. To see the available options type -> git branch -r
+1. This will list the available branches
 1. To go to your configuration type -> git checkout "YOUR_BRANCH_NO_QUOTES"
 1. 
 1. to later run the install script type -> chmod -R ~
