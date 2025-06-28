@@ -5,6 +5,7 @@ INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/install_scripts"
 
 # Array of scripts to run
 SCRIPTS=(
+    "fix_dpkg_lock.sh"
     "set_scripts_executable.sh"
     "updates_install_and_clean.sh"
     "add_ufw.sh"
