@@ -33,7 +33,7 @@ It will do the following
 1. To enable the scripts to run type → sudo chmod -R +x **.**  
 1. To install the basics type → ./start_install.sh
 1. This should run the scripts with color indidations
-1. If message apears Simmilar to → You can wait or go to → [Unlock dpkg lock-frontend](#Unlock_dpkg/lock-frontend)
+1. If message apears Simmilar to → You can wait or go to → [Unlock dpkg lock-frontend](#unlock_dpkg)
 ---
 ## Connecting with SSH (Secure SHell)
 1. Download SSH client software → [Recommended MobaXterm](https://mobaxterm.mobatek.net/download.html)
@@ -54,7 +54,7 @@ It will do the following
 
 
 ## [Common issues](#common_issues) 
-## <span id="Unlock_dpkg/lock-frontend">Fix Unlock dpkg/lock-frontend</span>  
+## <span id="unlock_dpkg">Fix Unlock dpkg/lock-frontend</span>  
 1. CTRL + C
 1. Look for the → Process Id Number
 1. **sudo kill -9 YourProcessIdNumber**
