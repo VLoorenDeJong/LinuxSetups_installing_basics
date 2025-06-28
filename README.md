@@ -25,12 +25,11 @@ It will do the following
 1. See if the folder is downloaded and type → ls -al
 1. If folder is downloaded go into the folder → cd LinuxSetups_installing_basics  
     (TIP: You can just type → cd Li and then press TAB)
-1. To enable the scripts to run type → sudo chmod -R +x **.**  
 1. To see what OS & version you are running type → lsb_release -a
 1. To see the available options type → git branch -r
 1. This will list the available branches
 1. To go to your configuration type → git checkout "NO_QUOTES_AND_NO_ORIGIN_/_YOUR_VERSION"
-1. To run the install script type → sudo chmod +x -R ~/LinuxSetups_installing_basics
+1. 1. To enable the scripts to run type → sudo chmod -R +x **.**  
 1. To install the basics type → ./start_install.sh
 
 
