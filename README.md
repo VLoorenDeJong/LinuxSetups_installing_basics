@@ -48,7 +48,8 @@ It will do the following
 
 ## [Common issues](#common_issues) 
 ## <span id="Unlock_dpkg/lock-frontend">Fix Unlock dpkg/lock-frontend</span>  
-1. CTRL + C 
+1. CTRL + C
+1. Look for the → Process Id Number
 1. **sudo kill -9 YourProcessIdNumber**
 1. **sudo rm /var/lib/dpkg/lock-frontend**
 1. **sudo dpkg --configure -a**
