@@ -29,7 +29,8 @@ It will do the following
 1. To see the available options type → git branch -r
 1. This will list the available branches
 1. To go to your configuration type → git checkout "NO_QUOTES_AND_NO_ORIGIN_/_YOUR_VERSION"
-1. 1. To enable the scripts to run type → sudo chmod -R +x **.**  
+1. If the branch swich is succesfull → Switched to a new branch 'YOUR_BRANCH_NAME'
+1. To enable the scripts to run type → sudo chmod -R +x **.**  
 1. To install the basics type → ./start_install.sh
 
 
