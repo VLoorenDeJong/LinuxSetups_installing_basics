@@ -9,11 +9,11 @@
 1. To stop the ping actions press → CTRL + C
 1. **If it does not work see how you can get your internet access working**  
 ---
-1. In your Linux CLI type → git clone https://github.com/VLoorenDeJong/LinuxSetups_Install_SSH.git
+1. In your Linux CLI type → git clone https://github.com/VLoorenDeJong/LinuxSetups_installing_basics
 1. See if the folder is downloaded and type → ls -al
-1. To later run the install script type → chmod X -R ~
 1. If folder is downloaded go into the folder → cd LinuxSetups_Install_SSH  
     (TIP: You can just type → cd Li and then press TAB)
+1. To enable the scripts to run type → chmod X -R 
 1. To see what OS & version you are running type → lsb_release -a
 1. To see the available options type → git branch -r
 1. This will list the available branches
