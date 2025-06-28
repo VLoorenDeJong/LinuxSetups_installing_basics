@@ -7,12 +7,8 @@ INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/install_scripts"
 SCRIPTS=(
     "set_scripts_executable.sh"
     "updates_install_and_clean.sh"
-    "add_bash_show_branch_name.sh"
-    "add_backup_config.sh"
     "add_ufw.sh"
     "add_ssh.sh"
-    "add_apache_webserver.sh"
-    "add_smb.sh"
 )
 
 # Track missing scripts
