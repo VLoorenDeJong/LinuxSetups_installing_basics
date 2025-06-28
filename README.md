@@ -33,7 +33,7 @@ It will do the following
 1. To enable the scripts to run type → sudo chmod -R +x **.**  
 1. To install the basics type → ./start_install.sh
 1. This should run the scripts with color indidations
-1. Yopu can wait or → [Unlock dpkg lock-frontend](#Unlock_dpkg/lock-frontend)
+1. If message apears Simmilar to → You can wait or go to → [Unlock dpkg lock-frontend](#Unlock_dpkg/lock-frontend)
 
 
 ## <span id="install_git">Install GIT</span>  
