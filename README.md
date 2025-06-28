@@ -1,5 +1,12 @@
+## These scripts will cover the basics for the corresponding Linux versions automagicaly!
+It will do the following
+1. Update the OS
+2. Install UFW
+3. Install SSH
+
 ## Setting up the basics
 
+1. Log into your Linux server
 1. Check if GIT is installed → **git version**
 1. Example GIT installed → **git version 2.43.0**
 1. Example GIT not installed → **Command 'git' not found,**
