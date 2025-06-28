@@ -25,7 +25,7 @@ It will do the following
 1. See if the folder is downloaded and type → ls -al
 1. If folder is downloaded go into the folder → cd LinuxSetups_installing_basics  
     (TIP: You can just type → cd Li and then press TAB)
-1. To enable the scripts to run type → sudo chmod x -R 
+1. To enable the scripts to run type → sudo chmod +x -R 
 1. To see what OS & version you are running type → lsb_release -a
 1. To see the available options type → git branch -r
 1. This will list the available branches
