@@ -1,10 +1,8 @@
 ## These scripts will cover the basics for the corresponding Linux versions automagically!
 It will do the following
-1. Fix common dpkg lock issues
-2. Fix Xauthority file problems
-3. Update the OS
-4. Install UFW (Uncomplicated Firewall)
-5. Install SSH
+1. Update the OS
+1. Install UFW (Uncomplicated Firewall)
+1. Install SSH
 
 ## Usage
 
