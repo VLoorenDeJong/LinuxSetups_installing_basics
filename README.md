@@ -39,7 +39,7 @@ It will do the following
 1. Download SSH client software → [Recommended MobaXterm](https://mobaxterm.mobatek.net/download.html)
 1. To get the local IP of your machine type → ip addr show
 1. Look for something like this 123.123.123.123 → Likely in the area of eth0 **2: eth0** → behind **inet**
-1. 
+1. You can use these settings to coinnect with your Linux with SSH
 
 
 
