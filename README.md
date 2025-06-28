@@ -34,6 +34,13 @@ It will do the following
 1. To install the basics type → ./start_install.sh
 1. This should run the scripts with color indidations
 1. If message apears Simmilar to → You can wait or go to → [Unlock dpkg lock-frontend](#Unlock_dpkg/lock-frontend)
+---
+## Connecting with SSH (Secure SHell)
+1. Download SSH client software → [Recommended MobaXterm](https://mobaxterm.mobatek.net/download.html)
+1. To get the local IP of your machine type → ip addr show
+1. Look for something like this 123.123.123.123 → Likely in the area of eth0 **2: eth0** → behind **inet**
+1. 
+
 
 
 ## <span id="install_git">Install GIT</span>  
