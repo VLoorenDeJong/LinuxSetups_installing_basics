@@ -21,7 +21,7 @@ It will do the following
 1. To stop the ping actions press → CTRL + C
 1. **If it does not work see how you can get your internet access working**  
 ---
-1. In your Linux Command Line Interface type → git clone https://github.com/VLoorenDeJong/LinuxSetups_installing_basics
+1. In your Linux **Command Line Interface** (CLI) type → git clone https://github.com/VLoorenDeJong/LinuxSetups_installing_basics
 1. See if the folder is downloaded and type → ls -al
 1. If folder is downloaded go into the folder → cd LinuxSetups_Install_SSH  
     (TIP: You can just type → cd Li and then press TAB)
