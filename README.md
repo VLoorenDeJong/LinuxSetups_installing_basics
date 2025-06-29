@@ -60,7 +60,6 @@ sudo ./start_install.sh
 1. Enter password if prompted
 1. Confirm git is installed: **git --version**
 1. Example result → **git version 2.43.0**
-1. [**Configure GIT**](#configure_git)
 1. [Setting up the basics](#setting_up_the_basics)
 
 
