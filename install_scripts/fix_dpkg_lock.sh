@@ -19,8 +19,35 @@ find_dpkg_processes() {
     echo "$processes"
 }
 
-# Test if we can run a quick apt check to detect lock
-if timeout 5 run_privileged apt-get check >/dev/null 2>&1; then
+# Better lock detection - check for actual lock files AND processes
+check_dpkg_lock() {
+    local lock_detected=false
+    
+    # Check if lock files exist AND are being used by processes
+    if [ -f "/var/lib/dpkg/lock-frontend" ]; then
+        local processes=$(find_dpkg_processes)
+        if [ -n "$processes" ]; then
+            lock_detected=true
+        fi
+    fi
+    
+    # Alternative: Check if dpkg/apt commands are actually blocked
+    if ! lock_detected; then
+        # Try a simple dpkg status check (less likely to fail for other reasons)
+        if ! timeout 3 run_privileged dpkg --audit >/dev/null 2>&1; then
+            # Double-check with fuser to see if lock files are actually in use
+            if fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || \
+               fuser /var/lib/dpkg/lock >/dev/null 2>&1; then
+                lock_detected=true
+            fi
+        fi
+    fi
+    
+    echo $lock_detected
+}
+
+# Test if we have a real dpkg lock issue
+if [ "$(check_dpkg_lock)" = "false" ]; then
     echo -e "\e[32m✅ No dpkg lock detected. System is ready for package operations.\e[0m"
     exit 0
 else
@@ -69,9 +96,9 @@ else
     echo -e "\e[31m❌ dpkg configuration failed. Manual intervention may be required.\e[0m"
 fi
 
-# Step 4: Test if fix worked
+# Step 4: Test if fix worked using the same logic as initial detection
 echo -e "\e[34m🔄 Step 4: Testing if fix worked...\e[0m"
-if timeout 10 run_privileged apt-get check >/dev/null 2>&1; then
+if [ "$(check_dpkg_lock)" = "false" ]; then
     echo -e "\e[32m🎉 Success! dpkg lock issue has been resolved.\e[0m"
     echo -e "\e[32m✅ System is now ready for package operations.\e[0m"
 else
