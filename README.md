@@ -6,11 +6,8 @@ It will do the following
 
 ## Usage
 
-Run the main installation script with sudo privileges:
+:
 
-```bash
-sudo ./start_install.sh
-```
 
 **Important:** The script requires sudo to avoid password prompts during installation.
 
@@ -25,30 +22,30 @@ sudo ./start_install.sh
 1. Example GIT installed → **git version 2.43.0**
 1. Example GIT not installed → **Command 'git' not found,**
 1. If command is not found → [Install GIT](#install_git)
-1. To confirm the internet is working type → ping 8.8.8.8 <br />
+1. To confirm the internet is working type → **ping 8.8.8.8 **<br />
 (Keep in mind numpad does not work)
-1. If internet works you will get a response with at the end ttl=*** time=*** ms
-1. To stop the ping actions press → CTRL + C
+1. If internet works you will get a response with at the end **ttl=*** time=*** ms**
+1. To stop the ping actions press → **CTRL + C**
 1. **If it does not work see how you can get your internet access working**  
 ---
-1. In your Linux **Command Line Interface** (CLI) type ↓ <br/> git clone https://github.com/VLoorenDeJong/LinuxSetups_installing_basics
+1. In your Linux **Command Line Interface** (CLI) type ↓ <br/> **git clone https://github.com/VLoorenDeJong/LinuxSetups_installing_basics**
 1. See if the folder is downloaded and type → ls -al
-1. If folder is downloaded go into the folder → cd LinuxSetups_installing_basics  
+1. If folder is downloaded go into the folder → **cd LinuxSetups_installing_basics ** 
     (TIP: You can just type → cd Li and then press TAB → this is auto complete)
-1. To see what OS & version you are running type → lsb_release -a
-1. To see the available options type → git branch -r
+1. To see what OS & version you are running type → **lsb_release -a**
+1. To see the available options type → **git branch -r**
 1. This will list the available branches
-1. To go to your configuration type → git checkout "NO_QUOTES_AND_NO_ORIGIN_/_YOUR_VERSION" <br />
+1. To go to your configuration type → **git checkout "NO_QUOTES_AND_NO_ORIGIN_/_YOUR_VERSION" **<br />
  (TIP: Auto complete also works here just type the first couple of letters of the branch ans press TAB)
-1. If the branch swich is succesfull → Switched to a new branch 'YOUR_BRANCH_NAME'
-1. To enable the scripts to run type → sudo chmod -R +x **.**  
-1. To install the basics type → ./start_install.sh
+1. If the branch swich is succesfull → **Switched to a new branch 'YOUR_BRANCH_NAME'**
+1. To enable the scripts to run type → **sudo chmod -R +x .**
+1. Run the main installation script with sudo privileges → **sudo ./start_install.sh**
 1. This should run the scripts with color indidations
 1. If message apears Simmilar to → You can wait or go to → [Unlock dpkg lock-frontend](#unlock_dpkg)
 ---
 ## Connecting with SSH (Secure SHell)
 1. Download SSH client software → [Recommended MobaXterm](https://mobaxterm.mobatek.net/download.html)
-1. To get the local IP of your machine type → ip addr show
+1. To get the local IP of your machine type → **ip addr show**
 1. Look for something like this 123.123.123.123 → Likely in the area of eth0 **2: eth0** → behind **inet**
 1. You can use these settings to coinnect with your Linux with SSH
 
