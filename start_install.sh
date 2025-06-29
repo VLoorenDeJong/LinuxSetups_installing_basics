@@ -9,7 +9,7 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # Get the directory where this script resides
-INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/install_scripts"
+INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scripts"
 
 # Array of scripts to run
 SCRIPTS=(
@@ -52,13 +52,18 @@ fi
 
 # Run the scripts
 ALL_SUCCESS=true
+FAILED_SCRIPTS=()
+
 for script in "${SCRIPTS[@]}"; do
+    echo -e "\e[34m🚀 Running: $script\e[0m"
     if bash "$INSTALL_DIR/$script"; then
         echo -e "\e[32m✅ Finished: $script\e[0m"
     else
         echo -e "\e[31m❌ Failed: $script\e[0m"
         ALL_SUCCESS=false
+        FAILED_SCRIPTS+=("$script")
     fi
+    echo "" # Add spacing between scripts
 done
 
 # Check if reboot is needed and requested
@@ -71,5 +76,9 @@ elif $ALL_SUCCESS; then
     echo -e "\e[32m🎉 All scripts completed successfully! No reboot requested.\e[0m"
 else
     echo -e "\e[31m⚠️  Some scripts failed. Skipping reboot.\e[0m"
+    echo -e "\e[31m💥 Failed scripts:\e[0m"
+    for failed_script in "${FAILED_SCRIPTS[@]}"; do
+        echo -e "\e[31m - $failed_script\e[0m"
+    done
     exit 1
 fi
