@@ -1,74 +1,109 @@
-## These scripts will cover the basics for the corresponding Linux versions automagically!
-It will do the following
-1. Update the OS
-1. Install UFW (Uncomplicated Firewall)
-1. Install SSH
+## 🚀 Automagic Setup for Linux Basics
 
-## Usage
+These scripts automatically configure the basics for supported Linux versions.
 
-:
+### 🛠️ What They Do
 
+1. Update the OS  
+2. Install UFW (Uncomplicated Firewall)  
+3. Install SSH  
 
-**Important:** The script requires sudo to avoid password prompts during installation.
-
-## Supported Linux versions
-1. Ubuntu 24.04.2 LTS
-
-
-## <span id="setting_up_the_basics">Setting up the basics</span>   
-
-1. Log into your Linux server
-1. Check if GIT is installed type → **git version**
-1. Example GIT installed → **git version 2.43.0**
-1. Example GIT not installed → **Command 'git' not found,**
-1. If command is not found → [Install GIT](#install_git)
-1. To confirm the internet is working type → **ping 8.8.8.8 **<br />
-(Keep in mind numpad does not work)
-1. If internet works you will get a response with at the end **ttl=*** time=*** ms**
-1. To stop the ping actions press → **CTRL + C**
-1. **If it does not work see how you can get your internet access working**  
 ---
-1. In your Linux **Command Line Interface** (CLI) type ↓ <br/> **git clone https://github.com/VLoorenDeJong/LinuxSetups_installing_basics**
-1. See if the folder is downloaded and type → ls -al
-1. If folder is downloaded go into the folder → **cd LinuxSetups_installing_basics ** 
-    (TIP: You can just type → cd Li and then press TAB → this is auto complete)
-1. To see what OS & version you are running type → **lsb_release -a**
-1. To see the available options type → **git branch -r**
-1. This will list the available branches
-1. To go to your configuration type → **git checkout "NO_QUOTES_AND_NO_ORIGIN_/_YOUR_VERSION" **<br />
- (TIP: Auto complete also works here just type the first couple of letters of the branch ans press TAB)
-1. If the branch swich is succesfull → **Switched to a new branch 'YOUR_BRANCH_NAME'**
-1. To enable the scripts to run type → **sudo chmod -R +x .**
-1. Run the main installation script with sudo privileges → **sudo ./start_install.sh**
-1. This should run the scripts with color indidations
-1. If message apears Simmilar to → You can wait or go to → [Unlock dpkg lock-frontend](#unlock_dpkg)
+
+## ⚙️ Usage
+
+**Important:**  
+The script requires `sudo` privileges to avoid password prompts during installation.
+
 ---
-## Connecting with SSH (Secure SHell)
-1. Download SSH client software → [Recommended MobaXterm](https://mobaxterm.mobatek.net/download.html)
-1. To get the local IP of your machine type → **ip addr show**
-1. Look for something like this 123.123.123.123 → Likely in the area of eth0 **2: eth0** → behind **inet**
-1. You can use these settings to coinnect with your Linux with SSH
 
+## 🐧 Supported Linux Versions
 
+- Ubuntu 24.04.2 LTS  
 
-## <span id="install_git">Install GIT</span>  
-1. Update the system to latest → **sudo apt update**
-1. Install git → **sudo apt install git**
-1. Enter password if prompted
-1. Confirm git is installed: **git --version**
-1. Example result → **git version 2.43.0**
-1. [Setting up the basics](#setting_up_the_basics)
+---
 
+## <span id="setting_up_the_basics">📦 Setting Up the Basics</span>
 
-## [Common issues](#common_issues) 
-## <span id="unlock_dpkg">Fix Unlock dpkg/lock-frontend</span>  
-1. CTRL + C
-1. Look for the → Process Id Number
-1. **sudo kill -9 YourProcessIdNumber**
-1. **sudo rm /var/lib/dpkg/lock-frontend**
-1. **sudo dpkg --configure -a**
-1. **sudo reboot**
-1. Update the system -> **sudo apt update && sudo apt upgrade -y**
-1. Enter the password
-1. If you get a lot of text and no Lock -> **uereka go to next step ;)**
-1. **Continue with** [Setting up the basics](#Setting_up_the_basics) 
+1. Log into your Linux server  
+2. Check if Git is installed:  
+   `git version`  
+   - If installed: `git version 2.43.0`  
+   - If not installed: `Command 'git' not found`  
+   ➤ [Install Git](#install_git)  
+3. Check internet connectivity:  
+   `ping 8.8.8.8`  
+   (Note: Numpad may not work in some terminals)  
+   - A working connection returns: `ttl=*** time=*** ms`  
+   - Stop pinging: `CTRL + C`  
+   - If there's no internet, troubleshoot accordingly  
+
+4. Clone the setup repository:  
+   `git clone https://github.com/VLoorenDeJong/LinuxSetups_installing_basics`  
+5. List downloaded contents:  
+   `ls -al`  
+6. Navigate into the folder:  
+   `cd LinuxSetups_installing_basics`  
+   (Tip: Use tab autocomplete: `cd Li` + `TAB`)  
+7. Check OS and version:  
+   `lsb_release -a`  
+8. View Git branches:  
+   `git branch -r`  
+9. Switch to your Linux version branch:  
+   `git checkout YOUR_BRANCH_NAME`  
+   (No quotes or "origin/". Use autocomplete with `TAB`)  
+   - Success message: `Switched to a new branch 'YOUR_BRANCH_NAME'`  
+
+10. Make all scripts executable:  
+    `sudo chmod -R +x .`  
+11. Run the install script:  
+    `sudo ./start_install.sh`  
+    - Script runs with color indications  
+    - If dpkg lock error appears ➤ [Fix dpkg Lock](#unlock_dpkg)  
+
+---
+
+## 🔐 Connecting via SSH (Secure Shell)
+
+1. Download SSH client:  
+   👉 [Recommended: MobaXterm](https://mobaxterm.mobatek.net/download.html)  
+2. Find your local IP:  
+   `ip addr show`  
+   - Look for `inet` under `eth0` (e.g. `2: eth0`)  
+3. Use this IP in your SSH client to connect  
+
+---
+
+## <span id="install_git">🐙 Install Git</span>
+
+1. Update system packages:  
+   `sudo apt update`  
+2. Install Git:  
+   `sudo apt install git`  
+3. Enter your password if prompted  
+4. Confirm installation:  
+   `git --version`  
+   ➤ Example: `git version 2.43.0`  
+5. Go back to → [Setting Up the Basics](#setting_up_the_basics)  
+
+---
+
+## 🧩 <span id="common_issues">Common Issues</span>
+
+### <span id="unlock_dpkg">🔓 Fix dpkg Lock/Frontend Issues</span>
+
+1. Interrupt: `CTRL + C`  
+2. Identify locking process ID  
+3. Kill the process:  
+   `sudo kill -9 <ProcessIdNumber>`  
+4. Remove lock file:  
+   `sudo rm /var/lib/dpkg/lock-frontend`  
+5. Reconfigure dpkg:  
+   `sudo dpkg --configure -a`  
+6. Reboot system:  
+   `sudo reboot`  
+7. After reboot, update system:  
+   `sudo apt update && sudo apt upgrade -y`  
+8. Enter password if prompted  
+9. If no lock error — Eureka! 💡  
+   ➤ Continue with → [Setting Up the Basics](#setting_up_the_basics)  
