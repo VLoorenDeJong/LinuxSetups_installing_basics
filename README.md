@@ -9,20 +9,6 @@ These scripts automatically configure the basics for supported Linux versions.
 3. Install SSH  
 
 ---
-
-## ⚙️ Usage
-
-Run the main installation script with sudo privileges:
-
-```shell
-sudo ./start_install.sh
-```
-
-**Important:**  
-The script requires `sudo` privileges to avoid password prompts during installation.
-
----
-
 ## 🐧 Supported Linux Versions
 
 - Ubuntu 24.04.2 LTS  
@@ -80,10 +66,12 @@ The script requires `sudo` privileges to avoid password prompts during installat
     ```shell
     sudo chmod -R +x .
     ```
-11. Run the install script:  
+11. Run the main installation script with sudo privileges:
     ```shell
     sudo ./start_install.sh
     ```
+**Important:**  
+The script requires `sudo` privileges to avoid password prompts during installation.
     - Script runs with color indications  
     - If dpkg lock error appears ➤ [Fix dpkg Lock](#unlock_dpkg)  
 
