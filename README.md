@@ -22,6 +22,7 @@ These scripts automatically configure the basics for supported Linux versions.
   <summary>Click to see the opening screen of the Imager software</summary>
 
 <img width="1016" height="700" alt="image" src="https://github.com/user-attachments/assets/80fe7698-e0e6-476f-acca-4365ab7ebc4a" />
+<img width="1137" height="806" alt="image" src="https://github.com/user-attachments/assets/8435a6a3-c7ad-419b-8752-1e6c1f1a8389" />
 
 </details>
 
