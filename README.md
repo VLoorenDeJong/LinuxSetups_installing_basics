@@ -15,7 +15,17 @@ These scripts automatically configure the basics for supported Linux versions.
 
 ---
 ## Getting started
-1. Doeload the Raspberry pi Imager software here → [Pi Imager](https://www.raspberrypi.com/software/)
+1. Dowload the Raspberry pi Imager software here → [Pi Imager](https://www.raspberrypi.com/software/)
+1. Install the imager software
+1. Open the imager software <img width="37" height="36" alt="image" src="https://github.com/user-attachments/assets/8aa02496-48bf-4aed-88f4-5aba0fe35bac" />
+<details>
+  <summary>Click to see the opening screen of the Imager software</summary>
+
+<center>![](<img width="1016" height="700" alt="image" src="https://github.com/user-attachments/assets/80fe7698-e0e6-476f-acca-4365ab7ebc4a" />
+)</center>
+
+</details>
+
 
 
 ## <span id="setting_up_the_basics">📦 Setting Up the Basics</span>
