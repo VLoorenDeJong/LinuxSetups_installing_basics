@@ -14,6 +14,9 @@ These scripts automatically configure the basics for supported Linux versions.
 - Ubuntu 24.04.2 LTS  
 
 ---
+## Getting started
+1. Doeload the Raspberry pi Imager software here → [Pi Imager](https://www.raspberrypi.com/software/)
+
 
 ## <span id="setting_up_the_basics">📦 Setting Up the Basics</span>
 
