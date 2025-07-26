@@ -53,7 +53,7 @@ These scripts automatically configure the basics for supported Linux versions.
 7. Eject the media properly if needed
 
 <details>
-  <summary>**Click** to see the Custom settings</summary>
+  <summary><b>Click</b> to see the Custom settings</summary>
   
   <img width="1337" height="853" alt="image" src="https://github.com/user-attachments/assets/6f87f5c9-6bf6-4766-a8db-72a8cfe3a2db" />
   
