@@ -22,6 +22,7 @@ These scripts automatically configure the basics for supported Linux versions.
   <summary>Click to see the opening screen of the Imager software</summary>
 
 <img width="1016" height="700" alt="image" src="https://github.com/user-attachments/assets/80fe7698-e0e6-476f-acca-4365ab7ebc4a" />
+<img width="1594" height="748" alt="image" src="https://github.com/user-attachments/assets/6201b992-2a80-4f21-99af-740c07ac342b" />
 
 </details>
 
@@ -35,7 +36,7 @@ These scripts automatically configure the basics for supported Linux versions.
 <img width="1137" height="806" alt="image" src="https://github.com/user-attachments/assets/8435a6a3-c7ad-419b-8752-1e6c1f1a8389" />
 </details>
    
-1. Press → CTRL + SHIFT + X
+1. For more cusom settings press → CTRL + SHIFT + X
 
 
 
