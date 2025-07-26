@@ -31,7 +31,7 @@ These scripts automatically configure the basics for supported Linux versions.
    1. Device (Your sorage SD card / SSD)
    
 <details>
-  <summary><b>Click</b>b to see these settings for the imager software</summary>
+  <summary><b>Click</b> to see these settings for the imager software</summary>
   
 <img width="1137" height="806" alt="image" src="https://github.com/user-attachments/assets/8435a6a3-c7ad-419b-8752-1e6c1f1a8389" />
 
