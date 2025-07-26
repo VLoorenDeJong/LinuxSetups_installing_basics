@@ -31,29 +31,29 @@ These scripts automatically configure the basics for supported Linux versions.
    1. Device (Your sorage SD card / SSD)
    
 <details>
-  <summary>Click to see these settings for the imager software</summary>
+  <summary>**Click** to see these settings for the imager software</summary>
   
 <img width="1137" height="806" alt="image" src="https://github.com/user-attachments/assets/8435a6a3-c7ad-419b-8752-1e6c1f1a8389" />
 
 </details>
    
-1. For more custom setting press →  ** CTRL + SHIFT + X **
+2. For more custom setting press →  ** CTRL + SHIFT + X **
 
 <details>
-  <summary>Click to see the Custom settings</summary>
+  <summary>**Click** to see the Custom settings</summary>
   
   <img width="1594" height="748" alt="image" src="https://github.com/user-attachments/assets/6201b992-2a80-4f21-99af-740c07ac342b" />
   
 </details>
 
-1. When done with all the settings click → **Next** 
-1. In the next prompt if any custom settings were applied click → **Yes**
-1. Wait for the process to be completed
-1. Click **Continue**
-1. Eject the media properly if needed
+3. When done with all the settings click → **Next** 
+4. In the next prompt if any custom settings were applied click → **Yes**
+5. Wait for the process to be completed
+6. Click **Continue**
+7. Eject the media properly if needed
 
 <details>
-  <summary>Click to see the Custom settings</summary>
+  <summary>**Click** to see the Custom settings</summary>
   
   <img width="1337" height="853" alt="image" src="https://github.com/user-attachments/assets/6f87f5c9-6bf6-4766-a8db-72a8cfe3a2db" />
   
