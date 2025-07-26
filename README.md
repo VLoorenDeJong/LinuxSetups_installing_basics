@@ -19,7 +19,7 @@ These scripts automatically configure the basics for supported Linux versions.
 1. Install the imager software
 1. Open the imager software <img width="37" height="36" alt="image" src="https://github.com/user-attachments/assets/8aa02496-48bf-4aed-88f4-5aba0fe35bac" />
 <details>
-  <summary>Click to see the opening screen of the Imager software</summary>
+  <summary><b>Click</b> to see the opening screen of the Imager software</summary>
 
 <img width="1016" height="700" alt="image" src="https://github.com/user-attachments/assets/80fe7698-e0e6-476f-acca-4365ab7ebc4a" />
 
@@ -31,7 +31,7 @@ These scripts automatically configure the basics for supported Linux versions.
    1. Device (Your sorage SD card / SSD)
    
 <details>
-  <summary>**Click** to see these settings for the imager software</summary>
+  <summary><b>Click</b>b to see these settings for the imager software</summary>
   
 <img width="1137" height="806" alt="image" src="https://github.com/user-attachments/assets/8435a6a3-c7ad-419b-8752-1e6c1f1a8389" />
 
@@ -40,7 +40,7 @@ These scripts automatically configure the basics for supported Linux versions.
 2. For more custom setting press →  ** CTRL + SHIFT + X **
 
 <details>
-  <summary>**Click** to see the Custom settings</summary>
+  <summary><b>Click</b>b to see the Custom settings</summary>
   
   <img width="1594" height="748" alt="image" src="https://github.com/user-attachments/assets/6201b992-2a80-4f21-99af-740c07ac342b" />
   
