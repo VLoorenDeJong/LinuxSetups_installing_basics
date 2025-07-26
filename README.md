@@ -23,6 +23,8 @@ These scripts automatically configure the basics for supported Linux versions.
 
 <img width="1016" height="700" alt="image" src="https://github.com/user-attachments/assets/80fe7698-e0e6-476f-acca-4365ab7ebc4a" />
 <img width="1594" height="748" alt="image" src="https://github.com/user-attachments/assets/6201b992-2a80-4f21-99af-740c07ac342b" />
+<img width="1337" height="853" alt="image" src="https://github.com/user-attachments/assets/6f87f5c9-6bf6-4766-a8db-72a8cfe3a2db" />
+
 
 </details>
 
