@@ -49,15 +49,15 @@ These scripts automatically configure the basics for supported Linux versions.
 3. When done with all the settings click → **Next** 
 4. In the next prompt if any custom settings were applied click → **Yes**
 5. Wait for the process to be completed 🕒
-<img width="419" height="489" alt="image" src="https://github.com/user-attachments/assets/358a60b9-2e00-4287-b27d-f20483ba7a1c" />
+<img width="100" height="150" alt="image" src="https://github.com/user-attachments/assets/358a60b9-2e00-4287-b27d-f20483ba7a1c" />
 
 6. Click → **Continue**
 7. Eject the media properly if needed
 
 <details>
-  <summary><b>Click</b> to see the Custom settings</summary>
+  <summary><b>Click</b> to see the process steps</summary>
   
-  <img width="1337" height="853" alt="image" src="https://github.com/user-attachments/assets/6f87f5c9-6bf6-4766-a8db-72a8cfe3a2db" />
+<img width="1336" height="858" alt="image" src="https://github.com/user-attachments/assets/19ff3e21-07b2-44fc-bf0c-cb1fcab3bde8" />
   
 </details>
 
