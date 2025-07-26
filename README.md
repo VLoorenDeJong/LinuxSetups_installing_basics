@@ -37,7 +37,7 @@ These scripts automatically configure the basics for supported Linux versions.
 
 </details>
    
-2. For more custom setting press →  ** CTRL + SHIFT + X **
+2. For more custom setting press →  **CTRL + SHIFT + X**
 
 <details>
   <summary><b>Click</b>b to see the Custom settings</summary>
