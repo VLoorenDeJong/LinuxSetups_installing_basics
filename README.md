@@ -27,7 +27,7 @@ These scripts automatically configure the basics for supported Linux versions.
 
 1. Select the following things to what is applicable for your situation
    1. Your device (Pi 4b / 5)
-   1. Your OS (Other general purpose OS → Ubuntu → Ubuntu **Server** 24.04.2 / 24.04.3 LTS )
+   1. Your OS (Other general purpose OS → Ubuntu → Ubuntu **Server** 24.04.* LTS )
    1. Device (Your sorage SD card / SSD)
    
 <details>
