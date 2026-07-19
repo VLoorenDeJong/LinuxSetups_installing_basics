@@ -56,15 +56,26 @@ if ! dpkg -s openssh-server &> /dev/null; then
     fi
 fi
 
-if ! systemctl is-active --quiet ssh; then
-    sudo systemctl enable ssh >/dev/null 2>&1
-    sudo systemctl start ssh >/dev/null 2>&1
+SSH_LOG="/tmp/add_ssh.log"
+
+# Ubuntu 24.04+ socket-activates sshd (ssh.socket) — either unit active is fine
+if ! systemctl is-active --quiet ssh && ! systemctl is-active --quiet ssh.socket; then
+    print_status "Enabling and starting SSH service..."
+    if ! { sudo systemctl enable ssh && sudo systemctl start ssh; } >"$SSH_LOG" 2>&1; then
+        print_error "Failed to enable/start SSH — output:"
+        tail -5 "$SSH_LOG" 2>/dev/null || true
+        exit 1
+    fi
 fi
 
 if command -v ufw &> /dev/null && sudo ufw status | grep -q "Status: active"; then
     # Anchor on "22/tcp" so ports like 220 or 2222 don't false-match
     if ! sudo ufw status numbered | grep -E "ALLOW" | grep -qE "\b22/tcp\b|\b22\b(/| |$)"; then
-        echo "y" | sudo ufw allow 22/tcp > /dev/null
+        if ! echo "y" | sudo ufw allow 22/tcp >"$SSH_LOG" 2>&1; then
+            print_error "Failed to open port 22 in UFW — output:"
+            tail -5 "$SSH_LOG" 2>/dev/null || true
+            exit 1
+        fi
     fi
 fi
 

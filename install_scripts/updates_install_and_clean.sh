@@ -166,17 +166,21 @@ if ask_user "Do you want to update and upgrade the system?"; then
             exit 1
         fi
     else
-        if show_progress "📦 Updating package lists" "sudo apt-get update -qq >/dev/null 2>&1"; then
+        # Keep apt output in a log so a failure is diagnosable, not silent
+        APT_LOG="/tmp/updates_install_and_clean.log"
+        if show_progress "📦 Updating package lists" "sudo apt-get update -qq >$APT_LOG 2>&1"; then
             echo -e "\e[32m✅ Package lists updated successfully\e[0m"
-            
-            if show_progress_watch_only "⬆️ Upgrading system packages (irreversible — will not be interrupted)" "sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get full-upgrade -y -o Dpkg::Options::=\"--force-confdef\" -o Dpkg::Options::=\"--force-confold\" -qq >/dev/null 2>&1" 3; then
+
+            if show_progress_watch_only "⬆️ Upgrading system packages (irreversible — will not be interrupted)" "sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get full-upgrade -y -o Dpkg::Options::=\"--force-confdef\" -o Dpkg::Options::=\"--force-confold\" -qq >$APT_LOG 2>&1" 3; then
                 echo -e "\e[32m✅ System upgrade completed successfully\e[0m"
             else
-                echo -e "\e[31m❌ System upgrade failed\e[0m"
+                echo -e "\e[31m❌ System upgrade failed — last apt output:\e[0m"
+                tail -10 "$APT_LOG" 2>/dev/null || true
                 exit 1
             fi
         else
-            echo -e "\e[31m❌ Package list update failed\e[0m"
+            echo -e "\e[31m❌ Package list update failed — last apt output:\e[0m"
+            tail -10 "$APT_LOG" 2>/dev/null || true
             exit 1
         fi
     fi
