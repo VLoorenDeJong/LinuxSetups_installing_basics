@@ -29,6 +29,7 @@ INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/install_scripts"
 # Array of scripts to run
 SCRIPTS=(
     "check_shell_syntax.sh"      # Stop early if any script has a syntax error
+    "cleanup_repositories.sh"
     "fix_dpkg_lock.sh"
     "fix_xauthority.sh"
     "set_scripts_executable.sh"
