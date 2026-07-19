@@ -9,6 +9,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if command -v git >/dev/null 2>&1 && git -C "$SCRIPT_DIR" rev-parse --show-toplevel >/dev/null 2>&1; then
   REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
+  # When running as a submodule, cover the whole superproject instead
+  SUPER_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-superproject-working-tree 2>/dev/null || true)"
+  [ -n "$SUPER_ROOT" ] && REPO_ROOT="$SUPER_ROOT"
 else
   # No git metadata (bare copy on the device).
   # Assume the standard layout: <root>/install_scripts/scripts/.
