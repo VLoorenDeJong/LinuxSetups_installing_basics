@@ -48,7 +48,9 @@ show_progress() {
     # Show progress dots while command runs
     while kill -0 $cmd_pid 2>/dev/null; do
         echo -n "."
-        sleep $interval
+        # If sleep itself fails (e.g. filesystem died), bail instead of
+        # spinning and flooding the terminal with error lines
+        sleep $interval || { printf "\n\e[31m❌ Progress loop aborted — sleep failed (filesystem trouble?)\e[0m\n"; break; }
         local current_time
         current_time=$(date +%s)
         if (( current_time - start_time > timeout )); then
@@ -84,7 +86,9 @@ show_progress_watch_only() {
 
     while kill -0 $cmd_pid 2>/dev/null; do
         echo -n "."
-        sleep $interval
+        # If sleep itself fails (e.g. filesystem died), bail instead of
+        # spinning and flooding the terminal with error lines
+        sleep $interval || { printf "\n\e[31m❌ Progress loop aborted — sleep failed (filesystem trouble?)\e[0m\n"; break; }
         local current_time
         current_time=$(date +%s)
         local elapsed=$(( current_time - start_time ))
