@@ -138,9 +138,9 @@ show_progress_bar_watch_only() {
 
         if [[ "$pct" =~ ^[0-9]+$ ]]; then
             local filled=$((pct * width / 100))
-            printf '\r\033[K%s [%s%s] %3d%%  %.40s' "$frame" "${full_bar:0:filled}" "${empty_bar:0:width-filled}" "$pct" "$desc"
+            printf '\r\033[K[%s%s] %s %3d%%  %.40s' "${full_bar:0:filled}" "${empty_bar:0:width-filled}" "$frame" "$pct" "$desc"
         else
-            printf '\r\033[K%s [%s]  …   working' "$frame" "$empty_bar"
+            printf '\r\033[K[%s] %s  …   working' "$empty_bar" "$frame"
         fi
 
         # If sleep itself fails (e.g. filesystem died), bail instead of
