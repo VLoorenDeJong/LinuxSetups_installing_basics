@@ -98,12 +98,30 @@ check_dpkg_lock() {
 echo -e "\e[34m🔍 Checking for dpkg/lock-frontend and package cache issues...\e[0m"
 
 # Test if we have a real dpkg lock issue
-if [ "$(check_dpkg_lock)" = "false" ]; then
-    echo -e "\e[32m✅ No dpkg lock detected. System is ready for package operations.\e[0m"
-    exit 0
-else
-    echo -e "\e[33m⚠️  dpkg lock detected. Attempting to fix...\e[0m"
+LOCK_STATE="$(check_dpkg_lock)"
+
+# Half-configured packages (an install interrupted mid-configure, e.g. by a
+# killed prompt or lost session) hold no lock but still fail every later apt
+# run with "Errors were encountered while processing" — detect and heal those too
+audit_cmd=(dpkg --audit)
+[ "$EUID" -ne 0 ] && audit_cmd=(sudo dpkg --audit)
+PENDING_CONFIG=false
+if [ -n "$("${audit_cmd[@]}" 2>/dev/null)" ]; then
+    PENDING_CONFIG=true
 fi
+
+if [ "$LOCK_STATE" = "false" ] && [ "$PENDING_CONFIG" = "false" ]; then
+    echo -e "\e[32m✅ No dpkg lock or pending configuration detected. System is ready for package operations.\e[0m"
+    exit 0
+elif [ "$LOCK_STATE" = "true" ]; then
+    echo -e "\e[33m⚠️  dpkg lock detected. Attempting to fix...\e[0m"
+else
+    echo -e "\e[33m⚠️  Half-configured packages detected (interrupted install). Repairing...\e[0m"
+fi
+
+# Lock-specific steps (1-3) only apply when a lock was actually detected;
+# a pure pending-configuration repair skips straight to dpkg --configure -a
+if [ "$LOCK_STATE" = "true" ]; then
 
 # Step 1: Wait for any process holding the dpkg lock to exit on its own.
 # A live dpkg/apt process must never be killed — SIGKILL mid-write can corrupt
@@ -158,6 +176,8 @@ echo -e "\e[34m🔄 Cleaning package cache...\e[0m"
 clean_package_cache
 echo -e "\e[32m✅ Package cache cleaned\e[0m"
 
+fi  # end lock-specific steps
+
 # Step 4: Configure dpkg (irreversible transaction — watched, never killed)
 if run_watched "🔄 Configuring dpkg (will not be interrupted)..." run_privileged dpkg --configure -a; then
     echo -e "\e[32m✅ dpkg configured\e[0m"
@@ -172,12 +192,12 @@ else
     echo -e "\e[31m❌ Dependency fix failed\e[0m"
 fi
 
-# Step 6: Test if fix worked
+# Step 6: Test if fix worked (lock gone AND nothing left half-configured)
 echo -e "\e[34m🔄 Testing fix...\e[0m"
-if [ "$(check_dpkg_lock)" = "false" ]; then
-    echo -e "\e[32m🎉 Success! dpkg lock resolved\e[0m"
+if [ "$(check_dpkg_lock)" = "false" ] && [ -z "$("${audit_cmd[@]}" 2>/dev/null)" ]; then
+    echo -e "\e[32m🎉 Success! dpkg state healthy\e[0m"
     exit 0
 else
-    echo -e "\e[31m❌ dpkg lock persists\e[0m"
+    echo -e "\e[31m❌ dpkg issues persist\e[0m"
     exit 1
 fi

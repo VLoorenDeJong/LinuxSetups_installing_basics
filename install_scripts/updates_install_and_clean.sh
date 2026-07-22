@@ -195,6 +195,16 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# needrestart's kernel-upgrade dialog can grab the terminal during any apt
+# transaction and silently block an unattended run (and killing it corrupts
+# the transaction). It is informational only — disable it machine-wide, once.
+NEEDRESTART_CONF="/etc/needrestart/conf.d/99-no-kernel-dialog.conf"
+if [ -d /etc/needrestart ] && [ ! -f "$NEEDRESTART_CONF" ]; then
+    print_status "Disabling needrestart's kernel-upgrade dialog (informational only)"
+    mkdir -p /etc/needrestart/conf.d
+    echo '$nrconf{kernelhints} = -1;' > "$NEEDRESTART_CONF"
+fi
+
 # Ask for system update confirmation
 if ask_user "Do you want to update and upgrade the system?"; then
     # Check and fix any DPKG locks before proceeding with package operations
