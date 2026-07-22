@@ -104,6 +104,57 @@ show_progress_watch_only() {
     return $exit_code
 }
 
+# Watch-only spinner + progress bar: never signals the child (same regime as
+# show_progress_watch_only), but renders a live bar from apt's machine-readable
+# status lines ("pmstatus:...:PCT:desc" / "dlstatus:...") that land in the log
+# when apt-get runs with -o APT::Status-Fd=1.
+show_progress_bar_watch_only() {
+    local message="$1"
+    local command="$2"
+    local logfile="$3"
+
+    local spinner=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+    local width=28
+    local empty_bar full_bar
+    empty_bar=$(printf '░%.0s' $(seq 1 $width))
+    full_bar=$(printf '█%.0s' $(seq 1 $width))
+
+    echo -e "\e[34m${message}\e[0m"
+
+    eval "$command" &
+    local cmd_pid=$!
+    local tick=0
+
+    while kill -0 $cmd_pid 2>/dev/null; do
+        local frame="${spinner[tick % 10]}"
+        tick=$((tick + 1))
+
+        local line pct="" desc=""
+        line=$(grep -E '^(pmstatus|dlstatus):' "$logfile" 2>/dev/null | tail -1)
+        if [ -n "$line" ]; then
+            pct=$(printf '%s' "$line" | cut -d: -f3 | cut -d. -f1)
+            desc=$(printf '%s' "$line" | cut -d: -f4-)
+        fi
+
+        if [[ "$pct" =~ ^[0-9]+$ ]]; then
+            local filled=$((pct * width / 100))
+            printf '\r\033[K%s [%s%s] %3d%%  %.40s' "$frame" "${full_bar:0:filled}" "${empty_bar:0:width-filled}" "$pct" "$desc"
+        else
+            printf '\r\033[K%s [%s]  …   working' "$frame" "$empty_bar"
+        fi
+
+        # If sleep itself fails (e.g. filesystem died), bail instead of
+        # spinning and flooding the terminal with error lines
+        sleep 0.2 || { printf "\n\e[31m❌ Progress loop aborted — sleep failed (filesystem trouble?)\e[0m\n"; break; }
+    done
+
+    wait $cmd_pid
+    local exit_code=$?
+
+    printf '\r\033[K'  # Clear the bar line before normal output resumes
+    return $exit_code
+}
+
 # Function to check and fix DPKG locks (calls dedicated script)
 check_and_fix_dpkg_lock() {
     local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -171,7 +222,8 @@ if ask_user "Do you want to update and upgrade the system?"; then
         if show_progress "📦 Updating package lists" "sudo apt-get update -qq >$APT_LOG 2>&1"; then
             echo -e "\e[32m✅ Package lists updated successfully\e[0m"
 
-            if show_progress_watch_only "⬆️ Upgrading system packages (irreversible — will not be interrupted)" "sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get full-upgrade -y -o Dpkg::Options::=\"--force-confdef\" -o Dpkg::Options::=\"--force-confold\" -qq >$APT_LOG 2>&1" 3; then
+            # APT::Status-Fd=1 writes machine-readable percent lines into the log for the bar
+            if show_progress_bar_watch_only "⬆️ Upgrading system packages (irreversible — will not be interrupted)" "sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get full-upgrade -y -o APT::Status-Fd=1 -o Dpkg::Options::=\"--force-confdef\" -o Dpkg::Options::=\"--force-confold\" -qq >$APT_LOG 2>&1" "$APT_LOG"; then
                 echo -e "\e[32m✅ System upgrade completed successfully\e[0m"
             else
                 echo -e "\e[31m❌ System upgrade failed — last apt output:\e[0m"
