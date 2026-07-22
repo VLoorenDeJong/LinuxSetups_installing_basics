@@ -89,12 +89,6 @@ show_progress_watch_only() {
         # If sleep itself fails (e.g. filesystem died), bail instead of
         # spinning and flooding the terminal with error lines
         sleep $interval || { printf "\n\e[31m❌ Progress loop aborted — sleep failed (filesystem trouble?)\e[0m\n"; break; }
-        local current_time
-        current_time=$(date +%s)
-        local elapsed=$(( current_time - start_time ))
-        if (( elapsed % 60 < interval )); then
-            printf " [%ds elapsed, still running]\n" "$elapsed"
-        fi
     done
 
     wait $cmd_pid

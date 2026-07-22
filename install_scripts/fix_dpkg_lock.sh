@@ -28,12 +28,15 @@ run_privileged() {
 }
 
 # Watch-only progress: prints dots while the command runs but never signals
-# it — these are irreversible package transactions that must not be killed
+# it — these are irreversible package transactions that must not be killed.
+# Output is kept in a log and the tail is shown on failure — a bare "failed"
+# with no reason is undebuggable.
+FIX_DPKG_LOG="/tmp/fix_dpkg_lock.log"
 run_watched() {
     local message="$1"
     shift
     echo -e "\e[34m${message}\e[0m"
-    "$@" >/dev/null 2>&1 &
+    "$@" >>"$FIX_DPKG_LOG" 2>&1 &
     local watch_pid=$!
     while kill -0 "$watch_pid" 2>/dev/null; do
         echo -n "."
@@ -41,7 +44,12 @@ run_watched() {
     done
     echo
     wait "$watch_pid"
-    return $?
+    local exit_code=$?
+    if [ "$exit_code" -ne 0 ]; then
+        echo -e "\e[31m❌ Failed (exit $exit_code) — last output (full log: $FIX_DPKG_LOG):\e[0m"
+        tail -15 "$FIX_DPKG_LOG" 2>/dev/null || true
+    fi
+    return $exit_code
 }
 
 # Function to find processes using dpkg
