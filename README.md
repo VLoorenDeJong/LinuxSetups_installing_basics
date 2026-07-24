@@ -70,6 +70,20 @@ Automatically installs the essentials on supported Linux versions:
    ```
    The installer automatically handles dpkg lock issues, updates, UFW, and SSH setup.
 
+If the run fails partway — package upgrades (kernel, `openssh-server`, etc.) can leave
+`dpkg` half-configured mid-run, usually showing up as `Could not execute systemctl` or a
+failed `ssh.service` step. `fix_dpkg_lock.sh` retries the repair automatically, but some
+states only clear with a reboot:
+   ```shell
+   sudo reboot
+   ```
+
+After reboot, log back in and run it again:
+   ```shell
+   cd ~/LinuxSetups_installing_basics && sudo chmod -R +x . && sudo ./start_install.sh
+   ```
+   Every script here is safe to rerun — steps already applied are skipped or no-op.
+
 ---
 
 ## Connecting with SSH
