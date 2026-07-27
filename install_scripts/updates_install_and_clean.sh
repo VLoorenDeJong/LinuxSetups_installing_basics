@@ -214,7 +214,7 @@ if ask_user "Do you want to update and upgrade the system?"; then
         fi
 
         echo -e "\e[34m🔧 Running apt-get full-upgrade (verbose mode)\e[0m"
-        if sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get full-upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold"; then
+        if sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get full-upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold"; then
             echo -e "\e[32m✅ System upgrade completed successfully\e[0m"
         else
             echo -e "\e[31m❌ System upgrade failed\e[0m"
@@ -227,7 +227,9 @@ if ask_user "Do you want to update and upgrade the system?"; then
             echo -e "\e[32m✅ Package lists updated successfully\e[0m"
 
             # APT::Status-Fd=1 writes machine-readable percent lines into the log for the bar
-            if show_progress_bar_watch_only "⬆️ Upgrading system packages (irreversible — will not be interrupted)" "sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get full-upgrade -y -o APT::Status-Fd=1 -o Dpkg::Options::=\"--force-confdef\" -o Dpkg::Options::=\"--force-confold\" -qq >$APT_LOG 2>&1" "$APT_LOG"; then
+            # env vars go AFTER sudo via `env`: `sudo VAR=x cmd` is rejected
+            # outright by sudoers policies that don't grant SETENV.
+            if show_progress_bar_watch_only "⬆️ Upgrading system packages (irreversible — will not be interrupted)" "sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get full-upgrade -y -o APT::Status-Fd=1 -o Dpkg::Options::=\"--force-confdef\" -o Dpkg::Options::=\"--force-confold\" -qq >$APT_LOG 2>&1" "$APT_LOG"; then
                 echo -e "\e[32m✅ System upgrade completed successfully\e[0m"
             else
                 echo -e "\e[31m❌ System upgrade failed — last apt output:\e[0m"
