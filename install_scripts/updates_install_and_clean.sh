@@ -30,6 +30,35 @@ ensure_sudo() {
 }
 ensure_sudo
 
+# Persist the noninteractive behaviour that DEBIAN_FRONTEND / NEEDRESTART_MODE
+# used to provide. Those env vars cannot reach apt here: sudo's env_reset strips
+# them, and this host's sudoers grants the management user neither SETENV nor
+# /usr/bin/env (and granting env would mean `sudo env /bin/bash` = full root).
+# Config files are read by apt and needrestart directly, so no env is involved.
+#
+# needrestart matters most: its default mode is interactive, and a service-
+# restart dialog raised inside a progress wrapper is invisible and hangs
+# forever. Mode 'l' only LISTS what needs restarting — deliberately not 'a',
+# which auto-restarts ssh.service and can cut the very session driving the
+# upgrade.
+ensure_noninteractive_apt() {
+    local apt_conf="/etc/apt/apt.conf.d/99-linuxsetups-noninteractive"
+    local nr_conf="/etc/needrestart/conf.d/99-linuxsetups.conf"
+
+    if [ ! -f "$apt_conf" ]; then
+        printf 'Dpkg::Options { "--force-confdef"; "--force-confold"; };\n' \
+            | sudo -n tee "$apt_conf" >/dev/null 2>&1 \
+            || echo -e "\e[33m⚠️  Could not write $apt_conf — continuing\e[0m"
+    fi
+
+    if [ -d /etc/needrestart ] && [ ! -f "$nr_conf" ]; then
+        printf "%s\n%s\n" "\$nrconf{restart} = 'l';" "\$nrconf{kernelhints} = 0;" \
+            | sudo -n tee "$nr_conf" >/dev/null 2>&1 \
+            || echo -e "\e[33m⚠️  Could not write $nr_conf — continuing\e[0m"
+    fi
+}
+ensure_noninteractive_apt
+
 # Single log for every wrapped apt command. Defined at top level so it is set
 # in verbose mode too — a redirect to an unset $APT_LOG is an ambiguous-redirect
 # error, not a silent no-op.
@@ -255,7 +284,7 @@ if ask_user "Do you want to update and upgrade the system?"; then
         fi
 
         echo -e "\e[34m🔧 Running apt-get full-upgrade (verbose mode)\e[0m"
-        if sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get full-upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold"; then
+        if sudo apt-get full-upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold"; then
             echo -e "\e[32m✅ System upgrade completed successfully\e[0m"
         else
             echo -e "\e[31m❌ System upgrade failed\e[0m"
@@ -270,8 +299,14 @@ if ask_user "Do you want to update and upgrade the system?"; then
             # and a failure is diagnosable — verified on the target that -qq
             # does NOT suppress the status lines, so this is a readability
             # choice, not a requirement of the progress bar.
-            # env vars go AFTER sudo via `env`: `sudo VAR=x cmd` is rejected
-            # outright by sudoers policies that don't grant SETENV.
+            # No env-var wrapper here, deliberately. This host's sudoers grants
+            # the management user a NOPASSWD command allowlist that includes
+            # /usr/bin/apt-get but NOT /usr/bin/env, and carries no SETENV tag —
+            # so `sudo VAR=x apt-get` is rejected outright and `sudo env ...`
+            # falls through to a password prompt. Adding env to the allowlist
+            # would be worse: `sudo env /bin/bash` is unrestricted root. The
+            # noninteractive behaviour those vars provided now lives in
+            # /etc/apt/apt.conf.d and /etc/needrestart/conf.d instead.
             # sudo -n is mandatory for anything run inside a progress wrapper.
             # The wrapper backgrounds the command, and sudo reads its password
             # from /dev/tty (never stdin), so a prompt here is invisible: the
@@ -279,7 +314,7 @@ if ask_user "Do you want to update and upgrade the system?"; then
             # the job just stops and the spinner turns forever. ensure_sudo
             # above has already primed the cache; -n turns any remaining
             # authentication failure into an immediate, logged error.
-            if show_progress_bar_watch_only "⬆️ Upgrading system packages (irreversible — will not be interrupted)" "sudo -n env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get full-upgrade -y -o APT::Status-Fd=1 -o Dpkg::Options::=\"--force-confdef\" -o Dpkg::Options::=\"--force-confold\" >$APT_LOG 2>&1" "$APT_LOG"; then
+            if show_progress_bar_watch_only "⬆️ Upgrading system packages (irreversible — will not be interrupted)" "sudo -n apt-get full-upgrade -y -o APT::Status-Fd=1 -o Dpkg::Options::=\"--force-confdef\" -o Dpkg::Options::=\"--force-confold\" >$APT_LOG 2>&1" "$APT_LOG"; then
                 echo -e "\e[32m✅ System upgrade completed successfully\e[0m"
             else
                 echo -e "\e[31m❌ System upgrade failed — last apt output:\e[0m"
