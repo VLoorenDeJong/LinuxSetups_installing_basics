@@ -123,11 +123,26 @@ show_progress_bar_watch_only() {
         local frame="${spinner[tick % 10]}"
         tick=$((tick + 1))
 
-        local line pct="" desc=""
+        local line pct="" desc="" parsed=""
         line=$(grep -E '^(pmstatus|dlstatus):' "$logfile" 2>/dev/null | tail -1)
         if [ -n "$line" ]; then
-            pct=$(printf '%s' "$line" | cut -d: -f3 | cut -d. -f1)
-            desc=$(printf '%s' "$line" | cut -d: -f4-)
+            # apt writes "type:name:percent:message", but a multi-arch name
+            # carries its own colon ("pmstatus:libc6:amd64:37.5000:Unpacking"),
+            # so the percent is NOT at a fixed field index — cut -f3 grabbed
+            # "amd64" and the bar stayed stuck on "working" for the whole dpkg
+            # phase. Take the first decimal field at or after 3 as the percent,
+            # everything after it as the description (which may contain colons).
+            parsed=$(printf '%s' "$line" | awk -F: '{
+                for (i = 3; i <= NF; i++)
+                    if ($i ~ /^[0-9]+\.[0-9]+$/) {
+                        d = $(i+1)
+                        for (j = i + 2; j <= NF; j++) d = d ":" $j
+                        printf "%d\t%s", $i, d
+                        exit
+                    }
+            }')
+            pct=${parsed%%$'\t'*}
+            desc=${parsed#*$'\t'}
         fi
 
         if [[ "$pct" =~ ^[0-9]+$ ]]; then
@@ -226,10 +241,12 @@ if ask_user "Do you want to update and upgrade the system?"; then
         if show_progress "📦 Updating package lists" "sudo apt-get update -qq >$APT_LOG 2>&1"; then
             echo -e "\e[32m✅ Package lists updated successfully\e[0m"
 
-            # APT::Status-Fd=1 writes machine-readable percent lines into the log for the bar
+            # APT::Status-Fd=1 writes machine-readable percent lines into the log
+            # for the bar. No -qq here: quiet level 2 suppresses those status
+            # lines, leaving the bar stuck on its indeterminate "working" state.
             # env vars go AFTER sudo via `env`: `sudo VAR=x cmd` is rejected
             # outright by sudoers policies that don't grant SETENV.
-            if show_progress_bar_watch_only "⬆️ Upgrading system packages (irreversible — will not be interrupted)" "sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get full-upgrade -y -o APT::Status-Fd=1 -o Dpkg::Options::=\"--force-confdef\" -o Dpkg::Options::=\"--force-confold\" -qq >$APT_LOG 2>&1" "$APT_LOG"; then
+            if show_progress_bar_watch_only "⬆️ Upgrading system packages (irreversible — will not be interrupted)" "sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get full-upgrade -y -o APT::Status-Fd=1 -o Dpkg::Options::=\"--force-confdef\" -o Dpkg::Options::=\"--force-confold\" >$APT_LOG 2>&1" "$APT_LOG"; then
                 echo -e "\e[32m✅ System upgrade completed successfully\e[0m"
             else
                 echo -e "\e[31m❌ System upgrade failed — last apt output:\e[0m"
