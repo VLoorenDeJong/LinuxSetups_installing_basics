@@ -9,6 +9,27 @@ export DEBIAN_FRONTEND=noninteractive
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Prime sudo before any progress indicator starts.
+#
+# sudo writes its password prompt to /dev/tty, never to stdout/stderr — so a
+# prompt raised inside a wrapped command is NOT captured by that command's
+# ">$LOG 2>&1" redirect, and the progress bar's "\r\033[K" redraw erases it from
+# the screen every 0.2s. The result is an invisible prompt, an empty log, and a
+# spinner that turns forever while sudo waits for input that never comes.
+# Asking here, on a clean screen, makes the prompt visible and every later sudo
+# call non-interactive.
+ensure_sudo() {
+    if sudo -n true 2>/dev/null; then
+        return 0
+    fi
+    printf "\e[34m🔐 Administrator access required\e[0m\n"
+    if ! sudo -v; then
+        printf "\e[31m❌ sudo authentication failed — cannot continue\e[0m\n"
+        exit 1
+    fi
+}
+ensure_sudo
+
 # --- Inline utility functions (always defined, no sourcing required) ---
 print_status() {
     printf "\e[34m🔧 %s\e[0m\n" "$1"
