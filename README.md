@@ -75,20 +75,15 @@ with the rest.
    then come back here. Skipping this step is fine: you get an updated,
    firewalled machine with SSH, and nothing else.
 
-1. Make scripts executable:
+1. Run the installer (no chmod needed, it sets script permissions itself):
    ```shell
-   sudo chmod -R +x .
-   ```
-
-1. Run the installer:
-   ```shell
-   sudo ./start_install.sh
+   sudo bash start_install.sh
    ```
    It updates the operating system first, then restarts the machine.
 
 1. Log back in and run the exact same command again:
    ```shell
-   cd ~/LinuxSetups_installing_basics && sudo ./start_install.sh
+   cd ~/LinuxSetups_installing_basics && sudo bash start_install.sh
    ```
    This time it installs the things you picked. It knows the first round is
    already done, so you cannot accidentally repeat it.
@@ -172,7 +167,7 @@ sudo reboot
 ```
 
 ```shell
-cd ~/LinuxSetups_installing_basics && sudo ./start_install.sh
+cd ~/LinuxSetups_installing_basics && sudo bash start_install.sh
 ```
 
 Running it more than once is safe. Anything already installed is skipped.
