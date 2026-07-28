@@ -14,8 +14,7 @@ Available to choose from:
 
 Out of the box it does the sensible minimum: updates the machine, switches on
 the firewall, and sets up SSH so you can log in remotely. Everything else is
-switched off until you ask for it: see
-[Choosing what to install](#choosing_what_to_install).
+switched off until you ask for it → [Choosing what to install](#choosing_what_to_install)
 
 The install happens in two rounds. The first updates the operating system and
 restarts the machine; you then run the same command again and it carries on
