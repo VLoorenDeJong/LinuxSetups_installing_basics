@@ -42,8 +42,8 @@ ensure_sudo
 # which auto-restarts ssh.service and can cut the very session driving the
 # upgrade.
 ensure_noninteractive_apt() {
-    local apt_conf="/etc/apt/apt.conf.d/99-linuxsetups-noninteractive"
-    local nr_conf="/etc/needrestart/conf.d/99-linuxsetups.conf"
+    local apt_conf="/etc/apt/apt.conf.d/99-linuxbasics-noninteractive"
+    local nr_conf="/etc/needrestart/conf.d/99-linuxbasics.conf"
 
     if [ ! -f "$apt_conf" ]; then
         printf 'Dpkg::Options { "--force-confdef"; "--force-confold"; };\n' \
