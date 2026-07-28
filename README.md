@@ -70,10 +70,19 @@ with the rest.
    ```shell
    lsb_release -a
    ```
-   Look at the `Description` line. If it does not start with
-   `Ubuntu 24.04`, stop here: these scripts are only tested on that release,
-   and a different one may fail partway through an OS upgrade. There is
-   nothing to check out, everything lives on the `main` branch.
+   Note the `Description` line, you need it in the next step.
+
+1. See whether there is a branch for your release:
+   ```shell
+   git branch -r
+   ```
+   - A branch matching your version → check it out:
+     ```shell
+     git checkout YOUR_BRANCH_NAME
+     ```
+     *(No quotes, no `origin/`. Use `TAB` for autocomplete)*
+   - No matching branch → stay where you are. `main` is the current line, and
+     is what the supported list above refers to.
 
 1. **Pick what you want installed** → [Choosing what to install](#choosing_what_to_install),
    then come back here. Skipping this step is fine: you get an updated,
