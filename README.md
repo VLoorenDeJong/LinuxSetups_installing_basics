@@ -14,7 +14,7 @@ Available to choose from:
 
 Out of the box it does the sensible minimum: updates the machine, switches on
 the firewall, and sets up SSH so you can log in remotely. Everything else is
-switched off until you ask for it — see
+switched off until you ask for it: see
 [Choosing what to install](#choosing_what_to_install).
 
 The install happens in two rounds. The first updates the operating system and
@@ -30,11 +30,12 @@ with the rest.
 
 ## Contents
 
-1. [Setting up the basics](#setting_up_the_basics) — get it running
-2. [Choosing what to install](#choosing_what_to_install) — pick your options
-3. [If something goes wrong](#troubleshooting)
-4. [Connecting with SSH](#connecting_with_ssh)
-5. [Install Git](#install_git)
+1. [Setting up the basics](#setting_up_the_basics): get it running
+2. [Choosing what to install](#choosing_what_to_install): pick your options
+3. [Opening an extra port later](#opening_a_port)
+4. [If something goes wrong](#troubleshooting)
+5. [Connecting with SSH](#connecting_with_ssh)
+6. [Install Git](#install_git)
 
 ---
 
@@ -72,7 +73,7 @@ with the rest.
    ```
 
 1. **Pick what you want installed** → [Choosing what to install](#choosing_what_to_install),
-   then come back here. Skipping this step is fine — you get an updated,
+   then come back here. Skipping this step is fine: you get an updated,
    firewalled machine with SSH, and nothing else.
 
 1. Make scripts executable:
@@ -111,8 +112,8 @@ There are two lists. Find them by looking for these banner comments:
 
 | Look for this line | Around line | What it covers |
 |---|---|---|
-| `# PHASE 1 — get the operating system into a clean, up-to-date state.` | 150 | Updates, firewall, SSH |
-| `# PHASE 2 — applications, installed on the upgraded and rebooted system.` | 170 | Java, Docker, Apache, Webmin, file sharing, backups |
+| `# PHASE 1 - get the operating system into a clean, up-to-date state.` | 151 | Updates, firewall, SSH |
+| `# PHASE 2 - applications, installed on the upgraded and rebooted system.` | 171 | Java, Docker, Apache, Webmin, file sharing, backups |
 
 In `nano` you can jump straight to a line with `CTRL + _` (underscore), then
 type the number and press `ENTER`.
@@ -140,15 +141,17 @@ Save and close: `CTRL + O`, `ENTER`, then `CTRL + X`.
 2. **Do not edit below** the line that reads
    `# Nothing below this line needs editing to choose what gets installed.`
 
-Not sure what to pick? Turning on everything in Phase 1 gives you an updated,
-firewalled machine you can log into remotely — a sensible baseline. Phase 2 is
-entirely optional.
+Not sure what to pick? Change nothing. The defaults give you an updated,
+firewalled machine you can log into remotely, which is all most servers need.
+Come back and enable Phase 2 items later if you want them.
 
-### Opening an extra port later
+---
+
+## <span id="opening_a_port">Opening an extra port later</span>
 
 Each option opens the ports its own service needs, so you normally never touch
-the firewall yourself. If you later run something else on this machine — a game
-server, for example — open its port with:
+the firewall yourself. If you later run something else on this machine, a game
+server for example, open its port with:
 
 ```shell
 sudo bash install_scripts/manage_ufw_ports.sh open 25565/tcp "Minecraft"

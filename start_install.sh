@@ -4,18 +4,19 @@
 #
 # HOW TO USE THIS FILE
 # --------------------
-# Everything in the two arrays below is commented out on purpose. Nothing runs
-# until you say so. Read the one-line description next to each entry, delete the
-# leading "#" on the ones you want, then run:
+# Two lists below decide what gets installed. Phase 1 is switched on already and
+# gives you an updated, firewalled machine with SSH. Phase 2 is entirely off.
+# Read the one-line description next to each entry, delete the leading "#" on
+# anything else you want, add one to anything you do not, then run:
 #
-#     sudo bash install_scripts/start_install.sh
+#     sudo bash start_install.sh
 #
 # The install happens in two phases. Phase 1 updates the operating system and
 # ends with a reboot; Phase 2 installs applications on the freshly rebooted
 # system. Re-run the same command after the reboot and it continues with
 # Phase 2 automatically.
 #
-# Order matters. Keep the entries in the order given — they are arranged so
+# Order matters. Keep the entries in the order given - they are arranged so
 # each one has what it needs from the ones before it.
 #
 # If you are consuming these scripts from your own repository, you do not need
@@ -43,7 +44,7 @@ print_error() {
 # Set to 0 to skip the reboot prompt, set to 1 to ask before rebooting
 ASK_FOR_REBOOT=0
 
-# Optional Ubuntu Pro attach (off by default — it needs a subscription token).
+# Optional Ubuntu Pro attach (off by default - it needs a subscription token).
 # Turn it on either way:
 #   sudo env PRO_TOKEN=<YOUR_PRO_TOKEN> ./start_install.sh   (unattended)
 #   set INSTALL_UBUNTU_PRO=1 below                           (prompts for the token)
@@ -80,9 +81,9 @@ while [[ $# -gt 0 ]]; do
             echo "  -h, --help      Show this help message"
             echo ""
             echo "Configuration:"
-            echo "  Uncomment the scripts you want in the PHASE1_SCRIPTS and"
-            echo "  PHASE2_SCRIPTS arrays inside this file. Everything is"
-            echo "  commented out until you choose."
+            echo "  Choose what runs in the PHASE1_SCRIPTS and PHASE2_SCRIPTS"
+            echo "  arrays inside this file. Phase 1 is enabled by default;"
+            echo "  Phase 2 is commented out until you choose."
             echo ""
             echo "Optional Ubuntu Pro:"
             echo "  Runs add_ubuntu_pro.sh when PRO_TOKEN is set, or INSTALL_UBUNTU_PRO=1 in this file"
@@ -127,7 +128,7 @@ resolve_script() {
     fi
 }
 
-# Set common parameters — resolve the real invoking user, not root's own $HOME
+# Set common parameters - resolve the real invoking user, not root's own $HOME
 if [ -n "$SUDO_USER" ]; then
     USER_PARAM="$SUDO_USER"
 else
@@ -136,7 +137,7 @@ fi
 
 # =============================================================================
 # TWO-PHASE INSTALL
-# Phase 1 upgrades the OS (new systemd/kernel) and ends with a reboot —
+# Phase 1 upgrades the OS (new systemd/kernel) and ends with a reboot -
 # continuing to install on a half-upgraded systemd is how package
 # post-install scripts start failing with "Could not execute systemctl".
 # Phase 2 (everything else) runs on the clean, fully upgraded system.
@@ -147,14 +148,14 @@ STATE_DIR="/var/lib/linuxbasics"
 PHASE1_MARKER="$STATE_DIR/phase1.done"
 
 # -----------------------------------------------------------------------------
-# PHASE 1 — get the operating system into a clean, up-to-date state.
+# PHASE 1 - get the operating system into a clean, up-to-date state.
 # Ends with a reboot. These are on by default: they leave you with an updated,
 # firewalled machine you can log into remotely. Comment out anything you do not
 # want, and uncomment the two extras. The order is deliberate.
 # Format: "script_name" or "script_name:param1" or "script_name:param1:param2"
 # -----------------------------------------------------------------------------
 PHASE1_SCRIPTS=(
-    "set_scripts_executable.sh"        # Marks the scripts runnable — first, so everything after it can start
+    "set_scripts_executable.sh"        # Marks the scripts runnable - first, so everything after it can start
     "check_shell_syntax.sh"            # Checks every script here for typos and stops before anything is changed
     "cleanup_repositories.sh"          # Removes broken or duplicate software sources that make "apt update" fail
     "fix_dpkg_lock.sh"                 # Clears a stuck package manager ("could not get lock /var/lib/dpkg")
@@ -167,12 +168,12 @@ PHASE1_SCRIPTS=(
 )
 
 # -----------------------------------------------------------------------------
-# PHASE 2 — applications, installed on the upgraded and rebooted system.
-# All off by default — nothing here is needed for a working server. Uncomment
+# PHASE 2 - applications, installed on the upgraded and rebooted system.
+# All off by default - nothing here is needed for a working server. Uncomment
 # what you want.
 # -----------------------------------------------------------------------------
 PHASE2_SCRIPTS=(
-#    "set_scripts_executable.sh"        # Marks the scripts runnable — same two checks that opened Phase 1
+#    "set_scripts_executable.sh"        # Marks the scripts runnable - same two checks that opened Phase 1
 #    "check_shell_syntax.sh"            # Checks every script here for typos and stops before anything is changed
 #    "add_java.sh"                      # Installs Java (the JDK version matching your Ubuntu release)
 #    "add_docker.sh"                    # Installs Docker for running apps in containers
@@ -186,7 +187,7 @@ PHASE2_SCRIPTS=(
 )
 
 # reboot.sh is the one script with no array entry. It restarts the machine, and
-# this file is the only thing allowed to call it — at the end of Phase 1, and
+# this file is the only thing allowed to call it - at the end of Phase 1, and
 # after a successful Phase 2 unless you set ASK_FOR_REBOOT=1 and decline. Adding
 # it to an array would reboot mid-run, before the scripts after it had gone.
 
@@ -196,7 +197,7 @@ PHASE2_SCRIPTS=(
 # Ubuntu Pro can also be switched on without editing the list above, by giving a
 # token on the command line or setting INSTALL_UBUNTU_PRO=1 at the top. It has to
 # run before updates_install_and_clean.sh, because the extra package sources it
-# unlocks must exist before the upgrade goes looking for them — so it is inserted
+# unlocks must exist before the upgrade goes looking for them - so it is inserted
 # in front of that entry rather than appended at the end.
 if [ -n "$PRO_TOKEN" ] || [ "$INSTALL_UBUNTU_PRO" -eq 1 ]; then
     # Export so the child script inherits the token when it was set in this file
@@ -226,11 +227,11 @@ fi
 if [ -f "$PHASE1_MARKER" ]; then
     CURRENT_PHASE=2
     SCRIPT_PARAMS=("${PHASE2_SCRIPTS[@]}")
-    echo -e "\e[34m🚀 Phase 1 already completed — beginning Phase 2 (applications)...\e[0m"
+    echo -e "\e[34m🚀 Phase 1 already completed - beginning Phase 2 (applications)...\e[0m"
 else
     CURRENT_PHASE=1
     SCRIPT_PARAMS=("${PHASE1_SCRIPTS[@]}")
-    echo -e "\e[34m🚀 Beginning Phase 1 (OS preparation — ends with a reboot)...\e[0m"
+    echo -e "\e[34m🚀 Beginning Phase 1 (OS preparation - ends with a reboot)...\e[0m"
 fi
 
 # Nothing selected: stop here rather than marking the phase done and rebooting a
@@ -309,7 +310,7 @@ run_lock_fix
 
 for script_entry in "${SCRIPT_PARAMS[@]}"; do
     # Parse script entry: "script_name:param1:param2" or just "script_name".
-    # IFS parsing leaves the params empty when there is no ':' — cut would
+    # IFS parsing leaves the params empty when there is no ':' - cut would
     # echo the whole entry back, passing the script its own name as arguments
     IFS=':' read -r script_name param1 param2 _ <<< "$script_entry"
 
@@ -331,7 +332,7 @@ for script_entry in "${SCRIPT_PARAMS[@]}"; do
         RUN_CMD=(bash)
     fi
 
-    # Build the argv array with parameters (no eval — avoids word-splitting/injection issues)
+    # Build the argv array with parameters (no eval - avoids word-splitting/injection issues)
     if ! script_path=$(resolve_script "$script_name"); then
         echo -e "\e[31m❌ Failed: $script_name (script disappeared mid-run)\e[0m"
         ALL_SUCCESS=false
@@ -357,7 +358,7 @@ for script_entry in "${SCRIPT_PARAMS[@]}"; do
     echo "" # Add spacing between scripts
 done
 
-# Phase 1 success: mark it done and reboot — Phase 2 must not run on the
+# Phase 1 success: mark it done and reboot - Phase 2 must not run on the
 # not-yet-rebooted systemd/kernel from the upgrade
 if $ALL_SUCCESS && [ "$CURRENT_PHASE" -eq 1 ]; then
     mkdir -p "$STATE_DIR"
