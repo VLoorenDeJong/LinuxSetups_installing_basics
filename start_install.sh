@@ -152,11 +152,11 @@ PHASE1_MARKER="$STATE_DIR/phase1.done"
 # Format: "script_name" or "script_name:param1" or "script_name:param1:param2"
 # -----------------------------------------------------------------------------
 PHASE1_SCRIPTS=(
+#    "set_scripts_executable.sh"        # Marks the scripts runnable — first, so everything after it can start
 #    "check_shell_syntax.sh"            # Checks every script here for typos and stops before anything is changed
 #    "cleanup_repositories.sh"          # Removes broken or duplicate software sources that make "apt update" fail
 #    "fix_dpkg_lock.sh"                 # Clears a stuck package manager ("could not get lock /var/lib/dpkg")
 #    "fix_xauthority.sh"                # Silences the .Xauthority permission warning shown at login
-#    "set_scripts_executable.sh"        # Marks the scripts runnable so they can be started directly
 #    "add_ubuntu_pro.sh"                # Adds years of extra security updates (free for personal use on up to 5 machines; needs a token)
 #    "updates_install_and_clean.sh"     # Installs every pending OS update, then deletes the leftovers
 #    "add_ufw.sh"                       # Switches the firewall on and keeps SSH reachable
@@ -168,20 +168,25 @@ PHASE1_SCRIPTS=(
 # PHASE 2 — applications, installed on the upgraded and rebooted system.
 # -----------------------------------------------------------------------------
 PHASE2_SCRIPTS=(
-#    "check_shell_syntax.sh"            # Same pre-flight check, in case scripts changed since Phase 1
-#    "set_scripts_executable.sh"        # Marks the scripts runnable so they can be started directly
+#    "set_scripts_executable.sh"        # Marks the scripts runnable — same two checks that opened Phase 1
+#    "check_shell_syntax.sh"            # Checks every script here for typos and stops before anything is changed
 #    "add_java.sh"                      # Installs Java (the JDK version matching your Ubuntu release)
 #    "add_docker.sh"                    # Installs Docker for running apps in containers
-#    "add_apache_webserver.sh"          # Installs the Apache web server for hosting websites
+#    "add_apache_webserver.sh"          # Installs the Apache web server for hosting websites (opens its own ports)
 #    "add_webmin.sh"                    # Installs Webmin, a web page for administering this server
 #    "add_smb.sh"                       # Shares folders over the network so Windows and Mac can open them
 #    "add_rsync.sh"                     # Installs rsync, used for fast copying and backups
-#    "manage_ufw_ports.sh:open:8080/tcp" # Opens one firewall port — change the port and add a description
     # Keep this last, so the login banner reflects the finished system
     # (failed services, disk and memory use) rather than a half-installed one
 #    "configure_motd_services.sh"       # Replaces the login banner with disk, memory and service status
-#    "set_scripts_executable.sh"        # Marks the scripts runnable so they can be started directly
 )
+
+# manage_ufw_ports.sh is not listed above on purpose. Each script opens the ports
+# its own service needs — add_apache_webserver.sh allows 80 and 443 itself — so
+# putting a port in this list would either duplicate that or open something
+# nothing is listening on. Use it by hand when you need an extra port:
+#     sudo bash install_scripts/manage_ufw_ports.sh open 25565/tcp "Minecraft"
+#     sudo bash install_scripts/manage_ufw_ports.sh close 25565/tcp "Minecraft"
 
 # reboot.sh is the one script with no array entry. It restarts the machine, and
 # this file is the only thing allowed to call it — at the end of Phase 1, and
