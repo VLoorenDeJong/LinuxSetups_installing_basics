@@ -66,10 +66,14 @@ with the rest.
    ```
    *(Tip: type `cd Li` then press `TAB` for autocomplete)*
 
-1. Check your OS version, and compare it with the supported list above:
+1. Check your OS version:
    ```shell
    lsb_release -a
    ```
+   Look at the `Description` line. If it does not start with
+   `Ubuntu 24.04`, stop here: these scripts are only tested on that release,
+   and a different one may fail partway through an OS upgrade. There is
+   nothing to check out, everything lives on the `main` branch.
 
 1. **Pick what you want installed** → [Choosing what to install](#choosing_what_to_install),
    then come back here. Skipping this step is fine: you get an updated,
