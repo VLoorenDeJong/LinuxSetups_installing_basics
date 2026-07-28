@@ -76,13 +76,25 @@ with the rest.
    ```shell
    git branch -r
    ```
-   - A branch matching your version → check it out:
-     ```shell
-     git checkout YOUR_BRANCH_NAME
-     ```
-     *(No quotes, no `origin/`. Use `TAB` for autocomplete)*
-   - No matching branch → stay where you are. `main` is the current line, and
-     is what the supported list above refers to.
+   Branches you can check out:
+
+   ```shell
+   git checkout main
+   ```
+   The current development line. This is the only branch today, and what the
+   supported list above refers to. Use it unless one of the below matches your
+   release exactly.
+
+   ```shell
+   git checkout Ubuntu_24.04_LTS
+   ```
+   ```shell
+   git checkout Ubuntu_26.04_LTS
+   ```
+   Version branches, cut once the work on `main` settles. If `git branch -r`
+   does not list the one you want, it does not exist yet → use `main`.
+
+   *(No quotes, no `origin/`. Use `TAB` for autocomplete)*
 
 1. **Pick what you want installed** → [Choosing what to install](#choosing_what_to_install),
    then come back here. Skipping this step is fine: you get an updated,
