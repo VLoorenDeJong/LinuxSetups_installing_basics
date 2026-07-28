@@ -26,6 +26,16 @@ with the rest.
 
 ---
 
+## Contents
+
+1. [Setting up the basics](#setting_up_the_basics) — get it running
+2. [Choosing what to install](#choosing_what_to_install) — pick your options
+3. [If something goes wrong](#troubleshooting)
+4. [Connecting with SSH](#connecting_with_ssh)
+5. [Install Git](#install_git)
+
+---
+
 ## <span id="setting_up_the_basics">Setting up the basics</span>
 
 1. Log into your Linux server.
@@ -59,20 +69,9 @@ with the rest.
    lsb_release -a
    ```
 
-1. <span id="choosing_what_to_install">**Choose what to install.**</span> Open the
-   installer:
-   ```shell
-   nano start_install.sh
-   ```
-   Scroll to the two lists near the top. Every line looks like this, and the
-   `#` at the front means "skip this one":
-   ```shell
-   #    "add_smb.sh"    # Shares folders over the network so Windows and Mac can open them
-   ```
-   Delete the `#` in front of the lines you want. The text after each line says
-   what it does. Leave the order alone — later steps rely on earlier ones.
-
-   Save and close with `CTRL + O`, `ENTER`, then `CTRL + X`.
+1. **Pick what you want installed** → [Choosing what to install](#choosing_what_to_install),
+   then come back here. Skipping this leaves everything switched off and the
+   installer will simply tell you so.
 
 1. Make scripts executable:
    ```shell
@@ -92,7 +91,59 @@ with the rest.
    This time it installs the things you picked. It knows the first round is
    already done, so you cannot accidentally repeat it.
 
-### If something goes wrong
+---
+
+## <span id="choosing_what_to_install">Choosing what to install</span>
+
+Everything is switched off until you say otherwise. You do this in one file,
+`start_install.sh`, and you only ever add or remove a `#`.
+
+Open it:
+
+```shell
+nano start_install.sh
+```
+
+There are two lists. Find them by looking for these banner comments:
+
+| Look for this line | Around line | What it covers |
+|---|---|---|
+| `# PHASE 1 — get the operating system into a clean, up-to-date state.` | 150 | Updates, firewall, SSH |
+| `# PHASE 2 — applications, installed on the upgraded and rebooted system.` | 168 | Java, Docker, Apache, Webmin, file sharing, backups |
+
+In `nano` you can jump straight to a line with `CTRL + _` (underscore), then
+type the number and press `ENTER`.
+
+Every option is one line, and looks like this:
+
+```shell
+#    "add_smb.sh"                       # Shares folders over the network so Windows and Mac can open them
+```
+
+- The `#` at the **start** means "skip this". Delete it to switch the option on.
+- The text after the second `#` explains what the option does. Leave it alone.
+
+Switched on, the same line looks like this:
+
+```shell
+    "add_smb.sh"                        # Shares folders over the network so Windows and Mac can open them
+```
+
+Save and close: `CTRL + O`, `ENTER`, then `CTRL + X`.
+
+**Two rules:**
+
+1. **Do not reorder the lines.** Later options rely on earlier ones having run.
+2. **Do not edit below** the line that reads
+   `# Nothing below this line needs editing to choose what gets installed.`
+
+Not sure what to pick? Turning on everything in Phase 1 gives you an updated,
+firewalled machine you can log into remotely — a sensible baseline. Phase 2 is
+entirely optional.
+
+---
+
+## <span id="troubleshooting">If something goes wrong</span>
 
 An installer step can fail while the system is still busy finishing an update.
 You will usually see `Could not execute systemctl` or a failed `ssh.service`
@@ -114,7 +165,7 @@ machine for no reason. Go back to [Choosing what to install](#choosing_what_to_i
 
 ---
 
-## Connecting with SSH
+## <span id="connecting_with_ssh">Connecting with SSH</span>
 
 Download an SSH client → [MobaXterm (recommended)](https://mobaxterm.mobatek.net/download.html)
 

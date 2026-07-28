@@ -157,27 +157,7 @@ PHASE1_SCRIPTS=(
 #    "fix_dpkg_lock.sh"                 # Clears a stuck package manager ("could not get lock /var/lib/dpkg")
 #    "fix_xauthority.sh"                # Silences the .Xauthority permission warning shown at login
 #    "set_scripts_executable.sh"        # Marks the scripts runnable so they can be started directly
-#    "add_ubuntu_pro.sh"                # Attaches an Ubuntu Pro subscription for years of extra security updates (free for personal use on up to 5 machines; needs a token)
-)
-
-# add_ubuntu_pro.sh also switches itself on without uncommenting the line above,
-# whenever a token is supplied or INSTALL_UBUNTU_PRO=1 is set at the top of this
-# file. Attached before the upgrade, so the ESM package sources it unlocks
-# are already in place when updates_install_and_clean.sh runs in the same pass.
-# Free for personal use on up to 5 machines; gives security patches for years
-# longer than the standard support window.
-if [ -n "$PRO_TOKEN" ] || [ "$INSTALL_UBUNTU_PRO" -eq 1 ]; then
-    # Export so the child script inherits the token when it was set in this file
-    export PRO_TOKEN
-    # Only add it if the line above is still commented out, or enabling both
-    # would attach the subscription twice in one run
-    case " ${PHASE1_SCRIPTS[*]} " in
-        *" add_ubuntu_pro.sh "*) ;;
-        *) PHASE1_SCRIPTS+=("add_ubuntu_pro.sh") ;;
-    esac
-fi
-
-PHASE1_SCRIPTS+=(
+#    "add_ubuntu_pro.sh"                # Adds years of extra security updates (free for personal use on up to 5 machines; needs a token)
 #    "updates_install_and_clean.sh"     # Installs every pending OS update, then deletes the leftovers
 #    "add_ufw.sh"                       # Switches the firewall on and keeps SSH reachable
 #    "add_ssh.sh"                       # Installs the SSH server so you can log in remotely
@@ -207,6 +187,39 @@ PHASE2_SCRIPTS=(
 # this file is the only thing allowed to call it — at the end of Phase 1, and
 # after a successful Phase 2 unless you set ASK_FOR_REBOOT=1 and decline. Adding
 # it to an array would reboot mid-run, before the scripts after it had gone.
+
+# Nothing below this line needs editing to choose what gets installed.
+# =============================================================================
+
+# Ubuntu Pro can also be switched on without editing the list above, by giving a
+# token on the command line or setting INSTALL_UBUNTU_PRO=1 at the top. It has to
+# run before updates_install_and_clean.sh, because the extra package sources it
+# unlocks must exist before the upgrade goes looking for them — so it is inserted
+# in front of that entry rather than appended at the end.
+if [ -n "$PRO_TOKEN" ] || [ "$INSTALL_UBUNTU_PRO" -eq 1 ]; then
+    # Export so the child script inherits the token when it was set in this file
+    export PRO_TOKEN
+    case " ${PHASE1_SCRIPTS[*]} " in
+        *" add_ubuntu_pro.sh "*)
+            # Already enabled in the list; leave it where the reader put it,
+            # otherwise the subscription would be attached twice in one run
+            ;;
+        *)
+            _phase1_with_pro=()
+            for _entry in "${PHASE1_SCRIPTS[@]}"; do
+                [ "${_entry%%:*}" = "updates_install_and_clean.sh" ] &&
+                    _phase1_with_pro+=("add_ubuntu_pro.sh")
+                _phase1_with_pro+=("$_entry")
+            done
+            case " ${_phase1_with_pro[*]} " in
+                *" add_ubuntu_pro.sh "*) ;;
+                *) _phase1_with_pro+=("add_ubuntu_pro.sh") ;;   # updates not enabled
+            esac
+            PHASE1_SCRIPTS=("${_phase1_with_pro[@]}")
+            unset _phase1_with_pro _entry
+            ;;
+    esac
+fi
 
 if [ -f "$PHASE1_MARKER" ]; then
     CURRENT_PHASE=2
