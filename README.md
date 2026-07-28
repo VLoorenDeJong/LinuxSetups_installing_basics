@@ -1,11 +1,23 @@
 ## Linux Setup Basics
 
-Automatically installs the essentials on supported Linux versions:
+Sets up a fresh Linux server for you, so you don't have to look up a dozen
+commands. You pick what you want from a list; it installs those and nothing
+else.
 
-1. Update the OS
-2. Install UFW (firewall)
-3. Install SSH
-4. Reboot (optional)
+Available to choose from:
+
+- Updating the OS and cleaning up afterwards
+- A firewall, and SSH so you can log in from another computer
+- Java, Docker, Apache (web server), Webmin (admin page in your browser)
+- Network file sharing, so Windows and Mac can open folders on this machine
+- Backups with rsync, and a login screen showing disk and memory use
+
+Everything starts switched off. You turn on what you need in one file — see
+[Choosing what to install](#choosing_what_to_install).
+
+The install happens in two rounds. The first updates the operating system and
+restarts the machine; you then run the same command again and it carries on
+with the rest.
 
 ## Supported Linux versions
 - Ubuntu 24.04.x LTS (tested up to 24.04.3)
@@ -42,22 +54,25 @@ Automatically installs the essentials on supported Linux versions:
    ```
    *(Tip: type `cd Li` then press `TAB` for autocomplete)*
 
-1. Check your OS version:
+1. Check your OS version, and compare it with the supported list above:
    ```shell
    lsb_release -a
    ```
 
-1. List available branches:
+1. <span id="choosing_what_to_install">**Choose what to install.**</span> Open the
+   installer:
    ```shell
-   git branch -r
+   nano start_install.sh
    ```
+   Scroll to the two lists near the top. Every line looks like this, and the
+   `#` at the front means "skip this one":
+   ```shell
+   #    "add_smb.sh"    # Shares folders over the network so Windows and Mac can open them
+   ```
+   Delete the `#` in front of the lines you want. The text after each line says
+   what it does. Leave the order alone — later steps rely on earlier ones.
 
-1. Switch to your version branch:
-   ```shell
-   git checkout YOUR_BRANCH_NAME
-   ```
-   *(No quotes, no `origin/`. Use `TAB` for autocomplete)*
-   Success: `Switched to a new branch 'YOUR_BRANCH_NAME'`
+   Save and close with `CTRL + O`, `ENTER`, then `CTRL + X`.
 
 1. Make scripts executable:
    ```shell
@@ -68,21 +83,34 @@ Automatically installs the essentials on supported Linux versions:
    ```shell
    sudo ./start_install.sh
    ```
-   The installer automatically handles dpkg lock issues, updates, UFW, and SSH setup.
+   It updates the operating system first, then restarts the machine.
 
-If the run fails partway — package upgrades (kernel, `openssh-server`, etc.) can leave
-`dpkg` half-configured mid-run, usually showing up as `Could not execute systemctl` or a
-failed `ssh.service` step. `fix_dpkg_lock.sh` retries the repair automatically, but some
-states only clear with a reboot:
+1. Log back in and run the exact same command again:
    ```shell
-   sudo reboot
+   cd ~/LinuxSetups_installing_basics && sudo ./start_install.sh
    ```
+   This time it installs the things you picked. It knows the first round is
+   already done, so you cannot accidentally repeat it.
 
-After reboot, log back in and run it again:
-   ```shell
-   cd ~/LinuxSetups_installing_basics && sudo chmod -R +x . && sudo ./start_install.sh
-   ```
-   Every script here is safe to rerun — steps already applied are skipped or no-op.
+### If something goes wrong
+
+An installer step can fail while the system is still busy finishing an update.
+You will usually see `Could not execute systemctl` or a failed `ssh.service`
+step. The installer tries to repair this by itself; if it keeps failing,
+restart the machine and run it again:
+
+```shell
+sudo reboot
+```
+
+```shell
+cd ~/LinuxSetups_installing_basics && sudo ./start_install.sh
+```
+
+Running it more than once is safe. Anything already installed is skipped.
+
+Nothing enabled? The installer stops and tells you so, rather than restarting a
+machine for no reason. Go back to [Choosing what to install](#choosing_what_to_install).
 
 ---
 
