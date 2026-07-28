@@ -148,24 +148,28 @@ PHASE1_MARKER="$STATE_DIR/phase1.done"
 
 # -----------------------------------------------------------------------------
 # PHASE 1 — get the operating system into a clean, up-to-date state.
-# Ends with a reboot. Uncomment what you want; the order is deliberate.
+# Ends with a reboot. These are on by default: they leave you with an updated,
+# firewalled machine you can log into remotely. Comment out anything you do not
+# want, and uncomment the two extras. The order is deliberate.
 # Format: "script_name" or "script_name:param1" or "script_name:param1:param2"
 # -----------------------------------------------------------------------------
 PHASE1_SCRIPTS=(
-#    "set_scripts_executable.sh"        # Marks the scripts runnable — first, so everything after it can start
-#    "check_shell_syntax.sh"            # Checks every script here for typos and stops before anything is changed
-#    "cleanup_repositories.sh"          # Removes broken or duplicate software sources that make "apt update" fail
-#    "fix_dpkg_lock.sh"                 # Clears a stuck package manager ("could not get lock /var/lib/dpkg")
-#    "fix_xauthority.sh"                # Silences the .Xauthority permission warning shown at login
+    "set_scripts_executable.sh"        # Marks the scripts runnable — first, so everything after it can start
+    "check_shell_syntax.sh"            # Checks every script here for typos and stops before anything is changed
+    "cleanup_repositories.sh"          # Removes broken or duplicate software sources that make "apt update" fail
+    "fix_dpkg_lock.sh"                 # Clears a stuck package manager ("could not get lock /var/lib/dpkg")
+    "fix_xauthority.sh"                # Silences the .Xauthority permission warning shown at login
 #    "add_ubuntu_pro.sh"                # Adds years of extra security updates (free for personal use on up to 5 machines; needs a token)
-#    "updates_install_and_clean.sh"     # Installs every pending OS update, then deletes the leftovers
-#    "add_ufw.sh"                       # Switches the firewall on and keeps SSH reachable
-#    "add_ssh.sh"                       # Installs the SSH server so you can log in remotely
+    "updates_install_and_clean.sh"     # Installs every pending OS update, then deletes the leftovers
+    "add_ufw.sh"                       # Switches the firewall on and keeps SSH reachable
+    "add_ssh.sh"                       # Installs the SSH server so you can log in remotely
 #    "add_bash_show_branch_name.sh"     # Shows the current git branch in your shell prompt
 )
 
 # -----------------------------------------------------------------------------
 # PHASE 2 — applications, installed on the upgraded and rebooted system.
+# All off by default — nothing here is needed for a working server. Uncomment
+# what you want.
 # -----------------------------------------------------------------------------
 PHASE2_SCRIPTS=(
 #    "set_scripts_executable.sh"        # Marks the scripts runnable — same two checks that opened Phase 1

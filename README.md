@@ -12,7 +12,9 @@ Available to choose from:
 - Network file sharing, so Windows and Mac can open folders on this machine
 - Backups with rsync, and a login screen showing disk and memory use
 
-Everything starts switched off. You turn on what you need in one file — see
+Out of the box it does the sensible minimum: updates the machine, switches on
+the firewall, and sets up SSH so you can log in remotely. Everything else is
+switched off until you ask for it — see
 [Choosing what to install](#choosing_what_to_install).
 
 The install happens in two rounds. The first updates the operating system and
@@ -70,8 +72,8 @@ with the rest.
    ```
 
 1. **Pick what you want installed** → [Choosing what to install](#choosing_what_to_install),
-   then come back here. Skipping this leaves everything switched off and the
-   installer will simply tell you so.
+   then come back here. Skipping this step is fine — you get an updated,
+   firewalled machine with SSH, and nothing else.
 
 1. Make scripts executable:
    ```shell
@@ -95,8 +97,9 @@ with the rest.
 
 ## <span id="choosing_what_to_install">Choosing what to install</span>
 
-Everything is switched off until you say otherwise. You do this in one file,
-`start_install.sh`, and you only ever add or remove a `#`.
+Phase 1 is on by default and gives you a working, secured machine. Phase 2 is
+entirely off. You change either in one file, `start_install.sh`, and you only
+ever add or remove a `#`.
 
 Open it:
 
@@ -109,7 +112,7 @@ There are two lists. Find them by looking for these banner comments:
 | Look for this line | Around line | What it covers |
 |---|---|---|
 | `# PHASE 1 — get the operating system into a clean, up-to-date state.` | 150 | Updates, firewall, SSH |
-| `# PHASE 2 — applications, installed on the upgraded and rebooted system.` | 168 | Java, Docker, Apache, Webmin, file sharing, backups |
+| `# PHASE 2 — applications, installed on the upgraded and rebooted system.` | 170 | Java, Docker, Apache, Webmin, file sharing, backups |
 
 In `nano` you can jump straight to a line with `CTRL + _` (underscore), then
 type the number and press `ENTER`.
