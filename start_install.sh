@@ -181,13 +181,6 @@ PHASE2_SCRIPTS=(
 #    "configure_motd_services.sh"       # Replaces the login banner with disk, memory and service status
 )
 
-# manage_ufw_ports.sh is not listed above on purpose. Each script opens the ports
-# its own service needs — add_apache_webserver.sh allows 80 and 443 itself — so
-# putting a port in this list would either duplicate that or open something
-# nothing is listening on. Use it by hand when you need an extra port:
-#     sudo bash install_scripts/manage_ufw_ports.sh open 25565/tcp "Minecraft"
-#     sudo bash install_scripts/manage_ufw_ports.sh close 25565/tcp "Minecraft"
-
 # reboot.sh is the one script with no array entry. It restarts the machine, and
 # this file is the only thing allowed to call it — at the end of Phase 1, and
 # after a successful Phase 2 unless you set ASK_FOR_REBOOT=1 and decline. Adding

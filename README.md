@@ -141,6 +141,18 @@ Not sure what to pick? Turning on everything in Phase 1 gives you an updated,
 firewalled machine you can log into remotely — a sensible baseline. Phase 2 is
 entirely optional.
 
+### Opening an extra port later
+
+Each option opens the ports its own service needs, so you normally never touch
+the firewall yourself. If you later run something else on this machine — a game
+server, for example — open its port with:
+
+```shell
+sudo bash install_scripts/manage_ufw_ports.sh open 25565/tcp "Minecraft"
+```
+
+Replace `close` for `open` to shut it again.
+
 ---
 
 ## <span id="troubleshooting">If something goes wrong</span>
