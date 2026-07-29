@@ -21,7 +21,8 @@ restarts the machine; you then run the same command again and it carries on
 with the rest.
 
 ## Supported Linux versions
-- Ubuntu 24.04.x LTS (tested up to 24.04.3)
+- Ubuntu 24.04.x LTS (tested up to 24.04.3) → branch `Ubuntu_24.04_LTS`
+- Ubuntu 26.04 LTS (untested, in progress) → branch `Ubuntu_26.04_LTS`
 
 > ℹ️ This repo can also be consumed as a submodule (shared "basics layer") by other setup repos. Fixes to these scripts belong here.
 
@@ -81,18 +82,23 @@ with the rest.
    ```shell
    git checkout main
    ```
-   The current development line. This is the only branch today, and what the
-   supported list above refers to. Use it unless one of the below matches your
-   release exactly.
+   The current development line. Use it only if no version branch below
+   matches your release.
 
    ```shell
    git checkout Ubuntu_24.04_LTS
    ```
+   Tested on 24.04.x, up to 24.04.3. Use this one if `lsb_release -a`
+   said `Ubuntu 24.04`.
+
    ```shell
    git checkout Ubuntu_26.04_LTS
    ```
-   Version branches, cut once the work on `main` settles. If `git branch -r`
-   does not list the one you want, it does not exist yet → use `main`.
+   Cut for 26.04 but not yet tested on it. Expect to hit problems, and
+   report them.
+
+   If `git branch -r` does not list the one you want, it does not exist
+   yet → use `main`.
 
    *(No quotes, no `origin/`. Use `TAB` for autocomplete)*
 
