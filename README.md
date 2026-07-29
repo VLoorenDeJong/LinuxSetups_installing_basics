@@ -22,7 +22,8 @@ with the rest.
 
 ## Supported Linux versions
 - Ubuntu 24.04.x LTS (tested up to 24.04.3) → branch `Ubuntu_24.04_LTS`
-- Ubuntu 26.04 LTS (untested, in progress) → branch `Ubuntu_26.04_LTS`
+- 🚧 **WIP** Ubuntu 26.04 LTS → branch `Ubuntu_26.04_LTS`. Cut from the 24.04
+  scripts and not yet run on 26.04. Do not use it on a machine you care about.
 
 > ℹ️ This repo can also be consumed as a submodule (shared "basics layer") by other setup repos. Fixes to these scripts belong here.
 
@@ -94,8 +95,9 @@ with the rest.
    ```shell
    git checkout Ubuntu_26.04_LTS
    ```
-   Cut for 26.04 but not yet tested on it. Expect to hit problems, and
-   report them.
+   🚧 **WIP.** Cut for 26.04 but not yet run on it. Still the 24.04 scripts,
+   so expect to hit problems, and report them. Do not use it on a machine
+   you care about.
 
    If `git branch -r` does not list the one you want, it does not exist
    yet → use `main`.
