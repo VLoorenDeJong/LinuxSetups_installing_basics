@@ -164,6 +164,7 @@ PHASE1_SCRIPTS=(
     "updates_install_and_clean.sh"     # Installs every pending OS update, then deletes the leftovers
     "add_ufw.sh"                       # Switches the firewall on and keeps SSH reachable
     "add_ssh.sh"                       # Installs the SSH server so you can log in remotely
+#    "add_hostname.sh"                 # Names this machine and makes the name survive a reboot (asks, or pass it: add_hostname.sh:myname)
 #    "add_bash_show_branch_name.sh"     # Shows the current git branch in your shell prompt
 )
 
@@ -180,6 +181,7 @@ PHASE2_SCRIPTS=(
 #    "add_apache_webserver.sh"          # Installs the Apache web server for hosting websites (opens its own ports)
 #    "add_php.sh"                       # Installs PHP and connects it to Apache - keep it below Apache, it needs it
 #    "add_dotnet.sh"                    # Installs .NET for running published C# web apps (set INSTALL_DOTNET_SDK=1 for the SDK)
+#    "add_certbot.sh"                   # Installs Certbot for free HTTPS certificates (installs only, you request the certs yourself)
 #    "add_webmin.sh"                    # Installs Webmin, a web page for administering this server
 #    "add_smb.sh"                       # Shares folders over the network so Windows and Mac can open them
 #    "add_rsync.sh"                     # Installs rsync, used for fast copying and backups
