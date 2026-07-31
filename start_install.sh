@@ -178,6 +178,8 @@ PHASE2_SCRIPTS=(
 #    "add_java.sh"                      # Installs Java (the JDK version matching your Ubuntu release)
 #    "add_docker.sh"                    # Installs Docker for running apps in containers
 #    "add_apache_webserver.sh"          # Installs the Apache web server for hosting websites (opens its own ports)
+#    "add_php.sh"                       # Installs PHP and connects it to Apache - keep it below Apache, it needs it
+#    "add_dotnet.sh"                    # Installs .NET for running published C# web apps (set INSTALL_DOTNET_SDK=1 for the SDK)
 #    "add_webmin.sh"                    # Installs Webmin, a web page for administering this server
 #    "add_smb.sh"                       # Shares folders over the network so Windows and Mac can open them
 #    "add_rsync.sh"                     # Installs rsync, used for fast copying and backups
