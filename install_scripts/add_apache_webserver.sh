@@ -139,13 +139,29 @@ fi
 echo -e "\e[34m🛡️ Configuring firewall...\e[0m"
 
 # Allow Apache through firewall if UFW is active
+#
+# 'Apache Full' (80 and 443), never 'Apache' (80 only). With only port 80 open,
+# certbot's HTTP-01 challenge still succeeds and certificates are issued, and
+# then every site is unreachable over HTTPS. The symptom appears only once the
+# certificates work, which is the worst moment to start suspecting the firewall.
+#
+# The old check matched the word "Apache", so once the port-80-only rule existed
+# it reported success on every later run and 443 was never opened. The check
+# below looks for 443 specifically, which is the thing that matters.
 if command -v ufw &> /dev/null && sudo ufw status | grep -q "Status: active"; then
-    if sudo ufw status numbered | grep -qE "^.*ALLOW.*(Apache|80|443)"; then
-        echo -e "\e[32m✅ Apache is already allowed through UFW.\e[0m"
+    if sudo ufw status | grep -qE "Apache Full|443"; then
+        echo -e "\e[32m✅ Apache is already allowed through UFW on 80 and 443.\e[0m"
     else
-        echo -e "\e[34m🔥 Allowing Apache through UFW...\e[0m"
-        sudo ufw allow 'Apache' >/dev/null 2>&1
-        echo -e "\e[32m✅ Apache allowed through firewall.\e[0m"
+        echo -e "\e[34m🔥 Allowing Apache Full (80 and 443) through UFW...\e[0m"
+        if sudo ufw allow 'Apache Full' >/dev/null 2>&1; then
+            echo -e "\e[32m✅ Apache allowed through firewall on 80 and 443.\e[0m"
+        else
+            # The app profile only exists once apache2 is installed. Fall back
+            # to the ports themselves rather than leaving HTTPS closed.
+            sudo ufw allow 80/tcp >/dev/null 2>&1
+            sudo ufw allow 443/tcp >/dev/null 2>&1
+            echo -e "\e[33m⚠️ 'Apache Full' profile not found, allowed 80/tcp and 443/tcp directly.\e[0m"
+        fi
     fi
 else
     echo -e "\e[33m⚠️ UFW not active or not installed. Skipping firewall configuration.\e[0m"
