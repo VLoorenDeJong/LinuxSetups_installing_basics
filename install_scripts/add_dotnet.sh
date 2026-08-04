@@ -208,12 +208,46 @@ REQUIRED_DOTNET_VERSION=8
 
 INSTALL_DOTNET_SDK="${INSTALL_DOTNET_SDK:-0}"
 
-# .NET LTS releases are the EVEN-numbered majors (6, 8, 10, ...); odd majors
-# are STS with a much shorter support window. Unlike Java there is no vendor
-# API to query for this, but the cadence is fixed policy, not a guess.
+# Which majors are LTS, and are still supported.
+#
+# Authoritative list from Microsoft's own release metadata when reachable, the
+# same shape add_java.sh uses for the Adoptium API. Falling back to the cadence
+# formula (even majors are LTS) when offline, so the script keeps working
+# without network access.
+#
+# The formula alone was not enough: it says .NET 6 is LTS, which is true and
+# useless, because support ended in November 2024. The API carries a
+# support-phase per channel, so an end-of-life LTS can be left off the list
+# instead of being offered as a sensible choice.
+DOTNET_RELEASES_URL="https://builds.dotnet.microsoft.com/dotnet/release-metadata/releases-index.json"
+DOTNET_LTS_LIST=""
+
+load_dotnet_lts_list() {
+    [ -n "$DOTNET_LTS_LIST" ] && return 0
+    command -v curl >/dev/null 2>&1 || return 1
+
+    # Each channel is an object holding channel-version, release-type and
+    # support-phase. Flatten to one line, split per channel, and keep the major
+    # of any channel that is lts and not eol.
+    DOTNET_LTS_LIST="$(curl -fsSL --max-time 10 "$DOTNET_RELEASES_URL" 2>/dev/null \
+        | tr -d ' \n\r\t' \
+        | tr '{' '\n' \
+        | grep '"release-type":"lts"' \
+        | grep -v '"support-phase":"eol"' \
+        | grep -oE '"channel-version":"[0-9]+' \
+        | grep -oE '[0-9]+$')"
+
+    [ -n "$DOTNET_LTS_LIST" ]
+}
+
 is_lts_version() {
     local v="$1"
-    [ $(( v % 2 )) -eq 0 ]
+    if load_dotnet_lts_list; then
+        printf '%s\n' "$DOTNET_LTS_LIST" | grep -qx "$v"
+    else
+        # Offline fallback: LTS releases are the even-numbered majors.
+        [ $(( v % 2 )) -eq 0 ]
+    fi
 }
 
 # Enumerate every aspnetcore-runtime-N.0 package apt offers and pick the
