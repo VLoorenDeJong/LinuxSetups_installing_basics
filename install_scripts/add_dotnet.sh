@@ -344,7 +344,22 @@ for v in "${WANTED[@]}"; do
         print_warning "Use whole numbers: DOTNET_VERSIONS=8,10"
         exit 1
     fi
-    if dotnet --list-runtimes 2>/dev/null | grep -q "^Microsoft.AspNetCore.App ${v}\."; then
+    # The SDK is a separate package, so "the runtime is here" does not answer the
+    # question when the SDK was asked for. Checking only runtimes meant a box
+    # with runtime 10 already present reported itself satisfied and never
+    # installed the SDK it had been told to install.
+    have_runtime=false
+    have_sdk=false
+    dotnet --list-runtimes 2>/dev/null | grep -q "^Microsoft.AspNetCore.App ${v}\." && have_runtime=true
+    dotnet --list-sdks     2>/dev/null | grep -q "^${v}\."                          && have_sdk=true
+
+    if [ "$INSTALL_DOTNET_SDK" = "1" ]; then
+        if $have_sdk; then
+            print_success ".NET SDK $v is already installed"
+        else
+            MISSING+=("$v")
+        fi
+    elif $have_runtime; then
         print_success "ASP.NET Core runtime $v is already installed"
     else
         MISSING+=("$v")
@@ -463,8 +478,12 @@ fi
 # that need an older major cannot start.
 STILL_MISSING=()
 for v in ${WANTED+"${WANTED[@]}"}; do
-    dotnet --list-runtimes 2>/dev/null | grep -q "^Microsoft.AspNetCore.App ${v}\." \
-        || STILL_MISSING+=("$v")
+    if [ "$INSTALL_DOTNET_SDK" = "1" ]; then
+        dotnet --list-sdks 2>/dev/null | grep -q "^${v}\." || STILL_MISSING+=("$v")
+    else
+        dotnet --list-runtimes 2>/dev/null | grep -q "^Microsoft.AspNetCore.App ${v}\." \
+            || STILL_MISSING+=("$v")
+    fi
 done
 if [ ${#STILL_MISSING[@]} -gt 0 ]; then
     print_error "Asked for but not installed: ${STILL_MISSING[*]}"
