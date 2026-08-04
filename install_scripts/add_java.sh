@@ -246,8 +246,69 @@ get_latest_openjdk() {
     fi
 }
 
-# Minecraft 26.1+ requires Java 25 — treat that as the minimum acceptable version
-REQUIRED_JAVA_VERSION=25
+# The FLOOR, not the target. get_latest_openjdk() above already finds the newest
+# LTS apt offers; this is the point below which that answer is rejected and the
+# Adoptium repository is added instead.
+#
+# 25 because Minecraft 26.1+ needs it, and three branches install Java for
+# exactly that reason. It stays the default for them.
+#
+# It is a poor default for anything else: Ubuntu 24.04's newest openjdk LTS is
+# 21, so a machine that just needs a working Java ends up with a third-party
+# repository it never asked for. Such a caller overrides it:
+#
+#   sudo env REQUIRED_JAVA_VERSION=17 ./add_java.sh
+#
+# or names the version outright, which is usually what it meant:
+#
+#   sudo ./add_java.sh 21 --headless
+REQUIRED_JAVA_VERSION="${REQUIRED_JAVA_VERSION:-25}"
+
+# -----------------------------------------------------------------------------
+# Asking for one particular major, instead of "the newest that will do"
+#
+# The default behaviour above is right for a machine that just needs a modern
+# Java: take the newest LTS the distro offers, and reach for Adoptium if that is
+# not new enough.
+#
+# It is wrong for software that supports a fixed set of versions. Jenkins runs
+# on 17 and 21 and refuses anything else, so "newest" installs a JVM it will not
+# start on, and installing it anyway is worse than doing nothing: /usr/bin/java
+# then points at the wrong one.
+#
+#   add_java.sh 21                 exactly Java 21, the full JDK
+#   add_java.sh 21 --headless      exactly Java 21, JRE only, no GUI libraries
+#   add_java.sh                    unchanged: newest LTS, floor above
+#
+# --headless matters on a small board. The headless JRE skips the fonts, sound
+# and X11 libraries a server has no use for.
+# -----------------------------------------------------------------------------
+PINNED_JAVA_VERSION=""
+JAVA_HEADLESS=0
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --headless) JAVA_HEADLESS=1; shift ;;
+        -h|--help)
+            echo "Usage: $0 [<major>] [--headless]"
+            echo "  <major>      install exactly this major, e.g. 17 or 21"
+            echo "  --headless   the JRE only, without the desktop libraries"
+            echo "  no argument  the newest LTS available, at least $REQUIRED_JAVA_VERSION"
+            exit 0 ;;
+        [0-9]*)     PINNED_JAVA_VERSION="$1"; shift ;;
+        *)
+            print_error "Unknown argument: $1"
+            print_warning "Usage: $0 [<major>] [--headless]"
+            exit 1 ;;
+    esac
+done
+
+# A pinned version means exactly that version, so the floor no longer applies:
+# asking for 17 and being given 25 because 17 is "too old" would defeat the
+# entire point of asking.
+if [ -n "$PINNED_JAVA_VERSION" ]; then
+    REQUIRED_JAVA_VERSION="$PINNED_JAVA_VERSION"
+fi
 
 # Function to get the major version of the currently installed Java
 get_installed_java_major() {
@@ -265,10 +326,21 @@ NEED_INSTALL=true
 INSTALLED_MAJOR=""
 if check_java_installation; then
     INSTALLED_MAJOR=$(get_installed_java_major)
-    if [ -n "$INSTALLED_MAJOR" ] && [ "$INSTALLED_MAJOR" -ge "$REQUIRED_JAVA_VERSION" ] 2>/dev/null; then
+    if [ -n "$PINNED_JAVA_VERSION" ]; then
+        # An exact major was asked for, so "newer" does not satisfy it. Checked
+        # against the packages present rather than against `java -version`,
+        # because that reports whichever one won the alternatives link and says
+        # nothing about the others being installed alongside it.
+        if dpkg -l 2>/dev/null | grep -qE "^ii +(openjdk-${PINNED_JAVA_VERSION}-|temurin-${PINNED_JAVA_VERSION}-)"; then
+            print_success "Java $PINNED_JAVA_VERSION is already installed"
+            NEED_INSTALL=false
+        else
+            print_status "Java $INSTALLED_MAJOR is present, but $PINNED_JAVA_VERSION was asked for — installing it alongside"
+        fi
+    elif [ -n "$INSTALLED_MAJOR" ] && [ "$INSTALLED_MAJOR" -ge "$REQUIRED_JAVA_VERSION" ] 2>/dev/null; then
         NEED_INSTALL=false
     else
-        print_warning "Installed Java $INSTALLED_MAJOR is older than Java $REQUIRED_JAVA_VERSION (required by Minecraft 26.1+) — upgrading"
+        print_warning "Installed Java $INSTALLED_MAJOR is older than Java $REQUIRED_JAVA_VERSION — upgrading"
     fi
 fi
 
@@ -284,8 +356,12 @@ if $NEED_INSTALL; then
         exit 1
     fi
     
-    # Get the latest available OpenJDK LTS version
-    JAVA_VERSION=$(get_latest_openjdk)
+    # Pinned wins over enumeration: the caller already knows which one it needs.
+    if [ -n "$PINNED_JAVA_VERSION" ]; then
+        JAVA_VERSION="$PINNED_JAVA_VERSION"
+    else
+        JAVA_VERSION=$(get_latest_openjdk)
+    fi
 
     # If the distro can't offer the required Java version, add the Adoptium
     # (Temurin) repository — it serves every Debian-family distro identically,
@@ -305,8 +381,13 @@ if $NEED_INSTALL; then
             print_error "Failed to update package lists after adding the Adoptium repository"
             exit 1
         fi
+        # Adoptium has no headless split, so a pinned headless request falls
+        # back to the full JDK here rather than failing on a package that does
+        # not exist.
         JAVA_PACKAGE="temurin-${REQUIRED_JAVA_VERSION}-jdk"
         JAVA_VERSION="$REQUIRED_JAVA_VERSION"
+    elif [ "$JAVA_HEADLESS" = "1" ]; then
+        JAVA_PACKAGE="openjdk-${JAVA_VERSION}-jre-headless"
     else
         JAVA_PACKAGE="openjdk-${JAVA_VERSION}-jdk"
     fi
