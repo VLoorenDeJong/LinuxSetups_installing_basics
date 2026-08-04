@@ -123,20 +123,80 @@ find_missing() {
     [ ${#MISSING[@]} -eq 0 ]
 }
 
+# A run of asterisks of RANDOM length, not one per character.
+#
+# htpasswd's own prompt echoes nothing at all, which is safest and reads as a
+# frozen terminal: people retype, or press Enter twice, or give up. Showing
+# something proves the input arrived.
+#
+# The length is random on purpose. One asterisk per character is a free hint to
+# anyone looking over your shoulder or at a recording, and password length is
+# most of what a guesser wants to know first.
+show_masked() {
+    local n=$(( (RANDOM % 9) + 8 )) i out=""
+    for (( i = 0; i < n; i++ )); do out="${out}*"; done
+    printf '%s\n' "$out"
+}
+
+# Reads the password here rather than letting htpasswd prompt, which is what
+# makes the masking possible. The trade: it lives in a shell variable inside a
+# root process for a moment.
+#
+# It is never an argument, so it is not in `ps`. It is never in the history. It
+# reaches htpasswd through a pipe with -i, and is unset immediately after.
+read_password() {
+    local user="$1" p1 p2
+
+    while :; do
+        printf "   Password for %s: " "$user" > /dev/tty
+        IFS= read -rs p1 < /dev/tty || return 1
+        show_masked > /dev/tty
+
+        if [ -z "$p1" ]; then
+            printf "   \033[33mEmpty. An empty password locks the account rather than opening it.\033[0m\n" > /dev/tty
+            continue
+        fi
+
+        printf "   Again: " > /dev/tty
+        IFS= read -rs p2 < /dev/tty || return 1
+        show_masked > /dev/tty
+
+        if [ "$p1" = "$p2" ]; then
+            PASSWORD="$p1"
+            unset p1 p2
+            return 0
+        fi
+        printf "   \033[33mThey do not match. Try again.\033[0m\n" > /dev/tty
+    done
+}
+
 add_one() {
-    local user="$1" dir
+    local user="$1" dir rc
     dir="$(dirname "$USER_FILE")"
     [ -d "$dir" ] || mkdir -p "$dir"
 
+    PASSWORD=""
+    read_password "$user" || { unset PASSWORD; return 1; }
+
+    # -B is bcrypt. htpasswd still defaults to MD5 for compatibility with
+    # httpd 2.2, which nothing here runs.
+    #
+    # -c CREATES AND TRUNCATES. It belongs on the first account and nowhere
+    # else: used a second time it silently throws away everyone added before.
     if [ ! -f "$USER_FILE" ]; then
-        # -c CREATES AND TRUNCATES. It belongs on the first account and nowhere
-        # else: used a second time it silently throws away everyone added before.
-        htpasswd -c "$USER_FILE" "$user" < /dev/tty || return 1
-        chmod 640 "$USER_FILE"
-        chown root:www-data "$USER_FILE" 2>/dev/null || chmod 644 "$USER_FILE"
+        printf '%s' "$PASSWORD" | htpasswd -i -B -c "$USER_FILE" "$user" >/dev/null 2>&1
+        rc=$?
+        if [ $rc -eq 0 ]; then
+            chmod 640 "$USER_FILE"
+            chown root:www-data "$USER_FILE" 2>/dev/null || chmod 644 "$USER_FILE"
+        fi
     else
-        htpasswd "$USER_FILE" "$user" < /dev/tty || return 1
+        printf '%s' "$PASSWORD" | htpasswd -i -B "$USER_FILE" "$user" >/dev/null 2>&1
+        rc=$?
     fi
+
+    unset PASSWORD
+    return $rc
 }
 
 print_header "Login accounts"
