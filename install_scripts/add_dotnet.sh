@@ -252,34 +252,122 @@ get_installed_aspnet_major() {
         | sort -n | tail -1
 }
 
-# --- Is a new enough runtime already installed? ------------------------------
-NEED_INSTALL=true
-INSTALLED_MAJOR="$(get_installed_aspnet_major)"
-if [ -n "$INSTALLED_MAJOR" ]; then
-    if [ "$INSTALLED_MAJOR" -ge "$REQUIRED_DOTNET_VERSION" ] 2>/dev/null; then
-        print_success "ASP.NET Core runtime $INSTALLED_MAJOR is already installed"
-        NEED_INSTALL=false
-    else
-        print_warning "Installed ASP.NET Core runtime $INSTALLED_MAJOR is older than $REQUIRED_DOTNET_VERSION (end-of-life) — upgrading"
+# -----------------------------------------------------------------------------
+# WHICH MAJOR VERSIONS, AND WHY THAT IS A QUESTION
+#
+# .NET does not roll forward across a major version. An application published
+# for net8.0 on a machine that has only runtime 10 does not start, and says so
+# in a way that is easy to misread:
+#
+#   The framework 'Microsoft.AspNetCore.App', version '8.0.0' was not found
+#
+# Installing "the newest" is therefore wrong whenever the applications are older
+# than the newest, which on a server is most of the time. Majors install side by
+# side, so the right answer is usually "the one my applications target", and
+# sometimes several.
+#
+# DOTNET_VERSIONS answers it without a prompt:
+#
+#   sudo env DOTNET_VERSIONS=8 ./add_dotnet.sh
+#   sudo env DOTNET_VERSIONS=8,10 ./add_dotnet.sh
+#
+# Unset and with a terminal, it asks. Unset with no terminal, it keeps the old
+# behaviour and takes the newest LTS, because an unattended run must not hang.
+# -----------------------------------------------------------------------------
+choose_dotnet_versions() {
+    local available=() v answer
+    while read -r v; do
+        [ -n "$v" ] || continue
+        is_lts_version "$v" && [ "$v" -ge "$REQUIRED_DOTNET_VERSION" ] 2>/dev/null && available+=("$v")
+    done < <(apt-cache pkgnames aspnetcore-runtime- 2>/dev/null \
+        | grep -E '^aspnetcore-runtime-[0-9]+\.[0-9]+$' \
+        | sed -E 's/^aspnetcore-runtime-([0-9]+)\..*$/\1/' | sort -un)
+
+    # Nothing to choose from means the distro has no supported LTS at all. The
+    # Microsoft repository below fixes that, so fall back to the floor.
+    if [ ${#available[@]} -eq 0 ]; then
+        echo "$REQUIRED_DOTNET_VERSION"
+        return
     fi
+
+    if [ ! -r /dev/tty ]; then
+        get_latest_dotnet_lts
+        return
+    fi
+
+    {
+        echo ""
+        echo -e "\e[36m=== .NET version ===\e[0m"
+        echo "Applications only run on the major version they were built for."
+        echo "Majors install side by side, so several is fine."
+        echo ""
+        for v in "${available[@]}"; do
+            printf "   %s  (LTS)\n" "$v"
+        done
+        echo ""
+        printf "\e[34mWhich do you need? Comma separated, Enter for %s: \e[0m" "${available[-1]}"
+    } >&2
+
+    read -r answer < /dev/tty || answer=""
+    [ -z "$(echo "$answer" | xargs)" ] && answer="${available[-1]}"
+    echo "$answer" | tr ',' ' ' | xargs
+}
+
+# --- Which majors do we want, and which are already here? --------------------
+check_and_fix_dpkg_lock
+
+if ! show_progress "📦 Updating package lists" "sudo apt-get update -qq --fix-missing >/dev/null 2>&1" 2 180; then
+    print_error "Failed to update package lists"
+    exit 1
 fi
 
-if $NEED_INSTALL; then
-    print_status "Preparing to install .NET..."
+if [ -n "${DOTNET_VERSIONS:-}" ]; then
+    read -r -a WANTED <<< "$(echo "$DOTNET_VERSIONS" | tr ',' ' ' | xargs)"
+else
+    read -r -a WANTED <<< "$(choose_dotnet_versions)"
+fi
 
-    check_and_fix_dpkg_lock
+if [ ${#WANTED[@]} -eq 0 ]; then
+    print_error "No .NET version chosen, so there is nothing to install."
+    print_warning "Pass one explicitly: sudo env DOTNET_VERSIONS=8 $0"
+    exit 1
+fi
 
-    if ! show_progress "📦 Updating package lists" "sudo apt-get update -qq --fix-missing >/dev/null 2>&1" 2 180; then
-        print_error "Failed to update package lists"
+# Checked per major rather than "is anything new enough installed". The old
+# check passed as soon as any runtime at or above the floor existed, so a
+# machine with only 10 looked satisfied while its net8.0 applications could not
+# start.
+MISSING=()
+for v in "${WANTED[@]}"; do
+    if ! echo "$v" | grep -qE '^[0-9]+$'; then
+        print_error "'$v' is not a major version number."
+        print_warning "Use whole numbers: DOTNET_VERSIONS=8,10"
         exit 1
     fi
+    if dotnet --list-runtimes 2>/dev/null | grep -q "^Microsoft.AspNetCore.App ${v}\."; then
+        print_success "ASP.NET Core runtime $v is already installed"
+    else
+        MISSING+=("$v")
+    fi
+done
 
-    DOTNET_VERSION="$(get_latest_dotnet_lts)"
+NEED_INSTALL=false
+[ ${#MISSING[@]} -gt 0 ] && NEED_INSTALL=true
 
-    # If the distro cannot offer a supported LTS, fall back to Microsoft's own
-    # feed — same escalation shape add_java.sh uses for Adoptium.
-    if [ -z "$DOTNET_VERSION" ] || [ "$DOTNET_VERSION" -lt "$REQUIRED_DOTNET_VERSION" ] 2>/dev/null; then
-        print_warning "aspnetcore-runtime-${REQUIRED_DOTNET_VERSION}.0 is not available from the distro — adding the packages.microsoft.com repository"
+if $NEED_INSTALL; then
+    print_status "Preparing to install .NET ${MISSING[*]}..."
+
+    # Does the distro offer every major we still need?
+    DISTRO_HAS_ALL=true
+    for v in "${MISSING[@]}"; do
+        apt-cache pkgnames aspnetcore-runtime- 2>/dev/null \
+            | grep -qx "aspnetcore-runtime-${v}.0" || DISTRO_HAS_ALL=false
+    done
+
+    # If not, fall back to Microsoft's own feed — same escalation shape
+    # add_java.sh uses for Adoptium.
+    if ! $DISTRO_HAS_ALL; then
+        print_warning "Not every requested version is in the distro — adding the packages.microsoft.com repository"
 
         . /etc/os-release
         sudo mkdir -p /etc/apt/keyrings
@@ -306,22 +394,29 @@ EOF
             exit 1
         fi
 
-        DOTNET_VERSION="$REQUIRED_DOTNET_VERSION"
     fi
 
+    # One apt transaction for every missing major. Separate calls would leave a
+    # machine with half of what was asked for if the second one failed.
+    DOTNET_PACKAGES=()
+    for v in "${MISSING[@]}"; do
+        if [ "$INSTALL_DOTNET_SDK" = "1" ]; then
+            DOTNET_PACKAGES+=("dotnet-sdk-${v}.0")
+        else
+            DOTNET_PACKAGES+=("aspnetcore-runtime-${v}.0")
+        fi
+    done
+
     if [ "$INSTALL_DOTNET_SDK" = "1" ]; then
-        DOTNET_PACKAGE="dotnet-sdk-${DOTNET_VERSION}.0"
         print_status "INSTALL_DOTNET_SDK=1 — installing the full SDK instead of the runtime"
-    else
-        DOTNET_PACKAGE="aspnetcore-runtime-${DOTNET_VERSION}.0"
     fi
 
     # Irreversible dpkg transaction: watch-only, never killed, and the apt
     # output is logged so a failure shows WHY instead of a bare exit code
     DOTNET_APT_LOG="/tmp/add_dotnet_apt.log"
-    if ! show_progress_bar_watch_only "🌐 Installing ${DOTNET_PACKAGE} (will not be interrupted)" "$DOTNET_APT_LOG" \
-        bash -c "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o APT::Status-Fd=1 --no-install-recommends '$DOTNET_PACKAGE' >$DOTNET_APT_LOG 2>&1"; then
-        print_error "Failed to install $DOTNET_PACKAGE — apt output:"
+    if ! show_progress_bar_watch_only "🌐 Installing ${DOTNET_PACKAGES[*]} (will not be interrupted)" "$DOTNET_APT_LOG" \
+        bash -c "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o APT::Status-Fd=1 --no-install-recommends ${DOTNET_PACKAGES[*]} >$DOTNET_APT_LOG 2>&1"; then
+        print_error "Failed to install ${DOTNET_PACKAGES[*]} — apt output:"
         tail -20 "$DOTNET_APT_LOG" 2>/dev/null || true
         print_error "Full log: $DOTNET_APT_LOG"
         exit 1
@@ -363,6 +458,23 @@ if [ -n "$FINAL_MAJOR" ] && [ "$FINAL_MAJOR" -lt "$REQUIRED_DOTNET_VERSION" ] 2>
     exit 1
 fi
 
+# Every major that was asked for, not just the newest one present. Checking only
+# the newest is how a machine ends up looking correct while the applications
+# that need an older major cannot start.
+STILL_MISSING=()
+for v in ${WANTED+"${WANTED[@]}"}; do
+    dotnet --list-runtimes 2>/dev/null | grep -q "^Microsoft.AspNetCore.App ${v}\." \
+        || STILL_MISSING+=("$v")
+done
+if [ ${#STILL_MISSING[@]} -gt 0 ]; then
+    print_error "Asked for but not installed: ${STILL_MISSING[*]}"
+    print_error "Applications built for those majors will not start."
+    print_error "Installed runtimes:"
+    dotnet --list-runtimes 2>/dev/null | grep '^Microsoft.AspNetCore.App' || true
+    exit 1
+fi
+
 print_success ".NET installation and configuration complete"
 echo -e "\e[34m📊 SDK/Runtime: \e[0m$(dotnet --version 2>/dev/null || echo 'runtime-only install (no SDK)')"
-echo -e "\e[34m🌐 ASP.NET Core: \e[0m$(dotnet --list-runtimes 2>/dev/null | grep '^Microsoft.AspNetCore.App' | tail -1)"
+echo -e "\e[34m🌐 ASP.NET Core: \e[0m"
+dotnet --list-runtimes 2>/dev/null | grep '^Microsoft.AspNetCore.App' | awk '{print "   " $2}' || true
