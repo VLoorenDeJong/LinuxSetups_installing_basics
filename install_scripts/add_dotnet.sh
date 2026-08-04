@@ -295,22 +295,45 @@ choose_dotnet_versions() {
         return
     fi
 
+    local last=$(( ${#available[@]} ))
     {
         echo ""
         echo -e "\e[36m=== .NET version ===\e[0m"
         echo "Applications only run on the major version they were built for."
-        echo "Majors install side by side, so several is fine."
+        echo "Majors install side by side, so picking several is fine."
         echo ""
+        local i=1
         for v in "${available[@]}"; do
-            printf "   %s  (LTS)\n" "$v"
+            printf "   %d) .NET %s  (LTS)\n" "$i" "$v"
+            i=$(( i + 1 ))
         done
         echo ""
-        printf "\e[34mWhich do you need? Comma separated, Enter for %s: \e[0m" "${available[-1]}"
+        printf "\e[34mWhich do you need? Numbers, comma separated. Enter for %d (.NET %s): \e[0m" \
+            "$last" "${available[-1]}"
     } >&2
 
     read -r answer < /dev/tty || answer=""
-    [ -z "$(echo "$answer" | xargs)" ] && answer="${available[-1]}"
-    echo "$answer" | tr ',' ' ' | xargs
+    answer="$(echo "$answer" | xargs)"
+    [ -z "$answer" ] && answer="$last"
+
+    # Numbers are what the list offers, so numbers are what is read. A value
+    # that is not a valid position but IS one of the versions on offer is taken
+    # as that version: with ".NET 8" on the screen, typing 8 is a reasonable
+    # thing to do and refusing it would be pedantry.
+    local picked=() token v
+    for token in $(echo "$answer" | tr ',' ' '); do
+        if [ "$token" -ge 1 ] 2>/dev/null && [ "$token" -le "$last" ] 2>/dev/null; then
+            picked+=("${available[$(( token - 1 ))]}")
+            continue
+        fi
+        for v in "${available[@]}"; do
+            [ "$token" = "$v" ] && picked+=("$v") && continue 2
+        done
+        printf "\e[31m❌ '%s' is not on the list. Pick 1 to %d.\e[0m\n" "$token" "$last" >&2
+        return 1
+    done
+
+    printf '%s\n' "${picked[@]}" | sort -un | tr '\n' ' ' | xargs
 }
 
 # --- Which majors do we want, and which are already here? --------------------
