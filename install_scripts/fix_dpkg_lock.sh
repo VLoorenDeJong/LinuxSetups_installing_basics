@@ -136,27 +136,59 @@ if [ "$LOCK_STATE" = "true" ]; then
 # package state. This is a watch-only wait: it reports elapsed time but never
 # signals the holder.
 echo -e "\e[34m🔄 Waiting for dpkg lock holders to finish...\e[0m"
-wait_timeout=120
-wait_interval=2
+
+# Fifteen minutes, not two.
+#
+# The holder on a freshly booted machine is almost always unattended-upgrades,
+# which systemd starts a few minutes after boot. On a Pi that run takes ten
+# minutes or more, so a two-minute wait was guaranteed to give up on the one
+# case it exists to handle, and the installer then looped on it.
+#
+# Waiting costs nothing. It is a watch-only wait: elapsed time is reported and
+# the holder is never signalled, because SIGKILL mid-write corrupts package
+# state and that is a far worse afternoon than waiting.
+wait_timeout="${DPKG_WAIT_TIMEOUT:-900}"
+wait_interval=5
 elapsed=0
 dpkg_processes=$(find_dpkg_processes)
 
 if [ -n "$dpkg_processes" ]; then
-    echo -e "\e[33m📋 Found processes holding the lock: $dpkg_processes\e[0m"
+    # The PID alone is useless: it says something is running, not what, and not
+    # whether waiting is the right answer. Print the command line and how long
+    # it has been going.
+    echo -e "\e[33m📋 Holding the lock:\e[0m"
+    for pid in $dpkg_processes; do
+        ps -p "$pid" -o pid,etime,cmd --no-headers 2>/dev/null | sed 's/^/   /'
+    done
+
+    if ps -p $dpkg_processes -o cmd --no-headers 2>/dev/null | grep -qi "unattended"; then
+        echo -e "\e[34m   This is the automatic security updater. It runs after every boot\e[0m"
+        echo -e "\e[34m   and finishing on its own is the correct outcome. Waiting.\e[0m"
+    fi
+
+    echo -e "\e[34m🕐 Waiting up to $((wait_timeout / 60)) minutes...\e[0m"
     while [ -n "$dpkg_processes" ] && [ "$elapsed" -lt "$wait_timeout" ]; do
         echo -n "."
         sleep "$wait_interval"
         elapsed=$((elapsed + wait_interval))
+        # A minute marker, so a long wait looks like progress rather than a hang
+        [ $(( elapsed % 60 )) -eq 0 ] && echo -n " ${elapsed}s "
         dpkg_processes=$(find_dpkg_processes)
     done
     echo
 
     if [ -n "$dpkg_processes" ]; then
         echo -e "\e[31m❌ dpkg lock still held after ${wait_timeout}s: $dpkg_processes\e[0m"
-        echo -e "\e[31m❌ Not force-killing a live package manager — aborting\e[0m"
+        echo -e "\e[31m❌ Not force-killing a live package manager — that corrupts package state.\e[0m"
+        echo ""
+        echo -e "\e[33m   Stop it cleanly, then run the installer again:\e[0m"
+        echo -e "\e[33m     sudo systemctl stop unattended-upgrades apt-daily.service apt-daily-upgrade.service\e[0m"
+        echo -e "\e[33m     sudo systemctl stop apt-daily.timer apt-daily-upgrade.timer\e[0m"
+        echo ""
+        echo -e "\e[33m   Or wait longer: sudo env DPKG_WAIT_TIMEOUT=1800 $0\e[0m"
         exit 1
     fi
-    echo -e "\e[32m✅ Lock holder(s) exited on their own\e[0m"
+    echo -e "\e[32m✅ Lock holder(s) exited on their own after ${elapsed}s\e[0m"
 else
     echo -e "\e[32m✅ No active processes found\e[0m"
 fi
