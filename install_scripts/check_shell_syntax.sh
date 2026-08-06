@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# -d / --debug: trace every command. Stripped from "$@" so it never reaches the
+# script's own argument parsing.
+DEBUG_MODE=0
+_dbg_args=()
+for _a in "$@"; do
+    case "$_a" in
+        -d|--debug) DEBUG_MODE=1 ;;
+        *)          _dbg_args+=("$_a") ;;
+    esac
+done
+set -- ${_dbg_args+"${_dbg_args[@]}"}
+unset _a _dbg_args
+[ "$DEBUG_MODE" = "1" ] && set -x
+
 # Syntax-checks every .sh file in this repo (bash -n / sh -n).
 # Runs as the first step of every phase. Stops the phase on any error.
 # Self-contained copy of install_scripts/check_shell_syntax_all.sh logic.

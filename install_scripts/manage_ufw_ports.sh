@@ -1,5 +1,19 @@
 #!/bin/bash
 
+# -d / --debug: trace every command. Stripped from "$@" so it never reaches the
+# script's own argument parsing.
+DEBUG_MODE=0
+_dbg_args=()
+for _a in "$@"; do
+    case "$_a" in
+        -d|--debug) DEBUG_MODE=1 ;;
+        *)          _dbg_args+=("$_a") ;;
+    esac
+done
+set -- ${_dbg_args+"${_dbg_args[@]}"}
+unset _a _dbg_args
+[ "$DEBUG_MODE" = "1" ] && set -x
+
 # UFW Port Management Script with Confirmation
 # Usage: ./manage_ufw_ports.sh [open|close|status] [port/protocol] [description]
 
