@@ -564,12 +564,12 @@ process_template_scripts() {
     local real_user="$2"
     local scripts_dir="$backup_config_dir/maintenance_scripts/scripts"
     
-    print_status "Processing template scripts in maintenance_scripts/scripts..."
-    
     # Optional: only machines with maintenance scripts have this folder.
     if [ ! -d "$scripts_dir" ]; then
         return 0
     fi
+
+    print_status "Processing template scripts in maintenance_scripts/scripts..."
     
     local processed_count=0
     
