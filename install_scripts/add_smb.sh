@@ -566,8 +566,8 @@ process_template_scripts() {
     
     print_status "Processing template scripts in maintenance_scripts/scripts..."
     
+    # Optional: only machines with maintenance scripts have this folder.
     if [ ! -d "$scripts_dir" ]; then
-        print_warning "Scripts directory not found: $scripts_dir"
         return 0
     fi
     
