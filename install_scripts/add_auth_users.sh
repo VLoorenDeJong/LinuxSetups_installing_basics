@@ -123,43 +123,40 @@ find_missing() {
     [ ${#MISSING[@]} -eq 0 ]
 }
 
-# A run of asterisks of RANDOM length, not one per character.
-#
-# htpasswd's own prompt echoes nothing at all, which is safest and reads as a
-# frozen terminal: people retype, or press Enter twice, or give up. Showing
-# something proves the input arrived.
-#
-# The length is random on purpose. One asterisk per character is a free hint to
-# anyone looking over your shoulder or at a recording, and password length is
-# most of what a guesser wants to know first.
-show_masked() {
-    local n=$(( (RANDOM % 9) + 8 )) i out=""
-    for (( i = 0; i < n; i++ )); do out="${out}*"; done
-    printf '%s\n' "$out"
+# One asterisk per character, as they arrive. htpasswd's own prompt echoes
+# nothing, which reads as a frozen terminal.
+read_secret() {
+    local prompt="$1" out="" ch
+    printf '%s' "$prompt" > /dev/tty
+    while IFS= read -rsn1 ch < /dev/tty; do
+        case "$ch" in
+            "")             break ;;
+            $'\177'|$'\b')  [ -n "$out" ] && { out="${out%?}"; printf '\b \b' > /dev/tty; } ;;
+            *)              out="$out$ch"; printf '*' > /dev/tty ;;
+        esac
+    done
+    printf '\n' > /dev/tty
+    SECRET="$out"
 }
 
-# Reads the password here rather than letting htpasswd prompt, which is what
-# makes the masking possible. The trade: it lives in a shell variable inside a
-# root process for a moment.
-#
-# It is never an argument, so it is not in `ps`. It is never in the history. It
-# reaches htpasswd through a pipe with -i, and is unset immediately after.
+# Read here rather than letting htpasswd prompt, so the masking is possible.
+# The password is never an argument, never in the history, piped in with -i,
+# and unset immediately after.
 read_password() {
     local user="$1" p1 p2
 
     while :; do
-        printf "   Password for %s: " "$user" > /dev/tty
-        IFS= read -rs p1 < /dev/tty || return 1
-        show_masked > /dev/tty
+        read_secret "   Password for $user: " || return 1
+        p1="$SECRET"
 
         if [ -z "$p1" ]; then
-            printf "   \033[33mEmpty. An empty password locks the account rather than opening it.\033[0m\n" > /dev/tty
+            printf "   \033[33mEmpty. That locks the account rather than opening it.\033[0m\n" > /dev/tty
             continue
         fi
 
-        printf "   Again: " > /dev/tty
-        IFS= read -rs p2 < /dev/tty || return 1
-        show_masked > /dev/tty
+        read_secret "   Again: " || return 1
+        p2="$SECRET"
+        unset SECRET
 
         if [ "$p1" = "$p2" ]; then
             PASSWORD="$p1"
