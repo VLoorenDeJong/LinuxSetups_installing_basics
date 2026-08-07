@@ -39,10 +39,21 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-print_status "Rebooting in 10 seconds... (Ctrl+C to cancel)"
-sleep 8
-print_warning "Rebooting in 2 seconds — this connection will be closed"
-sleep 2
+# The countdown is redrawn every second rather than slept through: the Ctrl+C
+# window is the one thing the reader has to see ticking, and a silent sleep
+# before a reboot is indistinguishable from a hang.
+trap 'printf "\r\033[K"; print_warning "Reboot cancelled."; exit 130' INT
 
+for remaining in $(seq 10 -1 1); do
+    if [ "$remaining" -le 3 ]; then
+        printf "\r\033[K\e[33m⚠️ Rebooting in %2ds, this connection will be closed\e[0m" "$remaining"
+    else
+        printf "\r\033[K\e[34m🔧 Rebooting in %2ds... (Ctrl+C to cancel)\e[0m" "$remaining"
+    fi
+    sleep 1
+done
+printf "\r\033[K"
+
+trap - INT
 print_status "Rebooting the system..."
 reboot
