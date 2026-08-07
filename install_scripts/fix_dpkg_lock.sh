@@ -66,6 +66,44 @@ run_watched() {
     return $exit_code
 }
 
+# An sshd that outlives its unit keeps port 22 bound, so ssh.socket cannot
+# bind, openssh-server fails to configure, and every later apt run fails with
+# it. Reported, never killed: signalling it can cut the session running this.
+check_orphaned_sshd() {
+    if ! command -v ss >/dev/null 2>&1; then
+        print_warning "ss not found, skipping the port 22 ownership check"
+        return 0
+    fi
+
+    local pids
+    pids=$(run_privileged ss -H -ltnp 'sport = :22' 2>/dev/null \
+        | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u)
+    [ -z "$pids" ] && return 0
+
+    # A listener is only orphaned when neither unit owns it any more
+    if systemctl is-active --quiet ssh || systemctl is-active --quiet ssh.socket; then
+        return 0
+    fi
+
+    print_error "Port 22 is held by an sshd that no longer belongs to ssh.service or ssh.socket:"
+    for pid in $pids; do
+        ps -p "$pid" -o pid,etime,cmd --no-headers 2>/dev/null | sed 's/^/   /'
+    done
+    echo ""
+    print_error "ssh.socket cannot bind while that runs, so openssh-server fails to"
+    print_error "configure and every apt operation after it fails too."
+    echo ""
+    echo -e "\e[33m   Clear it, then run this again. Over a remote session, reboot:\e[0m"
+    echo -e "\e[33m     sudo reboot\e[0m"
+    echo ""
+    echo -e "\e[33m   At the keyboard, or to keep the machine up:\e[0m"
+    for pid in $pids; do
+        echo -e "\e[33m     sudo kill $pid\e[0m"
+    done
+    echo -e "\e[33m     sudo systemctl start ssh.socket\e[0m"
+    return 1
+}
+
 # Function to find processes using dpkg
 find_dpkg_processes() {
     local processes=$(lsof /var/lib/dpkg/lock-frontend 2>/dev/null | awk 'NR>1 {print $2}' | sort -u)
@@ -118,6 +156,9 @@ check_dpkg_lock() {
 }
 
 echo -e "\e[34m🔍 Checking for dpkg/lock-frontend and package cache issues...\e[0m"
+
+# Nothing below can succeed while port 22 is held by a unit-less sshd
+check_orphaned_sshd || exit 1
 
 # Test if we have a real dpkg lock issue
 LOCK_STATE="$(check_dpkg_lock)"
