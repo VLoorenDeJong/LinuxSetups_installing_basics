@@ -136,6 +136,28 @@ else
     echo -e "\e[32m✅ Apache service is already running.\e[0m"
 fi
 
+# A global ServerName, so Apache stops printing AH00558 on every start and
+# every reload. Without it Apache guesses 127.0.1.1 and says so, which teaches
+# people to read past its warnings: the next one is real.
+#
+# Its own file under conf-available, never apache2.conf, so a package upgrade
+# neither reverts it nor asks about a modified config file.
+SERVERNAME_CONF="/etc/apache2/conf-available/servername.conf"
+if [ ! -f "$SERVERNAME_CONF" ]; then
+    echo "ServerName $(hostname -f 2>/dev/null || hostname)" | sudo tee "$SERVERNAME_CONF" >/dev/null
+    sudo a2enconf servername >/dev/null 2>&1
+    if sudo apache2ctl configtest >/dev/null 2>&1; then
+        sudo systemctl reload apache2 >/dev/null 2>&1 || true
+        echo -e "\e[32m✅ ServerName set, so Apache stops warning on every reload.\e[0m"
+    else
+        sudo a2disconf servername >/dev/null 2>&1
+        sudo rm -f "$SERVERNAME_CONF"
+        echo -e "\e[33m⚠️ ServerName was rejected by configtest, so it was removed again.\e[0m"
+    fi
+else
+    echo -e "\e[32m✅ ServerName already set.\e[0m"
+fi
+
 echo -e "\e[34m🛡️ Configuring firewall...\e[0m"
 
 # Allow Apache through firewall if UFW is active
