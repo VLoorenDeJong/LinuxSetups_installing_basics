@@ -70,6 +70,23 @@ ensure_noninteractive_apt() {
             | sudo -n tee "$nr_conf" >/dev/null 2>&1 \
             || echo -e "\e[33m⚠️  Could not write $nr_conf — continuing\e[0m"
     fi
+
+    # THE FRONTEND, WHICH THE apt.conf ABOVE DOES NOT SET.
+    #
+    # debconf reads its frontend from its own database or from DEBIAN_FRONTEND,
+    # and sudo's env_reset strips the variable. So a package that asks a
+    # question, run from a job with no tty, dies rather than defaulting: on
+    # 2026-08-24 console-setup asked "Character set to support:" inside a
+    # Jenkins build and dpkg exited 128, taking the whole update with it.
+    #
+    # debconf-set-selections writes the answer into debconf's own database,
+    # where no environment is involved. --force-confold above already decides
+    # what a prompt would have asked about a config file.
+    if command -v debconf-set-selections >/dev/null 2>&1; then
+        printf 'debconf debconf/frontend select Noninteractive\n' \
+            | sudo -n debconf-set-selections >/dev/null 2>&1 \
+            || echo -e "\e[33m⚠️  Could not set the debconf frontend — continuing\e[0m"
+    fi
 }
 ensure_noninteractive_apt
 
