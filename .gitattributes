@@ -1,0 +1,5 @@
+# Shell scripts run on Linux, so they are LF in the repo and LF on checkout,
+# including on Windows. Without this, core.autocrlf writes CRLF into the
+# working tree and every script copied from a Windows checkout dies with
+# "/usr/bin/env: 'bash\r': No such file or directory".
+*.sh text eol=lf
