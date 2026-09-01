@@ -275,38 +275,9 @@ print_status "Upstream:  $UPSTREAM"
 print_status "Data:      $DATA_DIR"
 print_success "Pre-flight passed."
 
-# --- The password ------------------------------------------------------------
+# --- The data directory ------------------------------------------------------
 mkdir -p "$DATA_DIR"
 chmod 0755 "$DATA_DIR"
-
-# The password is set on EVERY run that has a terminal, by decision 2026-09-01:
-# a run that keeps the old one leaves no way to change it except deleting this
-# file by hand, which is what happened when the stored value had to be rotated.
-#
-# Without a terminal the existing file is kept instead, so the pipeline and any
-# unattended re-run still work. Pre-flight already refuses the case where there
-# is neither.
-if [ ! -r /dev/tty ]; then
-    print_success "Keeping the existing admin password ($ENV_FILE): no terminal to ask at."
-else
-    echo ""
-    print_status "Pi-hole's admin page has a password and no username."
-    if [ -f "$ENV_FILE" ]; then
-        print_status "This replaces the password already stored at $ENV_FILE."
-    fi
-    if ! read_password_twice; then
-        print_error "No password given, so the admin page would be wide open."
-        exit 1
-    fi
-    # Single quoted, because Compose reads this file literally but a shell that
-    # sources it does not: an unquoted & backgrounds the line and truncates the
-    # password without a word. A single quote is refused at the prompt, so there
-    # is nothing left to escape here.
-    ( umask 077; printf "PIHOLE_PASSWORD='%s'\n" "$PASSWORD" > "$ENV_FILE" )
-    unset PASSWORD
-    chmod 0600 "$ENV_FILE"
-    print_success "Password stored at $ENV_FILE (mode 600)."
-fi
 
 # --- The compose file --------------------------------------------------------
 # Pi-hole v6 renamed its environment variables to FTLCONF_*. The v5 names are
@@ -356,10 +327,47 @@ else
 fi
 
 # --- Start it ----------------------------------------------------------------
+# `docker pull` rather than `docker compose pull`: Compose would interpolate the
+# compose file, and on a first install the password variable does not exist yet,
+# so it would warn about a blank value before anyone has been asked for one.
 if ! show_spinner_watch_only "Pulling the Pi-hole image" \
-    docker compose --project-directory "$DATA_DIR" pull; then
+    docker pull "$IMAGE"; then
     print_error "Could not pull $IMAGE."
     exit 1
+fi
+
+# --- The password ------------------------------------------------------------
+#
+# Asked AFTER the image is pulled, so a failed download never costs a typed
+# password. It has to be written before "up -d": Compose reads $ENV_FILE to
+# fill in the password variable when it starts the container.
+# The password is set on EVERY run that has a terminal, by decision 2026-09-01:
+# a run that keeps the old one leaves no way to change it except deleting this
+# file by hand, which is what happened when the stored value had to be rotated.
+#
+# Without a terminal the existing file is kept instead, so the pipeline and any
+# unattended re-run still work. Pre-flight already refuses the case where there
+# is neither.
+if [ ! -r /dev/tty ]; then
+    print_success "Keeping the existing admin password ($ENV_FILE): no terminal to ask at."
+else
+    echo ""
+    print_status "Pi-hole's admin page has a password and no username."
+    if [ -f "$ENV_FILE" ]; then
+        print_status "This replaces the password already stored at $ENV_FILE."
+    fi
+    if ! read_password_twice; then
+        print_error "No password given, so the admin page would be wide open."
+        exit 1
+    fi
+    # Single quoted, because Compose reads this file literally but a shell that
+    # sources it does not: an unquoted & backgrounds the line and truncates the
+    # password without a word. A single quote is refused at the prompt, so there
+    # is nothing left to escape here.
+    ( umask 077; printf "PIHOLE_PASSWORD='%s'\n" "$PASSWORD" > "$ENV_FILE" )
+    unset PASSWORD
+    chmod 0600 "$ENV_FILE"
+    print_success "Password stored at $ENV_FILE (mode 600)."
 fi
 
 if ! show_spinner_watch_only "Starting Pi-hole" \
