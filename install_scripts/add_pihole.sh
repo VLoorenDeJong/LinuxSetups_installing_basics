@@ -305,6 +305,11 @@ services:
       FTLCONF_webserver_api_password: "\${PIHOLE_PASSWORD}"
       FTLCONF_dns_upstreams: "${UPSTREAM//,/;}"
       FTLCONF_dns_listeningMode: "all"
+      # Pi-hole ships 16 API session seats and keeps sessions in its database,
+      # so they outlive a restart. Sixteen is spent quickly by a browser that
+      # logs in a few times and by anything scripted, and the page then refuses
+      # a CORRECT password with "API seats exceeded", which reads as a wrong one.
+      FTLCONF_webserver_api_max_sessions: "64"
       WEBPASSWORD: "\${PIHOLE_PASSWORD}"
       PIHOLE_DNS_: "${UPSTREAM//,/;}"
     volumes:
