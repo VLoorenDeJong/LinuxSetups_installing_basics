@@ -279,11 +279,21 @@ print_success "Pre-flight passed."
 mkdir -p "$DATA_DIR"
 chmod 0755 "$DATA_DIR"
 
-if [ -f "$ENV_FILE" ]; then
-    print_success "Keeping the existing admin password ($ENV_FILE)."
+# The password is set on EVERY run that has a terminal, by decision 2026-09-01:
+# a run that keeps the old one leaves no way to change it except deleting this
+# file by hand, which is what happened when the stored value had to be rotated.
+#
+# Without a terminal the existing file is kept instead, so the pipeline and any
+# unattended re-run still work. Pre-flight already refuses the case where there
+# is neither.
+if [ ! -r /dev/tty ]; then
+    print_success "Keeping the existing admin password ($ENV_FILE): no terminal to ask at."
 else
     echo ""
     print_status "Pi-hole's admin page has a password and no username."
+    if [ -f "$ENV_FILE" ]; then
+        print_status "This replaces the password already stored at $ENV_FILE."
+    fi
     if ! read_password_twice; then
         print_error "No password given, so the admin page would be wide open."
         exit 1
