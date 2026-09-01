@@ -148,6 +148,11 @@ read_password_twice() {
             printf "   \033[33mAt least 8 characters. This one blocks or unblocks your whole network.\033[0m\n" > /dev/tty
             continue
         fi
+        case "$p1" in
+            *"'"*)
+                printf "   \033[33mNo single quotes: the password is stored quoted in an env file.\033[0m\n" > /dev/tty
+                continue ;;
+        esac
         read_secret "   Again: " || return 1
         p2="$SECRET"
         unset SECRET
@@ -283,7 +288,11 @@ else
         print_error "No password given, so the admin page would be wide open."
         exit 1
     fi
-    ( umask 077; printf 'PIHOLE_PASSWORD=%s\n' "$PASSWORD" > "$ENV_FILE" )
+    # Single quoted, because Compose reads this file literally but a shell that
+    # sources it does not: an unquoted & backgrounds the line and truncates the
+    # password without a word. A single quote is refused at the prompt, so there
+    # is nothing left to escape here.
+    ( umask 077; printf "PIHOLE_PASSWORD='%s'\n" "$PASSWORD" > "$ENV_FILE" )
     unset PASSWORD
     chmod 0600 "$ENV_FILE"
     print_success "Password stored at $ENV_FILE (mode 600)."
