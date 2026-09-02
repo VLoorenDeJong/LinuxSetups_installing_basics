@@ -418,12 +418,14 @@ if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: a
     if [ -z "$LAN_CIDR" ]; then
         print_warning "No default route, so no DNS firewall rule was added."
         print_warning "Add it by hand: sudo ufw allow from <your-lan>/24 to any port 53"
-    elif ufw status | grep -q "53.*$LAN_CIDR"; then
+    elif ufw status | grep -qE "^53(/(tcp|udp))?[[:space:]]+ALLOW[[:space:]]+${LAN_CIDR}([[:space:]]|$)"; then
         print_success "UFW already allows DNS from $LAN_CIDR."
-    else
-        ufw allow from "$LAN_CIDR" to any port 53 proto udp >/dev/null 2>&1
-        ufw allow from "$LAN_CIDR" to any port 53 proto tcp >/dev/null 2>&1
+    elif ufw allow from "$LAN_CIDR" to any port 53 proto udp >/dev/null 2>&1 \
+      && ufw allow from "$LAN_CIDR" to any port 53 proto tcp >/dev/null 2>&1; then
         print_success "UFW now allows DNS from $LAN_CIDR."
+    else
+        print_warning "UFW refused the DNS rule, so 'ufw status' will not show port 53."
+        print_warning "Add it by hand: sudo ufw allow from $LAN_CIDR to any port 53 proto udp"
     fi
 else
     print_warning "UFW is not active, so no firewall rules were added."
