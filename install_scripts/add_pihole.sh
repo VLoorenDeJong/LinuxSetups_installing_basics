@@ -27,23 +27,36 @@ unset _a _dbg_args
 # mail and web. In a container the conflict is settled by a bind address
 # instead, and the worst failure is a container that will not start.
 #
-# THE BIND ADDRESS IS THE SECURITY BOUNDARY HERE, NOT UFW
+# THE BIND ADDRESS IS THE SECURITY BOUNDARY FOR IPv4. FOR IPv6 IT IS UFW.
 #
-# Docker publishes ports by writing its own iptables rules, and those are
+# Docker publishes IPv4 ports by writing its own iptables rules, and those are
 # consulted BEFORE UFW's. A published port is therefore reachable even when UFW
 # says otherwise, and this surprises people every time.
 #
-# So exposure is controlled by WHERE each port is bound:
+# IPv6 is the other way round. Without ip6tables enabled in the daemon, Docker
+# publishes a v6 port through docker-proxy, a userspace process binding the host
+# address, so the traffic passes the normal INPUT chain and UFW's default deny
+# really does drop it. Both were measured on this fleet on 2026-09-02.
+#
+# So exposure is controlled by WHERE each port is bound, plus a UFW rule that is
+# cosmetic for v4 and load bearing for v6:
 #
 #   DNS   bound to this machine's LAN address, so the LAN can resolve and
 #         127.0.0.53 is left to systemd-resolved, which keeps the machine's own
 #         name resolution working.
+#   DNSv6 bound to this machine's UNIQUE LOCAL address, not its global one: a
+#         global address carries the ISP's prefix and vanishes when that
+#         rotates, taking the container's ability to start with it.
 #   Web   bound to 127.0.0.1, so the admin page is reachable only through a
 #         reverse proxy on this machine or over a tunnel. Never from the LAN
 #         directly, because it is plain HTTP with a password on it.
 #
-# UFW rules are still added for DNS, so `ufw status` tells the truth about what
-# is open rather than hiding a port Docker opened behind its back.
+# WHY IPv6 IS NOT OPTIONAL ON A FRITZ!BOX LAN
+#
+# A router that announces a DNSv6 server hands its clients a v6 resolver and
+# nothing else. An IPv4-only Pi-hole is then never asked anything: it resolves
+# and blocks perfectly when queried by hand and does nothing for the network.
+# That is the state this fleet was in until 2026-09-02.
 #
 # THE ADMIN PASSWORD IS NEVER AN ARGUMENT
 #
@@ -54,6 +67,8 @@ unset _a _dbg_args
 #   add_pihole.sh                                   # prompts for the password
 #   add_pihole.sh --web-port 15001 --upstream 9.9.9.9,149.112.112.112
 #   add_pihole.sh --dns-bind 192.168.1.10 --data-dir /opt/pihole
+#   add_pihole.sh --dns-bind6 fd6f:2e2f:34d3:0:da3a:ddff:fe92:1573
+#   add_pihole.sh --no-ipv6                         # IPv4 only, no warning
 #
 # Safe to re-run: the data directory, the blocklists and the password are left
 # alone unless a new password is given.
@@ -168,6 +183,9 @@ read_password_twice() {
 WEB_PORT="15001"
 UPSTREAM="9.9.9.9,149.112.112.112"
 DNS_BIND=""
+DNS_BIND6=""
+LAN_CIDR6=""
+WANT_IPV6="yes"
 DATA_DIR="/opt/pihole"
 IMAGE="pihole/pihole:latest"
 
@@ -176,10 +194,12 @@ while [ $# -gt 0 ]; do
         --web-port)  WEB_PORT="$2"; shift 2 ;;
         --upstream)  UPSTREAM="$2"; shift 2 ;;
         --dns-bind)  DNS_BIND="$2"; shift 2 ;;
+        --dns-bind6) DNS_BIND6="$2"; shift 2 ;;
+        --no-ipv6)   WANT_IPV6="no"; DNS_BIND6=""; shift ;;
         --data-dir)  DATA_DIR="$2"; shift 2 ;;
         --image)     IMAGE="$2"; shift 2 ;;
         -h|--help)
-            sed -n '18,64p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '18,74p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         -*)
             print_error "Unknown option: $1"
@@ -226,6 +246,53 @@ if [ -z "$DNS_BIND" ]; then
     fi
 fi
 
+# The IPv6 address, because a router that hands out a DNSv6 server leaves an
+# IPv4-only Pi-hole unused: clients ask the resolver they were given and never
+# see it. Measured on this fleet 2026-09-02, where the only resolver a Windows
+# PC held was the router's ULA.
+#
+# The UNIQUE LOCAL address is preferred over the global one on purpose. A global
+# address carries the ISP's prefix and changes when that prefix rotates, which
+# would leave the container unable to bind and the whole LAN without DNS. A ULA
+# is generated from the interface's MAC under a prefix the router owns, so it
+# survives. If the router stops announcing the ULA prefix the address goes and
+# this script has to be re-run: that is a re-run, not a repair.
+if [ "$WANT_IPV6" = "yes" ] && [ -z "$DNS_BIND6" ]; then
+    DNS_BIND6="$(ip -6 addr show scope global 2>/dev/null \
+        | sed -n 's/.*inet6 \(f[cd][0-9a-f]*:[0-9a-f:]*\)\/.*/\1/p' | head -1)"
+    if [ -z "$DNS_BIND6" ]; then
+        WARNINGS+=("No unique local IPv6 address found, so DNS will be IPv4 only")
+        WARNINGS+=("  A router handing out a DNSv6 server will bypass Pi-hole entirely")
+        WARNINGS+=("  Give one explicitly: --dns-bind6 fd00:...  or silence this: --no-ipv6")
+    fi
+fi
+
+if [ -n "$DNS_BIND6" ]; then
+    # The kernel compares addresses, not strings. An uppercase or uncompressed
+    # spelling of an address the machine really holds is the same address, and
+    # a grep for the canonical form would call it missing.
+    if [ -z "$(ip -6 addr show to "$DNS_BIND6" 2>/dev/null)" ]; then
+        ERRORS+=("This machine does not hold the IPv6 address ${DNS_BIND6}")
+        ERRORS+=("  Docker cannot publish on an address that is not here; the container would fail to start")
+        ERRORS+=("  List them: ip -6 addr show scope global")
+    fi
+
+    # The prefix comes from the routing table, never from slicing the address.
+    # `ip` compresses any run of zero hextets, so `fd00::5` and
+    # `fd6f:2e2f:34d3::1` cut into nonsense on a colon count. The router's own
+    # advertisement already carries the prefix in canonical form.
+    LAN_CIDR6="$(ip -6 route show proto ra 2>/dev/null \
+        | awk '/^f[cd][0-9a-f]*:/ && / dev / && !/ via /{print $1; exit}')"
+    if [ -z "$LAN_CIDR6" ]; then
+        LAN_CIDR6="$(ip -6 route show proto kernel 2>/dev/null \
+            | awk '/^f[cd][0-9a-f]*:/{print $1; exit}')"
+    fi
+    if [ -z "$LAN_CIDR6" ]; then
+        WARNINGS+=("No advertised IPv6 prefix found, so the UFW rule cannot be scoped")
+        WARNINGS+=("  DNS over IPv6 will be published but BLOCKED until a rule is added by hand")
+    fi
+fi
+
 if ! echo "$WEB_PORT" | grep -qE '^[0-9]+$' || [ "$WEB_PORT" -lt 1024 ] || [ "$WEB_PORT" -gt 65535 ]; then
     ERRORS+=("--web-port must be a number between 1024 and 65535, not '$WEB_PORT'")
 fi
@@ -239,19 +306,28 @@ for u in ${_ups+"${_ups[@]}"}; do
     fi
 done
 
-# Port 53 on the LAN address specifically. systemd-resolved holding 127.0.0.53
-# is expected and fine, so the check is deliberately narrow.
+# Port 53 on the bind addresses specifically. systemd-resolved holding
+# 127.0.0.53 is expected and fine, so the check is deliberately narrow.
 if command -v ss >/dev/null 2>&1; then
-    if ss -lnup 2>/dev/null | grep -q "${DNS_BIND}:53 " || ss -lntp 2>/dev/null | grep -q "${DNS_BIND}:53 "; then
-        if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx pihole; then
-            ERRORS+=("Something is already listening on ${DNS_BIND}:53 and it is not Pi-hole")
-            ERRORS+=("  Find it: sudo ss -lnup | grep ':53'")
-        fi
+    _taken() {
+        ss -lnup 2>/dev/null | grep -qF "$1:53 " || ss -lntp 2>/dev/null | grep -qF "$1:53 "
+    }
+    _is_pihole() {
+        docker ps --format '{{.Names}}' 2>/dev/null | grep -qx pihole
+    }
+
+    if [ -n "$DNS_BIND" ] && _taken "$DNS_BIND" && ! _is_pihole; then
+        ERRORS+=("Something is already listening on ${DNS_BIND}:53 and it is not Pi-hole")
+        ERRORS+=("  Find it: sudo ss -lnup | grep ':53'")
     fi
-    if ss -lnt 2>/dev/null | grep -q "127.0.0.1:${WEB_PORT} "; then
-        if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx pihole; then
-            ERRORS+=("Something is already listening on 127.0.0.1:${WEB_PORT}")
-        fi
+
+    if [ -n "$DNS_BIND6" ] && _taken "[${DNS_BIND6}]" && ! _is_pihole; then
+        ERRORS+=("Something is already listening on [${DNS_BIND6}]:53 and it is not Pi-hole")
+        ERRORS+=("  Find it: sudo ss -lnup | grep ':53'")
+    fi
+
+    if ss -lnt 2>/dev/null | grep -qF "127.0.0.1:${WEB_PORT} " && ! _is_pihole; then
+        ERRORS+=("Something is already listening on 127.0.0.1:${WEB_PORT}")
     fi
 fi
 
@@ -261,7 +337,6 @@ if [ ! -f "$ENV_FILE" ] && [ ! -r /dev/tty ]; then
     ERRORS+=("  Run this from a terminal once, then it is re-runnable unattended.")
 fi
 
-for w in ${WARNINGS+"${WARNINGS[@]}"}; do print_warning "$w"; done
 
 if [ ${#ERRORS[@]} -gt 0 ]; then
     print_error "Pre-flight failed, nothing was changed:"
@@ -269,7 +344,18 @@ if [ ${#ERRORS[@]} -gt 0 ]; then
     exit 1
 fi
 
+for w in ${WARNINGS+"${WARNINGS[@]}"}; do print_warning "$w"; done
+
 print_status "DNS:       ${DNS_BIND}:53, so the LAN can resolve through it"
+if [ -n "$DNS_BIND6" ]; then
+    if [ -n "$LAN_CIDR6" ]; then
+        print_status "DNS v6:    [${DNS_BIND6}]:53, opened in UFW for ${LAN_CIDR6}"
+    else
+        print_status "DNS v6:    [${DNS_BIND6}]:53, but NO UFW rule, so it will be blocked"
+    fi
+else
+    print_status "DNS v6:    none, so a router handing out a DNSv6 server bypasses Pi-hole"
+fi
 print_status "Admin:     127.0.0.1:${WEB_PORT}, reachable only via a proxy or a tunnel"
 print_status "Upstream:  $UPSTREAM"
 print_status "Data:      $DATA_DIR"
@@ -283,6 +369,14 @@ chmod 0755 "$DATA_DIR"
 # Pi-hole v6 renamed its environment variables to FTLCONF_*. The v5 names are
 # set alongside them because an unknown variable is ignored by both, and that
 # costs four lines against an install that silently comes up with no password.
+# Empty when there is no IPv6 address, and an empty line inside a YAML list is
+# ignored, so the compose file stays valid either way.
+DNS_V6_PORTS=""
+if [ -n "$DNS_BIND6" ]; then
+    DNS_V6_PORTS="      - \"[${DNS_BIND6}]:53:53/tcp\"
+      - \"[${DNS_BIND6}]:53:53/udp\""
+fi
+
 COMPOSE_FILE="$DATA_DIR/docker-compose.yml"
 TZ_VALUE="$(timedatectl show -p Timezone --value 2>/dev/null || echo 'Etc/UTC')"
 
@@ -295,10 +389,13 @@ services:
     image: ${IMAGE}
     restart: unless-stopped
     ports:
-      # Bound to an address on purpose. Docker's published ports bypass UFW, so
-      # the bind address is what decides who can reach these.
+      # Bound to an address on purpose. Docker's published IPv4 ports bypass
+      # UFW, so the bind address is what decides who can reach these. The IPv6
+      # publishes go through docker-proxy in userspace, so UFW gates those; the
+      # firewall block below opens them.
       - "${DNS_BIND}:53:53/tcp"
       - "${DNS_BIND}:53:53/udp"
+${DNS_V6_PORTS}
       - "127.0.0.1:${WEB_PORT}:80/tcp"
     environment:
       TZ: "${TZ_VALUE}"
@@ -409,9 +506,16 @@ else
 fi
 
 # --- The firewall ------------------------------------------------------------
-# Docker already opened port 53 by writing its own iptables rules, and UFW was
-# not consulted. The rule below changes nothing about reachability: it makes
-# `ufw status` tell the truth about what this machine answers on.
+# The two families are NOT symmetrical here, and the difference is the whole
+# reason this block exists twice.
+#
+# IPv4: Docker opened port 53 by writing its own iptables rules and UFW was
+#       never consulted, so the rule below changes nothing about reachability.
+#       It makes `ufw status` tell the truth about what this machine answers on.
+# IPv6: docker-proxy binds the host address in USERSPACE, so the traffic passes
+#       the normal INPUT chain and UFW's "deny (incoming)" default really does
+#       drop it. The v6 rule is load bearing: without it the listener is
+#       unreachable. Measured on 2026-09-02.
 if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
     LAN_CIDR="$(ip -4 route show default 2>/dev/null | awk '{print $3}' | head -1 \
         | sed -E 's/\.[0-9]+$/.0\/24/')"
@@ -426,6 +530,21 @@ if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: a
     else
         print_warning "UFW refused the DNS rule, so 'ufw status' will not show port 53."
         print_warning "Add it by hand: sudo ufw allow from $LAN_CIDR to any port 53 proto udp"
+    fi
+
+    if [ -n "$DNS_BIND6" ]; then
+        if [ -z "$LAN_CIDR6" ]; then
+            print_warning "No IPv6 LAN prefix worked out, so DNS over IPv6 will be BLOCKED."
+            print_warning "Add it by hand: sudo ufw allow from <prefix>::/64 to any port 53"
+        elif ufw status | grep -qE "^53(/(tcp|udp))?([[:space:]]+\(v6\))?[[:space:]]+ALLOW[[:space:]]+${LAN_CIDR6}([[:space:]]|$)"; then
+            print_success "UFW already allows DNS from $LAN_CIDR6."
+        elif ufw allow from "$LAN_CIDR6" to any port 53 proto udp >/dev/null 2>&1 \
+          && ufw allow from "$LAN_CIDR6" to any port 53 proto tcp >/dev/null 2>&1; then
+            print_success "UFW now allows DNS from $LAN_CIDR6."
+        else
+            print_warning "UFW refused the IPv6 DNS rule, so DNS over IPv6 is BLOCKED."
+            print_warning "Add it by hand: sudo ufw allow from $LAN_CIDR6 to any port 53 proto udp"
+        fi
     fi
 else
     print_warning "UFW is not active, so no firewall rules were added."
