@@ -574,7 +574,9 @@ if [ -n "$DNS_BIND6" ]; then
     echo "   IPv6 DNS server:  ${DNS_BIND6}"
     echo ""
     echo "   On a FRITZ!Box: Home Network > Network > Network Settings > IPv6,"
-    echo "   'Local DNSv6 server'. It asks for the suffix only."
+    echo "   'Local DNSv6 server'. It is eight boxes, one hextet each, and it"
+    echo "   wants the WHOLE address, not a suffix. Tick 'Also announce DNSv6"
+    echo "   server via router advertisement (RFC 5006)' above it as well."
 else
     echo "   IPv6 DNS server:  none. If your router announces one, Pi-hole is"
     echo "                     bypassed. Re-run without --no-ipv6."
