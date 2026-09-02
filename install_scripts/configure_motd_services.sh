@@ -231,7 +231,7 @@ if [ -d "$MOTD_DIR" ]; then
 # and deliberately does NOT duplicate reboot-required or updates-available,
 # which stock Ubuntu's update-notifier-common already provides.
 
-FAILED_UNITS="$(systemctl --failed --no-legend 2>/dev/null | awk '{print $1}')"
+FAILED_UNITS="$(systemctl --failed --no-legend --plain 2>/dev/null | awk '{print $1}')"
 if [ -n "$FAILED_UNITS" ]; then
     printf "\n⚠️  Failed units: %s\n" "$(echo "$FAILED_UNITS" | tr '\n' ' ')"
 fi
