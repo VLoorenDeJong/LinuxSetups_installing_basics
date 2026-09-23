@@ -405,9 +405,9 @@ extract_share_info() {
 # 0 when it changed something, 1 when it was already right.
 make_smb_writable() {
     local path="$1" user="$2" group="$3" n
-    n=$(sudo -u "$user" -g "$group" find "$path" -xdev \( -type f -o -type d \) ! -writable -print 2>/dev/null | wc -l)
+    n=$(sudo -u "$user" -g "$group" find "$path" -xdev \( -type f -o -type d \) -perm /077 ! -writable -print 2>/dev/null | wc -l)
     [ "$n" -gt 0 ] || return 1
-    sudo -u "$user" -g "$group" find "$path" -xdev \( -type f -o -type d \) ! -writable -print0 2>/dev/null \
+    sudo -u "$user" -g "$group" find "$path" -xdev \( -type f -o -type d \) -perm /077 ! -writable -print0 2>/dev/null \
         | sudo xargs -0 -r sh -c 'chgrp "$0" "$@" && chmod g+rwX "$@"' "$group"
     print_status "Made $n item(s) in $path writable for $user:$group"
     return 0
