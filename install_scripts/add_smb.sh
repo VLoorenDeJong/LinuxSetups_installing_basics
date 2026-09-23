@@ -234,15 +234,39 @@ if ! systemctl is-active --quiet smbd; then
     fi
 fi
 
-# Configure firewall
+# Samba answers the networks this machine sits on, never Anywhere: the shares
+# are guest shares, so the subnet IS the lock. SMB_ALLOW_FROM overrides.
+smb_sources() {
+    if [ -n "${SMB_ALLOW_FROM:-}" ]; then
+        printf '%s\n' $SMB_ALLOW_FROM
+        return 0
+    fi
+    { ip -o -4 route show; ip -o -6 route show; } 2>/dev/null \
+        | awk '$1 == "default" || / via / || $1 !~ /\// { next }
+               { d = ""; for (i = 1; i < NF; i++) if ($i == "dev") d = $(i + 1) }
+               d !~ /^(lo|docker|br-|veth)/ { print $1 }' \
+        | sort -u
+}
+
 if command -v ufw &> /dev/null && sudo ufw status | grep -q "Status: active"; then
     print_status "Configuring firewall rules..."
-    if ! sudo ufw status numbered | grep -qE "^.*ALLOW.*(Samba|445|139)"; then
-        if sudo ufw allow 'Samba' > /dev/null 2>&1; then
-            print_success "Firewall rules added for Samba"
-        else
-            print_error "Failed to configure firewall rules"
-        fi
+    mapfile -t SMB_SOURCES < <(smb_sources)
+    if [ ${#SMB_SOURCES[@]} -eq 0 ]; then
+        print_error "No local network found to allow Samba from, so it stays closed."
+        print_warning "Set SMB_ALLOW_FROM=\"192.168.1.0/24 ...\" and run this again."
+    else
+        for src in "${SMB_SOURCES[@]}"; do
+            if sudo ufw allow from "$src" to any app Samba > /dev/null 2>&1; then
+                print_success "Samba allowed from $src"
+            else
+                print_error "Failed to allow Samba from $src"
+            fi
+        done
+        # Only after the local rules exist, so a re-run never leaves a gap.
+        while sudo ufw status | grep -qE '^Samba( \(v6\))? +ALLOW +Anywhere'; do
+            sudo ufw delete allow Samba > /dev/null 2>&1 || break
+            print_success "Removed the rule that allowed Samba from Anywhere"
+        done
     fi
 fi
 
