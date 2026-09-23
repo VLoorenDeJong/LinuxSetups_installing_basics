@@ -397,22 +397,6 @@ extract_share_info() {
     done
 }
 
-# Everything in a share that the share's user and group cannot write gets that
-# group and group write. Nothing else is touched: owners stay, and so do
-# execute bits, because apps and Jenkins deploy into these folders too. An item
-# with no group or other bits at all is private on purpose (a backup key, an
-# .ssh) and is never widened.
-# 0 when it changed something, 1 when it was already right.
-make_smb_writable() {
-    local path="$1" user="$2" group="$3" n
-    n=$(sudo -u "$user" -g "$group" find "$path" -xdev \( -type f -o -type d \) -perm /077 ! -writable -print 2>/dev/null | wc -l)
-    [ "$n" -gt 0 ] || return 1
-    sudo -u "$user" -g "$group" find "$path" -xdev \( -type f -o -type d \) -perm /077 ! -writable -print0 2>/dev/null \
-        | sudo xargs -0 -r sh -c 'chgrp "$0" "$@" && chmod g+rwX "$@"' "$group"
-    print_status "Made $n item(s) in $path writable for $user:$group"
-    return 0
-}
-
 validate_and_create_share_directories() {
     local config_file="$1"
     local shares_data
@@ -445,7 +429,6 @@ validate_and_create_share_directories() {
 
     local processed_count=0
     local created_count=0
-    local updated_count=0
 
     for share_data in "${shares_data[@]}"; do
         # Parse share name and configuration
@@ -513,16 +496,16 @@ validate_and_create_share_directories() {
                 print_error "❌ Failed to create directory: $share_path"
             fi
         else
-            if make_smb_writable "$share_path" "${force_user:-$ACTUAL_USER}" "${force_group:-$ACTUAL_GROUP}"; then
-                updated_count=$((updated_count + 1))
-            fi
+            # An existing share is left exactly as it is. Whatever fills it
+            # (a deploy, a site, a backup) owns its permissions, and per-site
+            # groups and private backup repos must survive a re-run.
+            :
         fi
     done
 
     print_success "📊 Samba directory validation complete:"
     print_success "   • Processed: $processed_count shares"
     print_success "   • Created: $created_count directories"
-    print_success "   • Updated: $updated_count directories"
 }
 
 setup_folder_permissions() {
@@ -545,7 +528,7 @@ setup_folder_permissions() {
     fi
 
     if [ -d "$folder_path" ]; then
-        # An existing share was made writable by make_smb_writable already.
+        # An existing share is left as it is: see validate_and_create_share_directories.
         # Resetting owners and modes here broke deployed apps on a re-run.
         return 0
     else
