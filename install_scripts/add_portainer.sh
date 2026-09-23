@@ -31,8 +31,9 @@ unset _a _dbg_args
 #
 # WHERE THE PASSWORD COMES FROM, first match wins:
 #   1. a secret store, when a secret_ask.sh is found (SECRET_ASK_SH, or the
-#      parent project's install_scripts/scripts/): its stored copy, or a new
-#      generated one stored there before Portainer ever sees it
+#      parent project's install_scripts/scripts/): the login entry "Portainer
+#      admin", or a new generated one stored there before Portainer sees it.
+#      PORTAINER_URL sets the entry's link; the loopback address otherwise
 #   2. the keyboard, when there is no store
 #
 # Usage:
@@ -246,17 +247,24 @@ if ! run_watched "Pulling $IMAGE" docker pull "$IMAGE"; then
     exit 1
 fi
 
-SECRET_NAME="portainer-admin-password"
+# A login entry, not a note: it is what a person opens to sign in by hand.
+ENTRY="Portainer admin"
+entry_password() {
+    secret_entry_get "$ENTRY" "" 2>/dev/null | awk -F'\t' '$1 == "" && $2 == "password" { print $3; exit }'
+}
 if [ "$INITIALISED" -eq 0 ] && [ "$STORE" -eq 1 ]; then
-    PASSWORD="$(secret_file_get "$SECRET_NAME" 2>/dev/null)" || PASSWORD=""
+    PASSWORD="$(entry_password)" || PASSWORD=""
     if [ ${#PASSWORD} -ge 12 ]; then
-        print_status "Admin password read from the secret store ($SECRET_NAME)."
+        print_status "Admin password read from the secret store ('$ENTRY')."
     else
         # Stored before Portainer sees it: a password nobody holds is a lockout.
         PASSWORD="$(openssl rand -base64 24 | tr -d '/+=\n' | cut -c1-20)"
-        if printf '%s' "$PASSWORD" | secret_file_put "$SECRET_NAME" \
-           && [ "$(secret_file_get "$SECRET_NAME" 2>/dev/null)" = "$PASSWORD" ]; then
-            print_status "New admin password generated and stored as $SECRET_NAME."
+        if printf 'username\ttext\tadmin\npassword\tpassword\t%s\n' "$PASSWORD" \
+                | secret_entry_set "$ENTRY" "" \
+           && printf 'Portainer\t%s\n' "${PORTAINER_URL:-http://127.0.0.1:${PORT}}" \
+                | secret_entry_urls "$ENTRY" \
+           && [ "$(entry_password)" = "$PASSWORD" ]; then
+            print_status "New admin password generated and stored in '$ENTRY'."
         else
             PASSWORD=""
             print_error "The secret store did not keep a new password, so it was not used."
