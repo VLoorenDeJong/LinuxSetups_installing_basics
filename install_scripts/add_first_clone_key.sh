@@ -164,7 +164,7 @@ DEBSIG_ID="AC2D62742012EA22"
 
 LOG="$(mktemp)"
 KEY_TMP=""
-trap 'spinner_stop; stty echo < /dev/tty 2>/dev/null || true; rm -f "$LOG" "$LOG.asc" ${KEY_TMP:+"$KEY_TMP"}' EXIT
+trap 'spinner_stop; stty echo 2>/dev/null < /dev/tty || true; rm -f "$LOG" "$LOG.asc" ${KEY_TMP:+"$KEY_TMP"}' EXIT
 
 # =============================================================================
 # Pre-flight
