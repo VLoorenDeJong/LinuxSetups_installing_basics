@@ -399,7 +399,9 @@ extract_share_info() {
 
 # Everything in a share that the share's user and group cannot write gets that
 # group and group write. Nothing else is touched: owners stay, and so do
-# execute bits, because apps and Jenkins deploy into these folders too.
+# execute bits, because apps and Jenkins deploy into these folders too. An item
+# with no group or other bits at all is private on purpose (a backup key, an
+# .ssh) and is never widened.
 # 0 when it changed something, 1 when it was already right.
 make_smb_writable() {
     local path="$1" user="$2" group="$3" n
