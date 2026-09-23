@@ -397,6 +397,20 @@ extract_share_info() {
     done
 }
 
+# Everything in a share that the share's user and group cannot write gets that
+# group and group write. Nothing else is touched: owners stay, and so do
+# execute bits, because apps and Jenkins deploy into these folders too.
+# 0 when it changed something, 1 when it was already right.
+make_smb_writable() {
+    local path="$1" user="$2" group="$3" n
+    n=$(sudo -u "$user" -g "$group" find "$path" -xdev \( -type f -o -type d \) ! -writable -print 2>/dev/null | wc -l)
+    [ "$n" -gt 0 ] || return 1
+    sudo -u "$user" -g "$group" find "$path" -xdev \( -type f -o -type d \) ! -writable -print0 2>/dev/null \
+        | sudo xargs -0 -r sh -c 'chgrp "$0" "$@" && chmod g+rwX "$@"' "$group"
+    print_status "Made $n item(s) in $path writable for $user:$group"
+    return 0
+}
+
 validate_and_create_share_directories() {
     local config_file="$1"
     local shares_data
@@ -497,34 +511,7 @@ validate_and_create_share_directories() {
                 print_error "❌ Failed to create directory: $share_path"
             fi
         else
-            # Validate and fix permissions if needed
-            local current_perms
-            current_perms=$(stat -c "%a" "$share_path")
-            local current_owner
-            current_owner=$(stat -c "%U:%G" "$share_path")
-
-            local needs_update=false
-
-            # Check ownership
-            if [ -n "$force_user" ]; then
-                local expected_owner="$force_user"
-                if [ -n "$force_group" ]; then
-                    expected_owner="$force_user:$force_group"
-                fi
-
-                if [ "$current_owner" != "$expected_owner" ]; then
-                    sudo chown "$expected_owner" "$share_path" 2>/dev/null || print_warning "Failed to set ownership for $share_path"
-                    needs_update=true
-                fi
-            fi
-
-            # Check permissions
-            if [ -n "$directory_mask" ] && [ "$current_perms" != "$directory_mask" ]; then
-                sudo chmod "$directory_mask" "$share_path" 2>/dev/null || print_warning "Failed to set permissions for $share_path"
-                needs_update=true
-            fi
-
-            if [ "$needs_update" = true ]; then
+            if make_smb_writable "$share_path" "${force_user:-$ACTUAL_USER}" "${force_group:-$ACTUAL_GROUP}"; then
                 updated_count=$((updated_count + 1))
             fi
         fi
@@ -556,31 +543,9 @@ setup_folder_permissions() {
     fi
 
     if [ -d "$folder_path" ]; then
-        # Set ownership - use batch operation for efficiency
-        sudo chown -R "$ACTUAL_USER:$ACTUAL_GROUP" "$folder_path" 2>/dev/null || true
-        
-        # IMPORTANT: Special handling for maintenance scripts - preserve execute bits on .sh files
-        if [[ "$folder_path" == *"/maintenance_scripts/scripts"* ]]; then
-            # Only add group write to existing .sh files, preserve execute bits
-            find "$folder_path" -name "*.sh" -type f -exec sudo chmod g+w {} \; 2>/dev/null || true
-            # Non-script files get standard permissions
-            find "$folder_path" -type f ! -name "*.sh" -exec sudo chmod "$min_file_perms" {} \; 2>/dev/null || true
-            # Directories get standard permissions
-            find "$folder_path" -type d -exec sudo chmod "$min_dir_perms" {} \; 2>/dev/null || true
-        # For existing Minecraft directories: only add group write bit, don't remove execute
-        elif [[ "$folder_path" == *"/minecraft"* ]]; then
-            # Use batch chmod with -R flag - more efficient than per-file operations
-            sudo chmod -R g+w "$folder_path" 2>/dev/null || true
-        # For backup directories: use batch operations with --preserve-mode when possible
-        elif [[ "$folder_path" == *"/backup_"* ]]; then
-            # Apply batch permissions without the verbose loop
-            sudo find "$folder_path" -type d -exec chmod "$min_dir_perms" {} \; 2>/dev/null || true
-            sudo find "$folder_path" -type f -exec chmod "$min_file_perms" {} \; 2>/dev/null || true
-        else
-            # For other directories: apply full permissions using batch operations
-            sudo find "$folder_path" -type d -exec chmod "$min_dir_perms" {} \; 2>/dev/null || true
-            sudo find "$folder_path" -type f -exec chmod "$min_file_perms" {} \; 2>/dev/null || true
-        fi
+        # An existing share was made writable by make_smb_writable already.
+        # Resetting owners and modes here broke deployed apps on a re-run.
+        return 0
     else
         print_status "Creating directory: $folder_path"
         sudo mkdir -p "$folder_path"
