@@ -25,9 +25,15 @@ unset _a _dbg_args
 # so the bind address is the only real boundary.
 #
 # THE ADMIN PASSWORD IS SET HERE, NOT ON THE FIRST PAGE VISIT. Otherwise the
-# first person to open the page becomes admin. It is asked for on the terminal,
-# handed to Portainer once, and the file is deleted as soon as the account
-# exists. A re-run on an initialised Portainer asks nothing.
+# first person to open the page becomes admin. It is handed to Portainer once,
+# and the file is deleted as soon as the account exists. A re-run on an
+# initialised Portainer asks nothing.
+#
+# WHERE THE PASSWORD COMES FROM, first match wins:
+#   1. a secret store, when a secret_ask.sh is found (SECRET_ASK_SH, or the
+#      parent project's install_scripts/scripts/): its stored copy, or a new
+#      generated one stored there before Portainer ever sees it
+#   2. the keyboard, when there is no store
 #
 # Usage:
 #   add_portainer.sh
@@ -155,7 +161,18 @@ command -v curl >/dev/null 2>&1 || ERRORS+=("curl is missing: sudo apt-get insta
 # The database only exists once Portainer has made its admin account.
 INITIALISED=0
 [ -f "$DATA_DIR/data/portainer.db" ] && INITIALISED=1
-if [ "$INITIALISED" -eq 0 ] && ! { true > /dev/tty; } 2>/dev/null; then
+
+# Optional. Without it this script asks at the keyboard, as it always did.
+STORE=0
+for cand in "${SECRET_ASK_SH:-}" "$SCRIPT_DIR/../../install_scripts/scripts/secret_ask.sh"; do
+    [ -n "$cand" ] && [ -f "$cand" ] || continue
+    # shellcheck source=/dev/null
+    . "$cand" 2>/dev/null || true
+    [ "${SECRET_READY:-0}" = "1" ] && STORE=1
+    break
+done
+
+if [ "$INITIALISED" -eq 0 ] && [ "$STORE" -eq 0 ] && ! { true > /dev/tty; } 2>/dev/null; then
     ERRORS+=("No terminal to ask for the admin password, and Portainer has none yet")
     ERRORS+=("  Run this once from a terminal; re-runs after that need none")
 fi
@@ -170,6 +187,8 @@ print_info "Web page:  http://127.0.0.1:${PORT}, loopback only"
 print_info "Data:      $DATA_DIR/data"
 if [ "$INITIALISED" -eq 1 ]; then
     print_info "Admin:     already set, so nothing is asked"
+elif [ "$STORE" -eq 1 ]; then
+    print_info "Admin:     not set yet, its password comes from the secret store"
 else
     print_info "Admin:     not set yet, so a password is asked for below"
 fi
@@ -227,12 +246,36 @@ if ! run_watched "Pulling $IMAGE" docker pull "$IMAGE"; then
     exit 1
 fi
 
+SECRET_NAME="portainer-admin-password"
+if [ "$INITIALISED" -eq 0 ] && [ "$STORE" -eq 1 ]; then
+    PASSWORD="$(secret_file_get "$SECRET_NAME" 2>/dev/null)" || PASSWORD=""
+    if [ ${#PASSWORD} -ge 12 ]; then
+        print_status "Admin password read from the secret store ($SECRET_NAME)."
+    else
+        # Stored before Portainer sees it: a password nobody holds is a lockout.
+        PASSWORD="$(openssl rand -base64 24 | tr -d '/+=\n' | cut -c1-20)"
+        if printf '%s' "$PASSWORD" | secret_file_put "$SECRET_NAME" \
+           && [ "$(secret_file_get "$SECRET_NAME" 2>/dev/null)" = "$PASSWORD" ]; then
+            print_status "New admin password generated and stored as $SECRET_NAME."
+        else
+            PASSWORD=""
+            print_error "The secret store did not keep a new password, so it was not used."
+        fi
+    fi
+fi
+
 if [ "$INITIALISED" -eq 0 ]; then
-    echo ""
-    print_action "NEEDED: a password for Portainer's 'admin' account"
-    if ! read_password_twice; then
-        print_error "No password given, so nothing was started."
-        exit 1
+    if [ -z "${PASSWORD:-}" ]; then
+        if ! { true > /dev/tty; } 2>/dev/null; then
+            print_error "No terminal to ask for the admin password instead. Nothing was started."
+            exit 1
+        fi
+        echo ""
+        print_action "NEEDED: a password for Portainer's 'admin' account"
+        if ! read_password_twice; then
+            print_error "No password given, so nothing was started."
+            exit 1
+        fi
     fi
     ( umask 077; printf '%s' "$PASSWORD" > "$SECRET_FILE" )
     unset PASSWORD
