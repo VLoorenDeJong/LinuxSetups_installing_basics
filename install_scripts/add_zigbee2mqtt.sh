@@ -20,8 +20,9 @@ unset _a _dbg_args
 # (an SMLIGHT SLZB-06 family box on Ethernet) and publishing every Zigbee
 # device to the Mosquitto broker from add_mosquitto.sh.
 #
-# No home automation platform is assumed. Anything that reads MQTT can use the
-# devices, so the platform can be chosen, or changed, later.
+# No home automation platform is assumed: anything that reads MQTT can use the
+# devices, so the platform can be chosen or changed later. Discovery messages
+# are published in Home Assistant's format, which other platforms can read too.
 #
 # The coordinator's address is a local fact, asked for on the terminal and kept
 # in $DATA_DIR/.env. The MQTT account `zigbee2mqtt` gets a generated password
@@ -126,7 +127,7 @@ while [ $# -gt 0 ]; do
         --mosquitto-dir) need_value "$1" "${2:-}"; MOSQUITTO_DIR="$2"; shift 2 ;;
         --image)         need_value "$1" "${2:-}"; IMAGE="$2"; shift 2 ;;
         --update)        UPDATE=1; shift ;;
-        -h|--help)       sed -n '18,52p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help)       sed -n '18,53p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *)               print_error "Unknown argument: $1"; exit 2 ;;
     esac
 done
@@ -278,7 +279,7 @@ else
 # The broker, the coordinator and the web page come from the compose file.
 version: 5
 homeassistant:
-  enabled: false
+  enabled: true
 advanced:
   network_key: GENERATE
   pan_id: GENERATE
@@ -310,6 +311,7 @@ services:
       ZIGBEE2MQTT_CONFIG_SERIAL_ADAPTER: \"${ADAPTER}\"
       ZIGBEE2MQTT_CONFIG_FRONTEND_ENABLED: \"true\"
       ZIGBEE2MQTT_CONFIG_FRONTEND_PORT: \"8080\"
+      ZIGBEE2MQTT_CONFIG_HOMEASSISTANT_ENABLED: \"true\"
 networks:
   default:
     name: mqtt
