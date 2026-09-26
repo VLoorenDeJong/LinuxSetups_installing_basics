@@ -424,7 +424,10 @@ else
         print_status "Configuring firewall for Webmin..."
         if command -v ufw &> /dev/null && sudo ufw status | grep -q "Status: active"; then
             if ! sudo ufw status numbered | grep -q "10000"; then
-                sudo ufw allow 10000 >/dev/null 2>&1
+                # Webmin is a root panel: scope it to the local subnet, never the
+                # world. Falls back to the private range if the subnet is unknown.
+                _wm_lan="$(ip -4 route show default 2>/dev/null | awk '{print $3}' | head -1 | sed -E 's/\.[0-9]+$/.0\/24/')"
+                sudo ufw allow from "${_wm_lan:-192.168.0.0/16}" to any port 10000 proto tcp >/dev/null 2>&1
             fi
         fi
         print_success "Webmin installation complete"
@@ -497,8 +500,11 @@ print_status "Configuring firewall for Webmin..."
 # Allow Webmin through firewall if UFW is active
 if command -v ufw &> /dev/null && sudo ufw status | grep -q "Status: active"; then
     if ! sudo ufw status numbered | grep -q "10000"; then
-        sudo ufw allow 10000 >/dev/null 2>&1
-        print_success "Firewall rule added for Webmin (port 10000)"
+        # Webmin is a root panel: scope it to the local subnet, never the world.
+        # Falls back to the private range if the subnet cannot be detected.
+        _wm_lan="$(ip -4 route show default 2>/dev/null | awk '{print $3}' | head -1 | sed -E 's/\.[0-9]+$/.0\/24/')"
+        sudo ufw allow from "${_wm_lan:-192.168.0.0/16}" to any port 10000 proto tcp >/dev/null 2>&1
+        print_success "Firewall rule added for Webmin (port 10000, local subnet only)"
     fi
 fi
 
