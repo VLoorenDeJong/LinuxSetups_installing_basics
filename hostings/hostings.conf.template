@@ -1,0 +1,136 @@
+# hostings.conf: the whole machine in one file.
+#
+# Written by install_hostings.sh because /etc/hostings had no config. Fill in
+# at least BASE_DOMAIN and CERT_EMAIL, then run install_hostings.sh again.
+# Every other setting is optional: remove the "# " in front of one to set it,
+# and a script uses its own default for any that stay commented.
+#
+# A second file beside this one, hostings.test.conf, is used instead while
+# MACHINE_IS_LIVE is not yes: build and test a machine without it claiming
+# to be the live one.
+
+MACHINE_IS_LIVE = no
+
+# --- Settings ---------------------------------------------------------------
+# CONFIG_SAVE_HOOK =        a script run as "pre" and "post <who> <why>"
+#                           around every console save, e.g. to commit it
+# TAB_<NAME> = on|off       force a console tab on or off
+# BASE_DOMAIN =
+# MACHINE_NAME =
+# INSTALL_MODULES =
+# PROGRESS_REPO =
+# PROGRESS_DLL =
+# DEPRECATED_DOMAINS =
+# ENVS =
+# MAIL_DKIM_DIR =
+# MAIL_DKIM_SELECTOR =
+# TRANSIP_PROPAGATION_SECONDS =
+# CERT_EMAIL =
+# APP_RUN_USER =
+# APP_ROOT_LIVE =
+# WEB_ROOT_LIVE =
+# LIVE_UNIT_SUFFIX =
+# LIVE_HOST_PREFIX =
+# LIVE_PORT_OFFSET =
+# LIVE_BRANCH =
+# APP_ROOT_TEST =
+# WEB_ROOT_TEST =
+# TEST_UNIT_SUFFIX =
+# TEST_HOST_PREFIX =
+# TEST_PORT_OFFSET =
+# TEST_BRANCH =
+# APP_ROOT_ACCEPT =
+# WEB_ROOT_ACCEPT =
+# ACCEPT_UNIT_SUFFIX =
+# ACCEPT_HOST_PREFIX =
+# ACCEPT_PORT_OFFSET =
+# ACCEPT_BRANCH =
+# APP_ROOT_SKUNK =
+# WEB_ROOT_SKUNK =
+# SKUNK_UNIT_SUFFIX =
+# SKUNK_HOST_PREFIX =
+# SKUNK_PORT_OFFSET =
+# SKUNK_BRANCH =
+# BACKUP_ROOT =
+# DOCKER_BACKUP_REPO =
+# BACKUP_READ_GROUP =
+# SMB_GUEST_USER =
+# SMB_GUEST_GROUPS =
+# DOCKER_BACKUP_PATHS =
+# DOCKER_BACKUP_AT =
+# DOCKER_BACKUP_KEEP_DAILY =
+# DOCKER_BACKUP_KEEP_WEEKLY =
+# DOCKER_BACKUP_PASSWORD_FILE =
+# UPSTREAM_DATA_ROOT =
+# UPSTREAM_COOLDOWN_DAYS =
+# MAIL_ROOT =
+# MAIL_BACKUP_REPO =
+# MAIL_BACKUP_INTERVAL =
+# MAIL_BACKUP_PASSWORD_FILE =
+# MAIL_RELAY =
+# MAIL_RELAY_PASSWORD_FILE =
+# AUTH_USER_FILE =
+# AUTH_USER_META =
+# AUTH_ADMIN_USER =
+# OP_VAULT =
+# OP_VAULT_USERS =
+# OP_VAULT_MAIL =
+# OP_VAULT_SYSTEM =
+# OP_VAULT_KEYS =
+# OP_KEY_FILES =
+# OP_TOKEN_FILE =
+# OP_TOKEN_ITEM_VAULT =
+# OP_TOKEN_ITEM =
+# OP_CONNECT_VAULT =
+# OP_CONNECT_CREDENTIALS_ITEM =
+# OP_CONNECT_TOKEN_ITEM =
+# OP_CONNECT_PORT =
+# OP_CONNECT_NAME =
+# OP_CONNECT_TOKEN_FILE =
+# SECRET_PROVIDER =
+# NOTIFY_FROM =
+# NOTIFY_REPLY_TO =
+# NOTIFY_CONSOLE_URL =
+# NOTIFY_FALLBACK =
+# DOMAIN_CHECK_URL =
+# AUTH_SESSION_KEY_FILE =
+# DNS_MANAGE =
+# DNS_DOMAINS =
+# DNS_API_URL =
+# DNS_PROVIDER =
+# DNS_TTL =
+# DNS_CRED_DIR =
+# DNS_CRED_NAME =
+# JENKINS_LISTEN =
+# WEBHOOK_HOST =
+# WEBHOOK_PORT =
+# AUTH_WEB_ROOT =
+# DATA_DIRS =
+# PREVIEW_ROWS =
+# PREVIEW_PORT_BASE =
+# GITHUB_APP_ID =
+# GITHUB_APP_INSTALLATION_ID =
+# GITHUB_APP_KEY_FILE =
+# GITHUB_ORG =
+# REPO_DELETE_OWNERS =
+# GITHUB_ADMIN_TARGETS =
+# GITHUB_ADMIN_APP_ID =
+# GITHUB_ADMIN_APP_INSTALLATION_ID =
+# GITHUB_ADMIN_APP_KEY_FILE =
+# GITHUB_CREDENTIAL_OWNER =
+# GIT_PUSH_KEY =
+# GIT_PUSH_USER =
+
+# --- Machine pages ------------------------------------------------------------
+#   PANEL = <id> | <port> | <name> | <serves> | <target> | <login>
+# PANEL = console | 10001 | Console | - | - | yes
+
+# --- Rows ---------------------------------------------------------------------
+# One per site, application, proxy or mailbox. '-' means empty.
+#
+#   ServiceType | ApplicationName | Port | Path | Subdomain | DataSource |
+#   ApplicationOptionsOverwrite | AuthProtected | Repository | Branch | Envs |
+#   AuthUsers | RepoMode | Runtime | Enabled | Owner
+#
+# proxy   | vault    | 11005 | - | vault | - | - | no | - | - | live | - | - | - | yes | -
+# website | shop     | -     | - | shop  | - | - | no | https://github.com/<org>/shop.git | main | live | - | - | - | yes | -

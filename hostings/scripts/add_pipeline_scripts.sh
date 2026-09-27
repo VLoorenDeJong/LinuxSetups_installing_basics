@@ -112,8 +112,12 @@ command -v git >/dev/null 2>&1 || ERRORS+=("git is not installed.")
 
 GIT_URL="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || true)"
 GIT_BRANCH="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+# A submodule is checked out detached, at the commit its parent pins: then the
+# tree follows that exact commit, so the machine runs what the parent pins.
+GIT_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || true)"
+[ "$GIT_BRANCH" = "HEAD" ] && GIT_BRANCH=""
 [ -n "$GIT_URL" ]    || ERRORS+=("Could not read the git remote of $REPO_ROOT.")
-[ -n "$GIT_BRANCH" ] || ERRORS+=("Could not read the current branch of $REPO_ROOT.")
+[ -n "$GIT_BRANCH$GIT_SHA" ] || ERRORS+=("Could not read the branch or commit of $REPO_ROOT.")
 
 # HTTPS with a GitHub App token, not ssh. root has no key on this machine and
 # giving it one is a second thing to rotate; the App already exists, its tokens
@@ -159,7 +163,7 @@ for _c in "$SCRIPT_DIR/git_credential_github_app.sh" \
           "$PIPELINE_ROOT/hostings/scripts/git_credential_github_app.sh"; do
     [ -f "$_c" ] && { CRED_HELPER="$_c"; break; }
 done
-[ -n "$CRED_HELPER" ] || ERRORS+=("git_credential_github_app.sh was not found beside $0.")
+# Optional: a public repository needs no credential.
 
 # The token never reaches the URL or the argument list: anything on this machine
 # can read /proc/<pid>/cmdline while the clone runs, and a token written into a
@@ -172,6 +176,7 @@ done
 # file in the tree to 644 further down. A helper named by path must be
 # executable; one behind "!" is a shell command and does not care.
 git_with_token() {
+    if [ -z "$CRED_HELPER" ]; then git "$@"; return; fi
     SITES_CONF="$(conf_active "/etc/hostings")" \
     git -c credential.helper= \
         -c credential.helper="!bash '$CRED_HELPER'" \
@@ -179,12 +184,19 @@ git_with_token() {
         "$@"
 }
 
+# The ref to follow: the branch, or the pinned commit.
+if [ -n "$GIT_BRANCH" ]; then
+    FETCH_REF="$GIT_BRANCH";  FOLLOW="origin/$GIT_BRANCH"
+else
+    FETCH_REF="$GIT_SHA";     FOLLOW="$GIT_SHA"
+fi
+
 if [ ${#ERRORS[@]} -gt 0 ]; then
     for e in "${ERRORS[@]}"; do print_error "$e"; done
     exit 1
 fi
 
-print_info "Source: ${GIT_URL} (${GIT_BRANCH})"
+print_info "Source: ${GIT_URL} (${GIT_BRANCH:-pinned at ${GIT_SHA:0:7}})"
 print_info "Target: ${PIPELINE_ROOT}, root owned"
 
 if [ "$CHECK_ONLY" -eq 1 ]; then
@@ -223,8 +235,8 @@ if [ -d "$PIPELINE_ROOT/.git" ]; then
     # and "Unable to create index.lock" are different faults with different
     # fixes, and the old message could not tell them apart.
     refresh_err="$( { flock 9
-        git_with_token -C "$PIPELINE_ROOT" fetch -q origin "$GIT_BRANCH" \
-        && git -C "$PIPELINE_ROOT" reset -q --hard "origin/${GIT_BRANCH}"
+        git_with_token -C "$PIPELINE_ROOT" fetch -q origin "$FETCH_REF" \
+        && git -C "$PIPELINE_ROOT" reset -q --hard "$FOLLOW"
       } 9>"$REFRESH_LOCK" 2>&1 )" && refresh_ok=1 || refresh_ok=0
     if [ "$refresh_ok" = "1" ]; then
         spinner_stop
@@ -239,7 +251,9 @@ if [ -d "$PIPELINE_ROOT/.git" ]; then
 else
     spinner_start "Cloning into ${PIPELINE_ROOT}..."
     rm -rf "$PIPELINE_ROOT"
-    if git_with_token clone -q --branch "$GIT_BRANCH" "$GIT_URL" "$PIPELINE_ROOT" 2>/dev/null; then
+    if git_with_token clone -q ${GIT_BRANCH:+--branch "$GIT_BRANCH"} "$GIT_URL" "$PIPELINE_ROOT" 2>/dev/null \
+       && git_with_token -C "$PIPELINE_ROOT" fetch -q origin "$FETCH_REF" \
+       && git -C "$PIPELINE_ROOT" reset -q --hard "$FOLLOW"; then
         spinner_stop
         print_success "Cloned at $(git -C "$PIPELINE_ROOT" rev-parse --short HEAD)."
     else

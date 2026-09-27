@@ -4,9 +4,9 @@ A hosting stack for one Ubuntu machine, driven by one config file: Apache
 vhosts and certificates per row, applications and websites deployed by
 Jenkins, mail, Samba shares, and a web console to edit the config.
 
-**Not wired up yet.** This folder is being moved in from a private repository
-and nothing installs it so far. Until `install_hostings.sh` exists, treat it
-as a read-only preview.
+**Built, not yet run on a machine.** Start with `sudo ./install_hostings.sh`:
+on a machine with no config it writes a blank `/etc/hostings/hostings.conf`
+to fill in, then installs the modules chosen from `modules.conf`.
 
 ## Layout
 
