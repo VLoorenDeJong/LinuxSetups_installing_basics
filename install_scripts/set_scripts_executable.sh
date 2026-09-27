@@ -62,4 +62,12 @@ make_scripts_executable "$REPO_DIR" "repository"
 # silently skipped standalone (make_scripts_executable warns if absent)
 make_scripts_executable "$BACKUP_CONFIG_DIR" "backup_config"
 
+# The chmod above is a local change to git, and a later pull that touches the
+# same file refuses to merge over it. Every clone under here stops tracking it.
+if git -C "$REPO_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+    git -C "$REPO_DIR" config core.fileMode false
+    git -C "$REPO_DIR" submodule foreach --quiet --recursive 'git config core.fileMode false' 2>/dev/null || true
+    print_success "git ignores execute bits in $REPO_DIR, so a pull never trips on them"
+fi
+
 print_success "Script executable permissions setup complete!"
