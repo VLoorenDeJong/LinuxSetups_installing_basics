@@ -1,0 +1,141 @@
+// =============================================================================
+// Publish one .NET project. One task, one job.
+//
+// Its own job because building fails for entirely different reasons than
+// deploying does: a compile error is the developer's, a failed restart is the
+// machine's. Keeping them apart means the red job says which.
+//
+// NO SUDO ANYWHERE, and no machine state is touched. This job clones, runs
+// dotnet publish, and leaves the output in a staging directory Jenkins owns.
+// Nothing is live until the site's own deploy-csharp-application moves it.
+//
+// The staging path is keyed by repository, branch and project, so four tenants
+// of one application share one build and two projects in one repository do not
+// collide.
+// =============================================================================
+
+pipeline {
+    agent any
+
+    parameters {
+        string(
+            name: 'REPOSITORY',
+            defaultValue: '',
+            description: 'The clone URL, as written in the ninth column of hostings.conf.'
+        )
+        string(
+            name: 'BRANCH',
+            defaultValue: 'live',
+            description: 'The branch to build. Under the agreed layout the branch is the ' +
+                         'environment: live, test, accept or skunk.'
+        )
+        string(
+            name: 'PROJECT',
+            defaultValue: '',
+            description: 'Path inside the repository to the .csproj to publish, for example ' +
+                         'ISPAddressCheckerAPI. Empty publishes whatever the solution ' +
+                         'root resolves to, which only works when there is one.'
+        )
+    }
+
+    environment {
+        DOTNET_CLI_TELEMETRY_OPTOUT = '1'
+        DOTNET_NOLOGO = '1'
+        STAGING_ROOT = '/var/lib/jenkins/artifacts'
+    }
+
+    options {
+        timeout(time: 45, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '40'))
+    }
+
+    stages {
+        stage('Refuse an empty repository') {
+            steps {
+                script {
+                    if (!params.REPOSITORY?.trim()) {
+                        error('REPOSITORY is empty. Fill in the ninth column of hostings.conf ' +
+                              'for the row you want to build, then pass the same URL here.')
+                    }
+                }
+            }
+        }
+
+        stage('Clone') {
+            steps {
+                // A fresh directory every time: a stale obj/ from another branch
+                // is the classic way a build passes here and fails everywhere else.
+                //
+                // --recurse-submodules, which this never did. A customer whose
+                // repository uses a submodule was built without it and the
+                // build went green, because nothing here looked. Measured
+                // 2026-09-12: no job on this machine carried the git plugin's
+                // SubmoduleOption either, so there was no second place doing it.
+                //
+                // The credential helper is run through sudo because the jenkins
+                // account cannot read the App key (0600 root) and so cannot mint
+                // a token for a PRIVATE submodule. useHttpPath is what lets the
+                // helper see which owner to mint for. A public submodule needs
+                // none of this and clones anyway.
+                sh '''
+                    rm -rf src
+                    HELPER=/usr/local/lib/linuxbasics/hostings/scripts/git_credential_github_app.sh
+                    git -c credential.helper= \
+                        -c credential.helper="!sudo -n bash $HELPER" \
+                        -c credential.useHttpPath=true \
+                        clone --depth 1 --branch "$BRANCH" --recurse-submodules \
+                        "$REPOSITORY" src
+                '''
+                // A submodule that did not arrive is named, and the build says
+                // so. Silence here is what let a half-checked-out repository
+                // deploy as if it were whole.
+                script {
+                    def missed = sh(returnStdout: true, script: '''
+                        cd src 2>/dev/null || exit 0
+                        git submodule status --recursive 2>/dev/null \
+                          | awk '$1 ~ /^-/ { print $2 }'
+                    ''').trim()
+                    if (missed) {
+                        currentBuild.result = 'UNSTABLE'
+                        echo "These submodules did not check out, so the build is missing part of its source:\n${missed}"
+                    }
+                }
+            }
+        }
+
+        stage('Publish') {
+            steps {
+                script {
+                    // Slugged so the path is predictable from the parameters
+                    // alone, which is what lets the site's own deploy-csharp-application find it without the
+                    // two jobs passing anything but strings.
+                    env.SLUG = params.REPOSITORY
+                        .replaceAll(/\.git$/, '')
+                        .replaceAll(/^git@[^:]+:/, '')
+                        .replaceAll(/^https?:\/\/[^\/]+\//, '')
+                        .replaceAll(/[^A-Za-z0-9._-]/, '-')
+                    env.PROJECT_SLUG = (params.PROJECT?.trim() ?: 'default')
+                        .replaceAll(/[^A-Za-z0-9._-]/, '-')
+                    env.OUT = "${env.STAGING_ROOT}/${env.SLUG}/${params.BRANCH}/${env.PROJECT_SLUG}"
+                }
+                sh '''
+                    mkdir -p "$OUT"
+                    rm -rf "${OUT:?}/"*
+                    if [ -n "$PROJECT" ]; then
+                        dotnet publish "src/$PROJECT" -c Release -o "$OUT"
+                    else
+                        dotnet publish src -c Release -o "$OUT"
+                    fi
+                '''
+                echo "Published to ${env.OUT}"
+                echo 'Pass that path to deploy-csharp-application, inside the site folder.'
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo 'The build failed, so nothing was staged and nothing on the machine changed.'
+        }
+    }
+}

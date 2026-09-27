@@ -1,0 +1,301 @@
+// =============================================================================
+// Build one .NET application from source and put it on the machine.
+// One job per row per environment, started by a push.
+//
+//   ispaddress_api/deploy-live
+//   └── folder: the row       └── job: the environment
+//
+// so a push starts it with no parameters at all. Repository, branch and project
+// all come out of hostings.conf.
+//
+// WHY THIS EXISTS ALONGSIDE csharp/1-build-application AND deploy-csharp-application.
+// Those two are a chain a person drives: the first prints a staging path and you
+// paste it into the second. Fine by hand, impossible from a hook, which has
+// nobody to do the pasting. This file is the unattended path: source to running
+// service, nothing typed. The manual pair stays, for a release worth inspecting
+// between building and deploying.
+//
+// WHICH PROJECT GETS PUBLISHED: from the dll name in the fourth column, not from
+// a new field. .NET names the assembly after the project, so
+// progress-app.dll is built by progress-app.csproj.
+// resolve_deploy_target.sh does that lookup and carries the reasoning.
+//
+// FIVE ROWS, ONE REPOSITORY. The progress application is deployed five times
+// from one branch, so a push starts five jobs and each builds the same code
+// again. Wasteful and correct; sharing one build means a job that has to know
+// about the other four.
+//
+// SUDO ONLY FOR THE DEPLOY. The build runs as jenkins in the workspace and
+// touches nothing else.
+// =============================================================================
+
+pipeline {
+    agent any
+
+    parameters {
+        string(
+            name: 'ROW',
+            defaultValue: '',
+            description: 'Leave empty. Taken from the folder name, which is the row.'
+        )
+        string(
+            name: 'ENVIRONMENT',
+            defaultValue: '',
+            description: 'Leave empty. Taken from the job name: deploy-live is the live environment.'
+        )
+        booleanParam(
+            name: 'FORCE',
+            defaultValue: false,
+            description: 'Build and deploy even when the source has not moved since the last deploy.'
+        )
+    }
+
+    triggers {
+        githubPush()
+    }
+
+    environment {
+        DOTNET_CLI_TELEMETRY_OPTOUT = '1'
+        DOTNET_NOLOGO = '1'
+    }
+
+    options {
+        timeout(time: 45, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '40'))
+        disableConcurrentBuilds()
+    }
+
+    stages {
+        // THE ROOT-OWNED TREE FIRST, before anything reads a config.
+        //
+        // Everything this job runs under sudo lives in /usr/local/lib/linuxbasics
+        // and reads ITS copy of hostings.conf, not the workspace one. A row
+        // edited in the console reaches that tree only when something refreshes
+        // it, and nothing in this job did: deploy_app.sh:206 then took the dll
+        // path out of a config older than the row.
+        //
+        // Twice on 2026-09-09, and both times the error was honest and useless:
+        //
+        //   progress-app.dll is not in .../publish
+        //   Found instead: progress-app.dll
+        //
+        // Same guard as machine--apply-config: compare the commits and skip the
+        // sudo call when they already agree, so a busy row does not pay for a
+        // reinstall on every build.
+        stage('Refresh the root-owned tree') {
+            steps {
+                script {
+                    def want = sh(returnStdout: true, script: 'git rev-parse HEAD').trim()
+                    def have = sh(returnStdout: true, returnStatus: false,
+                        script: 'git -c safe.directory=/usr/local/lib/linuxbasics ' +
+                                '-C /usr/local/lib/linuxbasics rev-parse HEAD 2>/dev/null || echo none').trim()
+                    if (want == have) {
+                        echo "The root-owned tree is already at ${want.take(7)}. Not refreshing."
+                    } else {
+                        sh 'sudo bash /usr/local/lib/linuxbasics/hostings/scripts/add_pipeline_scripts.sh'
+                    }
+                }
+            }
+        }
+
+        stage('Work out what this job is') {
+            steps {
+                // NO checkout HERE. The declarative agent already ran
+                // "Checkout SCM" and put this repository in the workspace, so a
+                // second checkout fetched and checked out the same revision
+                // twice on every build. Measured 2026-08-26: 585 no-change
+                // builds that day, 105 seconds each, 913 executor-minutes.
+                script {
+                    def parts = env.JOB_NAME.split('/')
+                    def tail = parts[parts.size() - 1]
+
+                    env.ROW_NAME = params.ROW?.trim() ?: (parts.size() > 1 ? parts[0] : '')
+                    env.ENV_NAME = params.ENVIRONMENT?.trim() ?:
+                        (tail.startsWith('deploy-') ? tail.substring(7) : '')
+
+                    if (!env.ROW_NAME) {
+                        error('No row. This job belongs in a folder named after a row in hostings.conf.')
+                    }
+                    if (!env.ENV_NAME) {
+                        error('No environment. Name the job deploy-<env>, for example deploy-live.')
+                    }
+
+                    def resolved = sh(
+                        returnStdout: true,
+                        script: 'bash hostings/scripts/resolve_deploy_target.sh ' +
+                                '"' + env.ROW_NAME + '" "' + env.ENV_NAME + '"'
+                    ).trim()
+
+                    def bits = resolved.split('\\|', -1)
+                    env.DEPLOY_BRANCH = bits.size() > 0 ? bits[0] : ''
+                    env.APP_REPO      = bits.size() > 1 ? bits[1] : ''
+                    env.APP_PROJECT   = bits.size() > 2 ? bits[2] : ''
+
+                    if (!env.DEPLOY_BRANCH) {
+                        error("No branch for '" + env.ROW_NAME + "' in " + env.ENV_NAME +
+                              ". Set the row's Branch, or <ENV>_BRANCH, in hostings.conf.")
+                    }
+                    if (!env.APP_REPO) {
+                        error("Row '" + env.ROW_NAME + "' has no Repository in hostings.conf, so there is nothing to build.")
+                    }
+                    if (!env.APP_PROJECT) {
+                        error("Row '" + env.ROW_NAME + "' has no .dll in its fourth column, " +
+                              'so the project to publish cannot be worked out.')
+                    }
+                    echo env.ROW_NAME + ', ' + env.ENV_NAME + ' environment, ' +
+                         env.APP_PROJECT + ' from branch ' + env.DEPLOY_BRANCH
+                }
+            }
+        }
+
+        stage('Check out the application') {
+            steps {
+                // checkout() rather than a shell clone: this is what records the
+                // repository against the job, and a webhook only reaches jobs
+                // whose recorded SCM matches the repository that changed.
+                checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: '*/' + env.DEPLOY_BRANCH]],
+                    userRemoteConfigs: [[
+                        url: env.APP_REPO,
+                        // github-token-<owner>: a Jenkins App credential reaches one
+                        // owner only (add_jenkins_github_credentials.sh makes one each).
+                        credentialsId: 'github-token-' + env.APP_REPO.substring(env.APP_REPO.indexOf('github.com') + 11).split('/')[0]
+                    ]],
+                    extensions: [
+                        [$class: 'RelativeTargetDirectory', relativeTargetDir: 'src'],
+                        [$class: 'CloneOption', shallow: true, depth: 1, noTags: true],
+                        [$class: 'CleanBeforeCheckout']
+                    ]
+                ])
+                // Submodules, which this checkout never did: checkout() carries
+                // no SubmoduleOption, so a customer application using one was
+                // built without it and went green. The same fault as in
+                // web-1-deploy-static-website, and this job was missed on
+                // 2026-09-12 because only csharp--1-build-application, which is the
+                // hand-driven one, was looked at.
+                //
+                // Not SubmoduleOption, because the plugin would authenticate
+                // with the job's own org-scoped credential and a submodule
+                // under another owner 404s. sudo, because the jenkins account
+                // cannot read the App key.
+                sh '''
+                    cd src 2>/dev/null || exit 0
+                    [ -f .gitmodules ] || exit 0
+                    export GIT_TERMINAL_PROMPT=0
+                    HELPER=/usr/local/lib/linuxbasics/hostings/scripts/git_credential_github_app.sh
+                    git -c credential.helper= \
+                        -c credential.helper="!sudo -n bash $HELPER" \
+                        -c credential.useHttpPath=true \
+                        submodule update --init --recursive || true
+                '''
+                script {
+                    def missed = sh(returnStdout: true, script: '''
+                        cd src 2>/dev/null || exit 0
+                        git submodule status --recursive 2>/dev/null \
+                          | awk '$1 ~ /^-/ { print $2 }'
+                    ''').trim()
+                    if (missed) {
+                        currentBuild.result = 'UNSTABLE'
+                        echo "These submodules did not check out, so the build is missing part of its source:\n${missed}"
+                    }
+                }
+                script {
+                    // The GitHub plugin associates a job with every repository it
+                    // can see in it, and this one reads its Jenkinsfile from
+                    // the config repository. Without this skip, a push to the config repository
+                    // rebuilds and restarts every application on the machine,
+                    // which is what it did to the websites on 2026-08-23.
+                    env.SRC_SHA = sh(returnStdout: true,
+                        script: 'git -C src rev-parse HEAD').trim()
+
+                    def marker = "/var/lib/jenkins/last-deployed/${env.ROW_NAME}-${env.ENV_NAME}.sha"
+                    sh 'mkdir -p /var/lib/jenkins/last-deployed'
+                    def previous = sh(returnStdout: true,
+                        script: "cat ${marker} 2>/dev/null || true").trim()
+
+                    if (previous == env.SRC_SHA && !params.FORCE) {
+                        env.NOTHING_TO_DO = 'yes'
+                        echo "Already deployed ${env.SRC_SHA.take(8)}. Nothing changed."
+                        // Never downgrade an UNSTABLE set above: a submodule that did not
+                        // check out is silenced otherwise, because a repeat build of the
+                        // same commit lands here and NOT_BUILT reads as nothing to do.
+                        if (currentBuild.result == null || currentBuild.result == 'SUCCESS') {
+                            currentBuild.result = 'NOT_BUILT'
+                        }
+                        currentBuild.description = 'no change'
+                    }
+                    env.DEPLOY_MARKER = marker
+                }
+            }
+        }
+
+        stage('Publish') {
+            when { expression { env.NOTHING_TO_DO != 'yes' } }
+            steps {
+                // Found by name rather than by path: a solution may nest its
+                // projects, and the dll name is all the config gives us. Two
+                // matches is an ambiguity worth stopping on, not guessing at.
+                sh(script: [
+                    'set -e',
+                    'rm -rf publish',
+                    // A Docker row builds an image in Deploy instead (item 140).
+                    'case "$APP_PROJECT" in docker:*) echo "Docker application: the image is built in Deploy."; exit 0 ;; esac',
+                    'matches="$(find src -name "${APP_PROJECT}.csproj" -type f | sort)"',
+                    'count="$(printf %s "$matches" | grep -c . || true)"',
+                    'if [ "$count" -eq 0 ]; then',
+                    '  echo "No ${APP_PROJECT}.csproj in the repository." >&2',
+                    '  echo "The project comes from the dll name in the fourth column of hostings.conf." >&2',
+                    '  exit 1',
+                    'fi',
+                    'if [ "$count" -gt 1 ]; then',
+                    '  echo "More than one ${APP_PROJECT}.csproj:" >&2',
+                    '  echo "$matches" >&2',
+                    '  exit 1',
+                    'fi',
+                    'echo "Publishing $matches"',
+                    // Uno (item 139): its WebAssembly half cannot build on this
+                    // machine's .NET, so it builds in the builder container.
+                    'if [ -f src/global.json ] && grep -q "\\"Uno.Sdk\\"" src/global.json; then',
+                    '  rel="${matches#src/}"',
+                    '  sudo -n bash /usr/local/lib/linuxbasics/hostings/scripts/build_in_container.sh publish "$WORKSPACE/src" "$rel" .publish',
+                    '  mv src/.publish publish',
+                    'else',
+                    '  dotnet publish "$matches" -c Release -o publish',
+                    'fi'
+                ].join('\n'))
+            }
+        }
+
+        stage('Deploy') {
+            when { expression { env.NOTHING_TO_DO != 'yes' } }
+            steps {
+                sh(script: [
+                    'set -e',
+                    'case "$APP_PROJECT" in docker:*)',
+                    '  sudo bash /usr/local/lib/linuxbasics/hostings/scripts/deploy_docker_app.sh "$ROW_NAME" "$WORKSPACE/src" "$ENV_NAME"',
+                    '  exit 0 ;;',
+                    'esac',
+                    'if [ -z "$(ls -A publish 2>/dev/null)" ]; then',
+                    '  echo "The publish directory is empty, so there is nothing to deploy." >&2',
+                    '  exit 1',
+                    'fi',
+                    'sudo bash /usr/local/lib/linuxbasics/hostings/scripts/deploy_app.sh \\',
+                    '    "$ROW_NAME" "$WORKSPACE/publish" "$ENV_NAME"'
+                ].join('\n'))
+                // Written only after the deploy returned, so a failure is
+                // retried on the next push rather than remembered as done.
+                sh 'printf %s "$SRC_SHA" > "$DEPLOY_MARKER"'
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo "Building or deploying '${env.ROW_NAME}' failed."
+            echo 'deploy_app.sh restores its snapshot on any failure after it was taken,'
+            echo 'so the previous version should be back up. A failure before that point'
+            echo 'never touched the machine at all.'
+        }
+    }
+}

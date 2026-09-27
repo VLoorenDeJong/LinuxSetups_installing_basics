@@ -1,0 +1,118 @@
+// =============================================================================
+// Put one already-built application into one row. One task, one job.
+//
+// It calls deploy_app.sh and nothing else. That script does snapshot, rsync,
+// restart, health check, and restores the snapshot on any failure after the
+// snapshot was taken.
+//
+// THOSE FIVE STEPS ARE NOT SPLIT INTO FIVE JOBS, AND THAT IS DELIBERATE. They
+// are one transaction. If the restart were its own job it could not roll back,
+// because the snapshot would live in another job's workspace, and a twenty
+// second automatic recovery would become a site that stays down until somebody
+// notices. Split what can fail independently; keep together what has to be
+// undone as a unit.
+//
+// Building is separate, because a compile error and a failed restart are
+// different people's problems. That is csharp/1-build-application.
+// =============================================================================
+
+pipeline {
+    agent any
+
+    parameters {
+        string(
+            name: 'ROW',
+            defaultValue: '',
+            description: 'The name in the second column of hostings.conf, for example ' +
+                         'ispaddress_api. One row, one deployment.'
+        )
+        string(
+            name: 'SOURCE_DIR',
+            defaultValue: '',
+            description: 'The directory csharp/1-build-application published to. It prints the path at the ' +
+                         'end of its log.'
+        )
+        string(
+            name: 'ENVIRONMENT',
+            defaultValue: 'live',
+            description: 'Which environment of that row to deploy into.'
+        )
+    }
+
+    options {
+        timeout(time: 20, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '60'))
+        // Two deploys of the same row would fight over the same snapshot.
+        // Different rows are safe, but Jenkins cannot express that without the
+        // lockable-resources plugin, which is not installed here.
+        disableConcurrentBuilds()
+    }
+
+    stages {
+        stage('Refuse missing arguments') {
+            steps {
+                script {
+                    // The folder is the site: a job at
+                    // ispaddress_api/2-write-apache-vhost knows its row without being
+                    // told. A parameter still wins, so this same file works as a
+                    // top-level job with a name typed in.
+                    env.ROW_NAME = params.ROW?.trim() ?:
+                        (env.JOB_NAME.contains('/') ? env.JOB_NAME.split('/')[0] : '')
+                    if (!env.ROW_NAME) {
+                        error('ROW is empty. Give a name from the second column of hostings.conf.')
+                    }
+                    if (!params.SOURCE_DIR?.trim()) {
+                        error('SOURCE_DIR is empty. Run csharp/1-build-application first and use the path it prints.')
+                    }
+                }
+            }
+        }
+
+        stage('Check out the configuration') {
+            steps {
+                checkout scm
+                sh '''
+                    export GIT_TERMINAL_PROMPT=0
+                    git submodule status | awk 'substr($2, 1, 8) != ".claude/" {print $2}' | while read -r p; do
+                        git submodule update --init "$p" || echo "skipped $p (needs a credential)"
+                    done
+                '''
+            }
+        }
+
+        stage('Refuse an empty build') {
+            steps {
+                // Deploying an empty directory would rsync the site away and
+                // then health check a service with no dll behind it. Cheaper to
+                // stop here than to roll back.
+                sh '''
+                    if [ ! -d "$SOURCE_DIR" ]; then
+                        echo "SOURCE_DIR does not exist: $SOURCE_DIR" >&2
+                        exit 1
+                    fi
+                    if [ -z "$(ls -A "$SOURCE_DIR" 2>/dev/null)" ]; then
+                        echo "SOURCE_DIR is empty: $SOURCE_DIR" >&2
+                        echo "csharp/1-build-application either failed or published somewhere else." >&2
+                        exit 1
+                    fi
+                '''
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                sh "sudo bash /usr/local/lib/linuxbasics/hostings/scripts/deploy_app.sh '${env.ROW_NAME}' " +
+                   "'${params.SOURCE_DIR}' '${params.ENVIRONMENT}'"
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo "Deploying '${env.ROW_NAME}' failed."
+            echo 'deploy_app.sh restores its snapshot on any failure after it was taken,'
+            echo 'so the previous version should be back up. Check the log above for the'
+            echo 'restore, and run machine/check-sites-answer to confirm the site answers.'
+        }
+    }
+}

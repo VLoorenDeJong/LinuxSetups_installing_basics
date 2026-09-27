@@ -1,0 +1,94 @@
+// =============================================================================
+// Ask for one row's certificate. One task, one job.
+//
+// Its own job because the rate limit is per hostname and is the only thing here
+// a rerun cannot undo. A failed vhost costs a rerun; a failed certificate costs
+// a week.
+//
+// MACHINE_IS_LIVE in hostings.conf decides staging versus real and this job does
+// not override it. Until the drive swap every run uses the staging endpoint and
+// issues nothing, because a challenge this machine cannot answer would burn the
+// limit for every hostname at once.
+//
+// Writing the vhost afterwards is site-2-write-apache-vhost's job, not this one.
+// =============================================================================
+
+pipeline {
+    agent any
+
+    parameters {
+        string(
+            name: 'ROW',
+            defaultValue: '',
+            description: 'The name in the second column of hostings.conf. ' +
+                         'Comma separated for several.'
+        )
+        choice(
+            name: 'ENVIRONMENT',
+            choices: ['all', 'live', 'test', 'accept', 'skunk'],
+            description: 'Narrow further to one environment. The rate limit is per ' +
+                         'hostname, so doing live first and seeing it work costs nothing.'
+        )
+    }
+
+    options {
+        timeout(time: 30, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '60'))
+        // certbot holds its own lock and two runs would fight over it.
+        disableConcurrentBuilds()
+    }
+
+    stages {
+        stage('Check out the configuration') {
+            steps {
+                checkout scm
+                sh '''
+                    export GIT_TERMINAL_PROMPT=0
+                    git submodule status | awk 'substr($2, 1, 8) != ".claude/" {print $2}' | while read -r p; do
+                        git submodule update --init "$p" || echo "skipped $p (needs a credential)"
+                    done
+                '''
+            }
+        }
+
+        stage('Refuse an empty row') {
+            steps {
+                script {
+                    // The folder is the site: a job at
+                    // ispaddress_api/2-write-apache-vhost knows its row without being
+                    // told. A parameter still wins, so this same file works as a
+                    // top-level job with a name typed in.
+                    env.ROW_NAME = params.ROW?.trim() ?:
+                        (env.JOB_NAME.contains('/') ? env.JOB_NAME.split('/')[0] : '')
+                    if (!env.ROW_NAME) {
+                        error('ROW is empty. Give a name from the second column of hostings.conf.')
+                    }
+                }
+            }
+        }
+
+        stage('Request') {
+            steps {
+                script {
+                    // Flags rather than environment variables: sudo's env_reset
+                    // drops the variables, and `sudo env VAR=x bash ...` is a
+                    // different command string than the NOPASSWD rule allows.
+                    def cmd = "sudo bash /usr/local/lib/linuxbasics/hostings/scripts/add_site_certificates.sh" +
+                              " --only-row '${env.ROW_NAME}'"
+                    if (params.ENVIRONMENT != 'all') {
+                        cmd += " --only '${params.ENVIRONMENT}'"
+                    }
+                    sh cmd
+                }
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo "The certificate for '${env.ROW_NAME}' was not issued."
+            echo 'Nothing else was changed. Check whether DNS points here yet: a name that'
+            echo 'does not resolve is reported and skipped, not requested.'
+        }
+    }
+}

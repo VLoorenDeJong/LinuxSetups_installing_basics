@@ -1,0 +1,1082 @@
+  /* color-scheme is what light-dark() reads. DARK IS THE DEFAULT: set here
+     rather than in JS, so a light OS never flashes a white page before
+     chrome.js runs. The sun/moon toggle overrides it by setting data-theme. */
+  :root {
+    color-scheme: dark;
+    --bg: light-dark(#f6f7f9, #14171a); --fg: light-dark(#1a1d21, #e6e8ea);
+    --muted: light-dark(#5b6470, #9aa4b0);
+    --card: light-dark(#ffffff, #1c2024); --line: light-dark(#dfe3e8, #2c3238);
+    --good: light-dark(#1a7f37, #4ac26b); --bad: light-dark(#b42318, #ff6b5e);
+    --warn: light-dark(#9a6700, #d4a72c);
+  }
+  :root[data-theme="light"] { color-scheme: light; }
+  :root[data-theme="dark"]  { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 1.5rem;
+    background: var(--bg); color: var(--fg);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: min(1700px, calc(100% - 3rem)); margin: 0 auto; }
+  h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+  .sub { color: var(--muted); margin: 0 0 1.5rem; }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.25rem;
+  }
+  .state { display: inline-block; padding: .2rem .6rem; border-radius: 999px;
+           font-size: .85rem; font-weight: 600; }
+  .state.live { background: rgba(180,35,24,.12); color: var(--bad); }
+  .state.test { background: rgba(154,103,0,.14); color: var(--warn); }
+  textarea {
+    width: 100%; min-height: 60vh; font: 13px/1.45 ui-monospace, "Cascadia Code", monospace;
+    background: var(--bg); color: var(--fg);
+    border: 1px solid var(--line); border-radius: 6px; padding: .75rem;
+    white-space: pre; overflow-wrap: normal; overflow-x: auto;
+  }
+  button {
+    font: inherit; font-weight: 600; cursor: pointer;
+    border: 1px solid var(--line); border-radius: 6px;
+    padding: .55rem 1.1rem; background: var(--card); color: var(--fg);
+  }
+  .action-btn { display: inline-flex; align-items: center; gap: .45rem; }
+  button.primary { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+  button.action-check {
+    background: light-dark(#eef4ff, #1a2642); border-color: light-dark(#c5d5ff, #2c4f97);
+    color: light-dark(#1f4db8, #9ec1ff);
+  }
+  button.action-provision {
+    background: light-dark(#f5efff, #281f3b); border-color: light-dark(#dbcfff, #4d3b73);
+    color: light-dark(#6c46c9, #c6b4ef);
+  }
+  /* The same amber as .cta-warn and the "a test machine" pill, from the token
+     rather than three hand-picked hexes. It had its own set, so two buttons
+     meaning the same kind of thing sat next to each other in two ambers. */
+  button.action-update {
+    background: rgba(154,103,0,.14); border-color: var(--warn); color: var(--warn);
+  }
+  button.action-update:hover { background: rgba(154,103,0,.22); border-color: var(--warn); }
+  /* Red: it takes every site down, and sits where Update used to be. */
+  button.action-reboot { background: rgba(180,35,24,.12); border-color: var(--bad); color: var(--bad); }
+  button.action-reboot:hover { background: rgba(180,35,24,.2); border-color: var(--bad); }
+
+  /* The one button on a screen that changes the machine. Green rather than
+     blue, so it does not read as "the usual one" next to Save. */
+  /* Outlined, not filled. A slab of solid green next to a dark page is loud
+     without being informative, and the destructive `purge` option below has
+     always been outlined, so filled green was the odd one out rather than the
+     rule. Tint, border and text from the same token, like every pill. */
+  button.cta {
+    background: rgba(26,127,55,.14); border-color: var(--good); color: var(--good);
+  }
+  button.cta:hover { background: rgba(26,127,55,.22); border-color: var(--good); }
+  /* Outlined rather than filled: this one starts something the operator has to
+     think about, so it draws the eye without looking like the safe green
+     confirm beside it. Same tint the "a test machine" pill uses, because it is
+     about the same fact. */
+  button.cta-warn {
+    background: rgba(154,103,0,.14); border-color: var(--warn); color: var(--warn);
+  }
+  button.cta-warn:hover { background: rgba(154,103,0,.22); border-color: var(--warn); }
+  /* Stopping something that is running is not the safe green confirm beside it.
+     Same token every other destructive control on the page uses. */
+  button.cta.danger {
+    background: rgba(207,34,46,.14); border-color: var(--bad); color: var(--bad);
+  }
+  button.cta.danger:hover { background: rgba(207,34,46,.22); border-color: var(--bad); }
+  button.cta:disabled { opacity: .45; cursor: not-allowed; }
+  /* The browser hides [hidden] with display:none, which any author rule
+     setting display beats. .row-actions and .msg.running both set flex, so
+     el.hidden = true did nothing to them and the apply dialog kept offering
+     a second Save and apply while the first job was still running. */
+  [hidden] { display: none !important; }
+  .cpu-box { border: 1px solid var(--line); border-radius: 6px; padding: .5rem .6rem; }
+  /* Wider and taller only while a job is being watched: seven graphs at a
+     readable size do not fit the 560px every other dialog uses, and with the
+     graphs pinned the extra height goes to Jenkins' output rather than to
+     whitespace. */
+  .dialog.watching { width: min(900px, calc(100% - 2rem)); max-height: 90vh; }
+  /* The same width, always. It carries the same graphs the apply dialog does,
+     and a narrower box beside an identical one reads as a different kind of
+     thing. The owner, 2026-09-09. */
+  /* Same for the redeploy dialog, 2026-09-10: it carries the graphs now too,
+     and the owner read the narrower box beside the identical ones as a different
+     kind of thing, which is exactly the reason given for #svc-dialog. */
+  #svc-dialog,
+  #redeploy-dialog { width: min(900px, calc(100% - 2rem)); max-height: 90vh; }
+  .cpu-cores { display: grid; gap: .6rem; color: #1f6feb;
+               grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+  .cpu-cores + .cpu-cores { margin-top: .6rem; }
+  .cpu-core { display: flex; flex-direction: column; gap: .25rem;
+              border: 1px solid rgba(56,139,253,.55); border-radius: 6px; padding: .4rem;
+              box-shadow: 0 0 0 3px rgba(56,139,253,.10), 0 2px 10px rgba(56,139,253,.22); }
+  .cpu-core svg { display: block; width: 100%; height: 64px;
+                  background: rgba(31,111,235,.07); border-radius: 3px; }
+  .cpu-core b { font-size: 1.15rem; font-weight: 700; color: #1f6feb;
+                font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .cpu-core span { font-size: .75rem; color: var(--muted); }
+  td.owner.muted { color: var(--muted); }
+  /* A phone fits one 160px graph per row, so eight graphs filled the dialog
+     and Jenkins' output below them was cut off entirely. Four small ones a
+     row, and a dialog of fixed height so the log gets what is left. */
+  @media (max-width: 640px) {
+    .cpu-cores { grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: .35rem; }
+    .cpu-cores + .cpu-cores { margin-top: .35rem; }
+    .cpu-core { padding: .25rem; gap: .1rem; box-shadow: none; }
+    .cpu-core svg { height: 28px; }
+    .cpu-core b { font-size: .85rem; }
+    .cpu-core span { font-size: .62rem; line-height: 1.15; overflow-wrap: anywhere; }
+    .dialog.watching { height: 90vh; }
+    #apply-log-box { min-height: 12rem; }
+  }
+  .msg { padding: .75rem 1rem; border-radius: 6px; margin-bottom: 1rem; font-weight: 600; }
+  .msg.running { background: rgba(31,111,235,.12); color: #1f6feb;
+                 display: flex; align-items: center; gap: .6rem; }
+  .spin {
+    width: 14px; height: 14px; border-radius: 50%; flex: none;
+    border: 2px solid currentColor; border-right-color: transparent;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spin { animation-duration: 3s; } }
+
+  /* An edited or removed line has no state on the machine, so its environment
+     pill drops its identity colour: colour here means what is true out there,
+     and blue for accept while the line is unsaved says the opposite. */
+  tr.edited .env, tr.gone .env {
+    background: transparent; color: var(--muted);
+    border-color: var(--line); border-style: dashed;
+  }
+  .msg.good { background: rgba(26,127,55,.12); color: var(--good); }
+  .msg.bad  { background: rgba(180,35,24,.12); color: var(--bad); }
+  pre.out {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+    padding: .75rem; overflow-x: auto; font-size: 12.5px; max-height: 40vh;
+  }
+  /* The only pane that grows while you watch it, so it is the only one that
+     has to scroll rather than clip. */
+  pre.out#apply-log { overflow-y: auto; max-height: none; flex: 1 1 auto; min-height: 0; margin: 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 700; vertical-align: bottom; }
+
+  /* What the column means lives in the header's tooltip. The dotted underline
+     is the only thing saying there is one to hover. */
+  th[title] > span:first-child { text-decoration: underline dotted; text-underline-offset: 3px; }
+  th[title] { cursor: help; }
+  th.sortable[title] { cursor: pointer; }
+
+  /* Only what would change, one line each. The rest of the check is a log and
+     lives behind a fold. */
+  .drift { list-style: none; margin: .5rem 0 0; padding: 0; font-size: 13px; }
+  .drift li { display: flex; gap: .5rem; align-items: baseline;
+              padding: .25rem 0; border-bottom: 1px solid var(--line); }
+  .drift .what { color: var(--muted); font: 11px/1 ui-monospace, monospace; }
+  .drift .name { font-family: ui-monospace, "Cascadia Code", monospace; }
+  .tag {
+    font: 10.5px/1 ui-monospace, monospace; letter-spacing: .06em;
+    padding: 4px 7px; border-radius: 5px; flex: none; font-weight: 700;
+  }
+  .tag.add    { background: rgba(26,127,55,.14);  color: var(--good); }
+  .tag.update { background: rgba(154,103,0,.16);  color: var(--warn); }
+  .tag.orphan { background: rgba(180,35,24,.12);  color: var(--bad); }
+  .tag.bad    { background: rgba(180,35,24,.12);  color: var(--bad); }
+  .nothing { color: var(--good); font-weight: 600; margin: .5rem 0 0; }
+
+  /* Amber, not red: the machine is serving, it is just serving something older
+     than the config. */
+  .drift-banner {
+    background: rgba(154,103,0,.10); border: 1px solid var(--warn);
+    border-radius: 6px; padding: .7rem .8rem; margin: 0 0 .75rem;
+  }
+  .drift-banner-head { margin: 0; }
+  .drift-banner .drift { max-height: 30vh; overflow-y: auto; }
+
+  .tabs { display: flex; gap: .35rem; margin-bottom: .75rem; flex-wrap: wrap; }
+  .tab {
+    font-weight: 600; padding: .45rem .9rem; border-radius: 6px;
+    background: transparent; color: var(--muted); border-color: transparent;
+  }
+  .tab:hover { color: var(--fg); }
+  /* The selected tab was the page background with a hairline border, which on
+     a page that IS that background read as nothing. An underline in its own
+     colour survives every palette and both themes. */
+  .tab[aria-selected="true"] {
+    background: var(--bg); color: var(--fg); border-color: var(--line);
+    box-shadow: inset 0 -3px 0 currentColor;
+  }
+  .tab .count { font-weight: 400; opacity: .7; }
+
+  /* A tab that stands for a service type wears that type's colour, so the strip
+     reads as the same four kinds the rows do. Machine pages is not a kind and
+     stays neutral. */
+  .tab.svc { display: inline-flex; align-items: center; gap: .4rem; color: var(--k-fg); }
+  .tab.svc:hover { background: var(--k-bg); }
+  .tab.svc[aria-selected="true"] {
+    background: var(--k-bg); color: var(--k-fg); border-color: var(--k-line);
+    box-shadow: inset 0 -3px 0 var(--k-fg);
+  }
+  .tab .ico { width: 13px; height: 13px; }
+
+  td.store { color: var(--muted); font: 12px/1.4 ui-monospace, "Cascadia Code", monospace; }
+
+  /* The local part ends where the @ begins, on every row, so a column of
+     addresses lines up on the thing they have in common. The @ is its own
+     column and holds nothing else. */
+  th.local, td.local { text-align: right; }
+  .at-col { width: 1em; padding-left: 0; padding-right: 0; text-align: center;
+            color: var(--muted); }
+
+  .info { cursor: help; color: var(--muted); font-weight: 400; }
+
+  /* The three buttons differ only in WHERE the change lands, so the path is
+     drawn above them rather than left to be inferred from three verbs. */
+  .flow {
+    color: var(--muted); font-size: .85rem; margin: 1rem 0 0;
+    padding: .5rem .75rem; border-radius: 6px; background: var(--bg);
+    border: 1px solid var(--line);
+  }
+  .flow strong { color: var(--fg); }
+
+  /* The address goes to the site. Underlined only on hover, so a table of
+     fifteen of them is not a wall of blue. */
+  a.addr { color: inherit; text-decoration: none; }
+  a.addr:hover { color: #1f6feb; text-decoration: underline; }
+  .row-actions { display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; }
+  td .row-actions { flex-wrap: nowrap; justify-content: flex-end; gap: .5rem; }
+  /* The per-pane add button sits over the action column it belongs to.
+     Make it live is not per-pane and stays left. */
+  .row-actions[data-pane] { justify-content: flex-end; }
+  .note { color: var(--muted); font-size: .9rem; }
+  .sub-head { margin: 1.6rem 0 .5rem; font-size: 1rem; }
+  .env-cell input { font: inherit; padding: .2rem .35rem; width: 100%; box-sizing: border-box; }
+  tr.gone td { text-decoration: line-through; opacity: .55; }
+
+  /* One soft hue per service type, so the kinds separate before you read them. */
+  .kind {
+    display: inline-flex; align-items: center; gap: 5px;
+    font: 10.5px/1 ui-monospace, "Cascadia Code", monospace;
+    letter-spacing: .06em; text-transform: uppercase;
+    padding: 4px 8px; border-radius: 5px; border: 1px solid transparent;
+  }
+  .kind.app     { background: light-dark(#E3EDF7, #17293A); color: light-dark(#2F5D86, #8FBEE4); border-color: light-dark(#CFE0EF, #23394E); }
+  .kind.website { background: light-dark(#E2F1E8, #162C22); color: light-dark(#2F6B4C, #8CCBA6); border-color: light-dark(#CDE6D7, #22402F); }
+  .kind.proxy   { background: light-dark(#EDE6F5, #241E36); color: light-dark(#5B4380, #B7A2DE); border-color: light-dark(#DED3EC, #332A4A); }
+  .kind.mailbox { background: light-dark(#FBEDE3, #33230F); color: light-dark(#8A5326, #E0B183); border-color: light-dark(#F0DBC9, #4A3316); }
+  .kind.panel   { background: light-dark(#ECEEF1, #22272B); color: light-dark(#4A5560, #A9B4BF); border-color: light-dark(#DCE0E5, #313840); }
+  .ico { width: 1em; height: 1em; fill: currentColor; flex: none; }
+
+  /* Yellow, because a padlock is not a pass mark. It says a password stands in
+     front of this, which is a thing to notice, not a thing to feel good about. */
+  .lock { color: var(--warn); display: inline-flex; }
+  .env.inherited { border-style: dashed; }
+
+  /* The add buttons and the service tabs carry the same colour and icon as the
+     rows they belong to, so the type is recognisable before the label is read.
+     One hue per kind, held in variables so the badge, the button and the tab
+     cannot drift apart. */
+  /* The pane carries the hue as well as the tab and the add button, so the
+     rows inside it can be tinted with the kind they belong to.
+     light-dark() rather than a second block in a media query: one line per hue,
+     and the manual toggle works by flipping color-scheme on :root. */
+  :is(.add-btn, .edit-btn, .uedit-btn, .bulk-apply, .discard-btn, .svc-all, .tab, [data-pane]).app         { --k-bg: light-dark(#E3EDF7, #17293A); --k-fg: light-dark(#2F5D86, #8FBEE4); --k-line: light-dark(#CFE0EF, #23394E); }
+  :is(.add-btn, .edit-btn, .uedit-btn, .bulk-apply, .discard-btn, .svc-all, .tab, [data-pane]).website     { --k-bg: light-dark(#E2F1E8, #162C22); --k-fg: light-dark(#2F6B4C, #8CCBA6); --k-line: light-dark(#CDE6D7, #22402F); }
+  :is(.add-btn, .edit-btn, .uedit-btn, .bulk-apply, .discard-btn, .svc-all, .tab, [data-pane]).proxy       { --k-bg: light-dark(#EDE6F5, #241E36); --k-fg: light-dark(#5B4380, #B7A2DE); --k-line: light-dark(#DED3EC, #332A4A); }
+  :is(.add-btn, .edit-btn, .uedit-btn, .bulk-apply, .discard-btn, .svc-all, .tab, [data-pane]).mailbox     { --k-bg: light-dark(#FBEDE3, #33230F); --k-fg: light-dark(#8A5326, #E0B183); --k-line: light-dark(#F0DBC9, #4A3316); }
+  :is(.add-btn, .edit-btn, .uedit-btn, .bulk-apply, .discard-btn, .svc-all, .tab, [data-pane]).environment { --k-bg: light-dark(#DEEFEF, #102C2C); --k-fg: light-dark(#2A6A6A, #85C6C6); --k-line: light-dark(#C9E4E4, #1D4242); }
+  :is(.add-btn, .edit-btn, .uedit-btn, .bulk-apply, .discard-btn, .svc-all, .tab, [data-pane]).panel       { --k-bg: light-dark(#F7E6EE, #2E1622); --k-fg: light-dark(#8A3060, #E0A0BF); --k-line: light-dark(#EDD2E0, #452535); }
+  /* Olive. Deliberately far from the mailbox tan next to it: two warm neutrals
+     side by side read as one tab with a wide border. */
+  :is(.add-btn, .edit-btn, .uedit-btn, .bulk-apply, .discard-btn, .svc-all, .tab, [data-pane]).smb         { --k-bg: light-dark(#E9F0DA, #1E2A12); --k-fg: light-dark(#4F6B26, #B8CE8A); --k-line: light-dark(#D6E3BE, #2F4020); }
+  :is(.add-btn, .edit-btn, .uedit-btn, .bulk-apply, .discard-btn, .svc-all, .tab, [data-pane]).ports       { --k-bg: light-dark(#F6EFD6, #2C2513); --k-fg: light-dark(#7A6220, #D8C084); --k-line: light-dark(#EADFBE, #40361D); }
+  :is(.add-btn, .edit-btn, .uedit-btn, .bulk-apply, .discard-btn, .svc-all, .tab, [data-pane]).repos       { --k-bg: light-dark(#F6E5E2, #2F1A17); --k-fg: light-dark(#8C3F33, #E3A497); --k-line: light-dark(#ECD2CC, #452722); }
+  /* Indigo, for the Users tab. Deliberately away from the app sky-blue and the
+     proxy lavender either side of it in the palette: a third blue-violet that
+     reads as a shade of one of them is the same mistake the olive comment
+     above describes. */
+  :is(.add-btn, .edit-btn, .uedit-btn, .bulk-apply, .discard-btn, .svc-all, .tab, [data-pane]).user        { --k-bg: light-dark(#E4E4F6, #1D1B38); --k-fg: light-dark(#454099, #ABA6E8); --k-line: light-dark(#D2D1EC, #2E2A56); }
+  :is(.add-btn, .edit-btn, .uedit-btn, .bulk-apply, .discard-btn, .svc-all, .tab, [data-pane]).raw         { --k-bg: light-dark(#E6E9EE, #1C2029); --k-fg: light-dark(#4A5568, #A3AEC2); --k-line: light-dark(#D3D8E0, #2A303C); }
+  :is(.tab, [data-pane]).audit       { --k-bg: light-dark(#FAE3F7, #331230); --k-fg: light-dark(#A21C93, #F29BE6); --k-line: light-dark(#F0C8EA, #4D1C48); }
+  /* Set on tbody so it INHERITS: any cell with a colour of its own, the muted
+     dash or an environment pill, keeps it. Painting td directly would win. */
+  [data-pane] tbody { color: var(--k-fg); }
+  [data-pane] .icon-btn { color: var(--k-fg); }
+  :is(.add-btn, .edit-btn, .uedit-btn, .bulk-apply, .discard-btn):disabled { opacity: .4; cursor: not-allowed; }
+  /* Edit and Apply changes wear the pane hue too, named here rather than by
+     wearing the add button's class: that made them match every .add-btn rule
+     and handler in the page. */
+  :is(.add-btn, .edit-btn, .uedit-btn, .bulk-apply, .discard-btn) {
+    display: inline-flex; align-items: center; gap: .4rem;
+    background: var(--k-bg); color: var(--k-fg); border-color: var(--k-line);
+  }
+
+  .env, .pill {
+    display: inline-block; padding: 2px 7px; border-radius: 999px;
+    font-size: 11px; font-weight: 600; border: 1px solid var(--line);
+    color: var(--muted);
+  }
+  /* A name is monospace everywhere else on the page; inside a pill it is not,
+     or the pill grows wider than the column it sits in. */
+  td.name .pill, td.name.local .pill { font-family: inherit; }
+  /* Where the name is also a link, the pill owns the colour. */
+  .pill a, a .pill, td.name a { color: inherit; text-decoration: none; }
+  td.name a:hover { text-decoration: underline; }
+  .env.live   { background: rgba(180,35,24,.12); color: var(--bad); border-color: transparent; }
+  .env.accept { background: rgba(31,111,235,.14); color: #1f6feb; border-color: transparent; }
+  .env.test   { background: rgba(154,103,0,.14); color: var(--warn); border-color: transparent; }
+  .env.skunk  { background: rgba(91,67,128,.16); color: #5B4380; border-color: transparent; }
+  .envs { display: flex; gap: 4px; flex-wrap: wrap; }
+
+  /* Status colours the pill instead of adding a column: the pill's TEXT says
+     which environment it is, so its colour was decoration. Declared after the
+     environment hues so a known state wins. Four levels, not one per fault:
+     the tooltip carries the detail, the colour only has to say how bad. */
+  .env.lv-ok,      .pill.lv-ok      { background: rgba(26,127,55,.14); color: var(--good); border-color: transparent; }
+  .env.lv-warn,    .pill.lv-warn    { background: rgba(154,103,0,.14); color: var(--warn); border-color: transparent; }
+  .env.lv-bad,     .pill.lv-bad     { background: rgba(180,35,24,.16); color: var(--bad);  border-color: transparent; }
+  /* Unknown must not look like any answer: dashed, and it says so on hover. */
+  .env.lv-unknown, .pill.lv-unknown { background: transparent; color: var(--muted); border-style: dashed; }
+
+  .dash { color: var(--muted); }
+  td.port, td.name { font-family: ui-monospace, "Cascadia Code", monospace; }
+  th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+  th.sortable:hover { color: var(--fg); }
+  th.sortable[aria-sort="ascending"]  > span:first-child::after { content: " \2191"; }
+  th.sortable[aria-sort="descending"] > span:first-child::after { content: " \2193"; }
+  th.audit-sort { cursor: pointer; user-select: none; white-space: nowrap; }
+  th.audit-sort:hover { color: var(--fg); }
+  th.audit-sort[aria-sort="ascending"]  > span::after { content: " \2191"; }
+  th.audit-sort[aria-sort="descending"] > span::after { content: " \2193"; }
+  .audit-tools { display: flex; flex-wrap: wrap; gap: .5rem; margin: 0 0 .6rem; }
+  .audit-tools input, .audit-tools select {
+    font: inherit; padding: .35rem .55rem; border: 1px solid var(--line);
+    border-radius: 6px; background: var(--card); color: var(--fg);
+  }
+  .audit-tools input { flex: 1 1 14rem; min-width: 0; }
+  .audit-pager { display: flex; align-items: center; justify-content: flex-end; gap: .75rem; margin-top: .6rem; }
+  .audit-pager button { padding: .35rem .8rem; }
+  .audit-pager button:disabled { opacity: .45; cursor: not-allowed; }
+
+  .icon-btn {
+    padding: .3rem .45rem; line-height: 0; border-radius: 5px;
+    background: transparent; color: var(--muted);
+  }
+  .icon-btn:hover { color: var(--fg); border-color: var(--muted); }
+  .icon-btn.danger { color: var(--bad); }
+  .icon-btn.danger:hover { color: var(--bad); border-color: var(--bad); }
+  .icon-btn.go { color: var(--good); }
+  /* A row whose unit is coming up keeps its text readable: the dimming is for
+     a row being acted on, where the controls have been taken away. */
+  tr.working.live-busy > td { opacity: 1; }
+  tr.working > td { opacity: .55; }
+  tr.working > td:last-child { opacity: 1; }
+  tr.working { background: linear-gradient(90deg, transparent, rgba(31,111,235,.14), transparent);
+               background-size: 40% 100%; background-repeat: no-repeat;
+               animation: sweep 1.1s linear infinite; }
+  @keyframes sweep { from { background-position: -40% 0; } to { background-position: 140% 0; } }
+  @media (prefers-reduced-motion: reduce) { tr.working { animation: none; } }
+  .icon-btn.go:hover { color: var(--good); border-color: var(--good); }
+  .icon-btn.busy { pointer-events: none; opacity: .8; }
+  /* Matches .add-btn:disabled. Without it a disabled icon button kept the
+     pane's own accent colour and a pointer cursor, so it looked and felt
+     clickable: the two machine pages that cannot be deleted showed a trash can
+     indistinguishable from a working one. */
+  .icon-btn:disabled { opacity: .4; cursor: not-allowed; }
+  .icon-btn .spin { width: 12px; height: 12px; }
+  .icon-btn .ico { width: 14px; height: 14px; }
+  /* icon-btn collapses its line box for a 14px SVG. A label needs a real one,
+     or the border draws as a strip across the middle of the words. */
+  .text-btn { line-height: 1.6; width: auto; padding: 0 .5rem; white-space: nowrap; }
+  tr.gone { opacity: .4; }
+  tr.gone td.name { text-decoration: line-through; }
+
+  /* A machine page with no port. Dimmed rather than hidden, because switching
+     one back on has to be possible from the tab it was switched off on. */
+  tr.off { opacity: .5; }
+
+  /* A column of its own rather than text hung off the name: a chip appearing
+     inside a cell moved the name every time something was edited, and a column
+     that is empty until it is not is scannable down the whole table. */
+  th.state-col, td.state-col { width: 1%; white-space: nowrap; }
+  th.unit-col, td.unit-col { width: 1%; white-space: nowrap; }
+  th.cert-col,  td.cert-col  { width: 1%; white-space: nowrap; }
+  table.no-cert-col .cert-col { display: none; }
+  /* Icon only, so the column is as wide as the mark and no wider. */
+  th.repo-col,  td.repo-col  { width: 1%; white-space: nowrap; text-align: center; }
+  td.repo-col a { color: inherit; opacity: .65; }
+  td.repo-col a:hover { opacity: 1; }
+  .chip {
+    font: 10.5px/1 ui-monospace, monospace; letter-spacing: .06em;
+    padding: 4px 7px; border-radius: 5px; font-weight: 700;
+  }
+  .chip.edited  { background: rgba(154,103,0,.16); color: var(--warn); }
+  .chip.removed { background: rgba(180,35,24,.12); color: var(--bad); }
+  /* Neutral on purpose. Disabled is a resting state somebody chose, not a
+     fault and not a pending edit, so it must not compete with either. */
+  .chip.off     { background: light-dark(rgba(0,0,0,.07), rgba(255,255,255,.10));
+                  color: var(--muted); }
+  .chip.real    { background: rgba(26,127,55,.14);  color: var(--good);
+                  display: inline-flex; align-items: center; gap: 4px; }
+  .chip.real .ico { width: 13px; height: 13px; fill: currentColor; }
+
+  /* The dialog. Same scrim as the drawer, centred rather than sliding in from
+     the side: it is a decision, not a form. */
+  .dialog {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(.97);
+    /* Scrolls rather than clips. The action row is the LAST child, so a dialog
+       taller than 80vh hid Proceed and Cancel and there was no way to answer
+       it. Seen on the row-delete dialog once its mailbox answers went one per
+       line. */
+    width: min(560px, calc(100% - 2rem)); max-height: 80vh; overflow-y: auto;
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 1.25rem; opacity: 0; pointer-events: none; transition: opacity .15s, transform .15s;
+    display: flex; flex-direction: column; gap: .6rem; z-index: 10;
+  }
+  .dialog.open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%); }
+  /* Scrolling alone was not enough: nothing showed there was more below, so on
+     a 768px screen Add a user looked finished with Save out of sight. The
+     answer row stays pinned to the bottom edge instead. */
+  .dialog > .row-actions:last-child, .dialog > form > .row-actions:last-child {
+    position: sticky; bottom: -1.25rem; margin: 0 -1.25rem -1.25rem;
+    padding: .6rem 1.25rem 1.25rem; background: var(--card);
+    border-top: 1px solid var(--line);
+  }
+  .dialog h3 { margin: 0; font-size: 1.1rem; }
+
+  /* The two-outcome mailbox delete. Each option is a full-width card with a
+     heading and a body, both readable: the body is NOT .note, which was too
+     pale on the green to read. */
+  .mbxdel-opts { display: flex; flex-direction: column; gap: .7rem; }
+  .mbxdel-opt {
+    display: flex; flex-direction: column; gap: .25rem; text-align: left;
+    padding: .8rem .9rem; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--card); cursor: pointer; width: 100%;
+  }
+  .mbxdel-opt strong { font-size: 1rem; }
+  .mbxdel-opt span { font-size: .85rem; line-height: 1.35; opacity: .95; }
+  /* Two choices of one question, so they are the same card in two hues. The
+     hues are desaturated on purpose: a saturated red beside a saturated green
+     reads as an alarm rather than a choice. */
+  .mbxdel-opt.keep {
+    --opt: light-dark(#3f7d55, #8fce9f);
+    background: linear-gradient(160deg, light-dark(#f1f8f3, #14291d), light-dark(#e7f2ea, #0f2018));
+    border-color: color-mix(in srgb, var(--opt) 40%, transparent); color: var(--opt);
+  }
+  .mbxdel-opt.purge {
+    --opt: light-dark(#9c4a41, #e69a91);
+    background: linear-gradient(160deg, light-dark(#fbf1ef, #2a1512), light-dark(#f6e7e4, #1f100e));
+    border-color: color-mix(in srgb, var(--opt) 40%, transparent); color: var(--opt);
+  }
+  .mbxdel-opt.keep strong, .mbxdel-opt.purge strong { color: var(--opt); }
+  .mbxdel-opt.keep span, .mbxdel-opt.purge span { color: var(--fg); opacity: .85; }
+  .mbxdel-opt.keep:hover {
+    background: linear-gradient(160deg, light-dark(#e7f2ea, #1a3527), light-dark(#dcebe0, #142a1f));
+  }
+  .mbxdel-opt.purge:hover {
+    background: linear-gradient(160deg, light-dark(#f6e7e4, #361c17), light-dark(#efdad6, #291512));
+  }
+  /* Selected is the hover tint held and lifted one step, with the border
+     brought up rather than a ring added. */
+  .mbxdel-opt.keep.sel {
+    background: linear-gradient(160deg, light-dark(#cfe9d8, #2b5a3d), light-dark(#c2e2cd, #215033));
+  }
+  .mbxdel-opt.purge.sel {
+    background: linear-gradient(160deg, light-dark(#f6d2cb, #5c2f26), light-dark(#efc3bb, #4a251e));
+  }
+  .mbxdel-opt.sel {
+    border-color: color-mix(in srgb, var(--opt) 75%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--opt) 30%, transparent);
+  }
+  .mbxdel-opt.sel span { opacity: 1; }
+
+  /* Only the list scrolls. A drift list of thirty rows used to push Apply and
+     Cancel off the bottom of the screen. */
+  #apply-summary { overflow-y: auto; min-height: 0; }
+  /* The progress block does NOT scroll as a whole. The spinner and the graphs
+     are pinned and Jenkins' output is the only part that moves, because the
+     graphs are what somebody watches during a wait and they were reachable
+     only by scrolling past the log. */
+  #apply-progress { display: flex; flex-direction: column; gap: .6rem;
+                    overflow: hidden; min-height: 0; }
+  #apply-progress > .msg.running, #apply-progress > .cpu-box { flex: none; }
+  /* The log takes what is left and scrolls inside itself. Its own max-height
+     is gone: a fixed 30vh plus the graphs is what overflowed the dialog. */
+  #apply-log-box { display: flex; flex-direction: column; gap: .2rem;
+                   min-height: 6rem; overflow: hidden; flex: 1 1 auto; }
+  #apply-log-box > .note { flex: none; }
+  #apply-actions, #apply-running-actions { flex: 0 0 auto; }
+
+  /* A blocking overlay, not a disabled button: the scripts behind these buttons
+     take seconds, and a page that looks idle gets clicked twice. */
+  .busy {
+    position: fixed; inset: 0; z-index: 20; display: none;
+    background: rgba(0,0,0,.5); align-items: center; justify-content: center;
+  }
+  .busy.open { display: flex; }
+  .busy-box {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 1.5rem 2rem; text-align: center; max-width: min(420px, calc(100% - 2rem));
+  }
+  .busy-text { font-weight: 600; margin: .75rem 0 .25rem; }
+  .spinner {
+    width: 30px; height: 30px; margin: 0 auto; border-radius: 50%;
+    border: 3px solid var(--line); border-top-color: #1f6feb;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Reduced motion still needs to say "working", so the ring pulses instead of
+     turning rather than disappearing altogether. */
+  @media (prefers-reduced-motion: reduce) {
+    .spinner { animation: pulse 1.2s ease-in-out infinite; }
+    @keyframes pulse { 50% { opacity: .3; } }
+  }
+
+  /* The drawer. One form for editing and for adding: a separate new-row screen
+     is the same thirteen fields maintained twice. */
+  .scrim {
+    position: fixed; inset: 0; background: rgba(0,0,0,.45);
+    opacity: 0; pointer-events: none; transition: opacity .15s;
+  }
+  .scrim.open { opacity: 1; pointer-events: auto; }
+  /* Nothing on the page can be done while the apply dialog is up, so it does
+     not scroll either. The scrollbar is kept as padding so the layout does
+     not jump sideways when it disappears. */
+  body.locked { overflow: hidden; }
+
+  /* The folder picker. A list, not a tree: one level at a time is what the
+     lister returns, and a tree would need every level fetched to draw itself. */
+  .picker { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .picker-head {
+    display: flex; align-items: center; gap: .5rem;
+    padding: .35rem .5rem; background: var(--bg); border-bottom: 1px solid var(--line);
+  }
+  .picker-here {
+    font: 12px/1.4 ui-monospace, "Cascadia Code", monospace;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .picker-list { list-style: none; margin: 0; padding: 0; max-height: 190px; overflow-y: auto; }
+  .picker-list li { border-top: 1px solid var(--line); }
+  .picker-list li:first-child { border-top: 0; }
+  .picker-list button {
+    display: block; width: 100%; text-align: left; border: 0; border-radius: 0;
+    background: var(--card); padding: .35rem .6rem;
+    font: 12px/1.5 ui-monospace, "Cascadia Code", monospace;
+  }
+  .picker-list button:hover { background: var(--bg); }
+  .picker-empty { padding: .45rem .6rem; }
+  .acl { display: flex; gap: 1rem; flex-wrap: wrap; padding: .2rem 0; }
+  .acl label { display: inline-flex; align-items: center; gap: .35rem; cursor: pointer; }
+  .acl input:disabled + span { opacity: .5; }
+  .acl-deep { display: inline-flex; align-items: center; gap: .35rem; cursor: pointer;
+              font-size: .85rem; color: var(--muted); }
+  .acl-deep input:disabled + span { opacity: .5; }
+
+  /* Sun on the light side, moon on the dark one. The knob slides BEHIND the
+     icons, so both stay readable and the lit one is the theme in use. */
+  .head-controls { display: flex; align-items: center; gap: .6rem; flex: none; }
+  .theme-toggle {
+    position: relative; width: 60px; height: 30px; padding: 0; flex: none;
+    border-radius: 999px; cursor: pointer;
+    background: var(--bg); border: 1px solid var(--line);
+  }
+  .theme-ico {
+    position: absolute; top: 0; width: 30px; height: 28px; line-height: 28px;
+    font-size: 14px; text-align: center; pointer-events: none; z-index: 3;
+    opacity: .4; transition: opacity .18s;
+  }
+  .theme-ico.sun  { left: 0;  color: #9a6700; }
+  .theme-ico.moon { right: 0; color: #7aa2d8; }
+  .theme-knob {
+    position: absolute; top: 2px; left: 2px; width: 26px; height: 24px;
+    border-radius: 999px; background: var(--card); border: 1px solid var(--line);
+    transition: transform .18s; z-index: 1;
+  }
+  .theme-toggle[aria-checked="true"] .theme-knob { transform: translateX(28px); }
+  .theme-toggle[aria-checked="false"] .theme-ico.sun  { opacity: 1; }
+  .theme-toggle[aria-checked="true"]  .theme-ico.moon { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) { .theme-knob { transition: none; } }
+  /* The fast actions sweep the row instead of dimming the page, so the lock
+     against a second press has to live here rather than on the overlay. */
+  body.working button, body.working input,
+  body.working select, body.working textarea { pointer-events: none; opacity: .55; }
+  .drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 100%);
+    background: var(--card); border-left: 1px solid var(--line);
+    padding: 1.25rem; overflow-y: auto;
+    transform: translateX(100%); transition: transform .18s;
+    display: flex; flex-direction: column; gap: .85rem;
+  }
+  .drawer.open { transform: none; }
+  .drawer h3 { margin: 0; font-size: 1.1rem; }
+  .drawer label { display: block; font-weight: 600; font-size: .85rem; margin-bottom: .2rem; }
+  /* The login belongs to the environment on its left, so they share a line. */
+  .env-row { display: flex; align-items: center; gap: .75rem; padding: .15rem 0; }
+  .env-row > label:first-child { min-width: 6.5rem; }
+  .env-lock { opacity: .55; }
+  .env-row { flex-wrap: wrap; }
+  /* Laid out like an environment line but deliberately not one: syncAuth walks
+     .env-row expecting a checkbox in each. */
+  .owner-row { display: flex; align-items: center; gap: .75rem;
+               padding: .35rem 0; flex-wrap: wrap; }
+  .owner-row > label:first-child { min-width: 6.5rem; }
+  /* A statement, not a control: a mailbox belongs to whoever owns its domain
+     and the drawer says so rather than offering a box. Item 153. */
+  .belongs-note { margin: -.35rem 0 .6rem; font-size: .85em; opacity: .75; }
+  .env-lock:has(input:not(:disabled)) { opacity: 1; }
+  /* Same treatment as the login tick: dimmed until it applies to something. */
+  .env-prev { opacity: .55; }
+  .env-prev:has(input:not(:disabled)) { opacity: 1; }
+  .env-row [data-pdetail] { display: inline-flex; align-items: center; gap: .5rem; }
+  .env-row [data-purl] { font-size: .85em; opacity: .7; }
+  /* Accounts down, environments across, so "only in skunk" is one glance. */
+  .who-grid { border-collapse: collapse; margin: .6rem 0 .2rem; font-weight: 400; }
+  .who-grid th, .who-grid td { padding: .15rem .55rem; text-align: center; }
+  .who-grid th { font-weight: 600; font-size: .8rem; }
+  .who-grid th:first-child, .who-grid td:first-child { text-align: left; }
+  .who-grid input { width: auto; }
+  .who-grid input:disabled { opacity: .6; }
+
+  .drawer input, .drawer select {
+    width: 100%; font: inherit; padding: .45rem .6rem;
+    background: var(--bg); color: var(--fg);
+    border: 1px solid var(--line); border-radius: 6px;
+  }
+  /* A tickbox is not a text field. The full-width rule above stretches the box
+     itself, which puts it on a line of its own away from its own words. */
+  .drawer input[type="checkbox"] { width: auto; margin: 0 .45rem 0 0; vertical-align: middle; }
+  #preview-envs label { display: flex; align-items: center; }
+  #preview-envs [data-pport] { display: block; }
+
+  .drawer .hint { color: var(--muted); font-size: .8rem; margin: .25rem 0 0; }
+  /* A hint that is telling you something is wrong, or right, rather than just
+     explaining the field. */
+  .drawer .hint.bad  { color: var(--bad); }
+  .drawer .hint.good { color: var(--good); }
+  /* Not a fault: a branch that does not exist yet and is about to be made. */
+  .drawer .hint.warn { color: var(--warn); }
+  /* The fixed half of a document root, shown rather than asked for. */
+  .drawer .pathrow { display: flex; align-items: center; gap: .35rem; }
+  .drawer .pathfix { color: var(--muted); font-family: var(--mono, monospace); font-size: .85rem; white-space: nowrap; }
+  .drawer .pathrow input { flex: 1; min-width: 0; }
+  /* A long hint belongs to the field ABOVE it. Without a gap it reads as the
+     introduction to the field below, and the field below gets skipped. */
+  #drawer-fields > [data-field] + [data-field] { margin-top: 1.35rem; }
+  #drawer-fields > [data-field] > label { display: block; margin-bottom: .25rem; }
+  /* Empty until there is something to say, so it does not reserve space. */
+  #drawer-outcome:empty { display: none; }
+  #drawer-outcome {
+    margin: .9rem 0 .2rem; padding: .55rem .7rem; border-radius: 6px;
+    background: var(--k-bg); border: 1px solid var(--k-line); color: var(--k-fg);
+    font: 600 14px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  #drawer-outcome.bad {
+    background: rgba(180,35,24,.10); border-color: var(--bad);
+    color: var(--bad); font-weight: 500;
+    font-family: inherit;
+  }
+  /* This save will switch another row off. Amber rather than red: it is the
+     intended way to move a customer between their www_ row and their app_ row,
+     and the button stays pressable. The owner, 2026-09-10. */
+  #drawer-outcome.warn {
+    background: rgba(154,103,0,.10); border-color: var(--warn);
+    font-family: inherit; font-weight: 500;
+  }
+  #drawer-outcome .lead {
+    display: block; font: 600 11px/1.4 system-ui, sans-serif;
+    text-transform: uppercase; letter-spacing: .06em; opacity: .75;
+  }
+  /* The amber heading keeps its colour while the rest of the box stays
+     readable: the row names under it are the thing to read. */
+  #drawer-outcome .lead.warn { color: var(--warn); opacity: 1; }
+  /* A second heading needs air above it, or the takeover line and the summary
+     run together as one paragraph. */
+  #drawer-outcome .lead + .lead,
+  #drawer-outcome span + .lead { margin-top: .5rem; }
+  #drawer-save:disabled { opacity: .45; cursor: not-allowed; }
+  .drawer .close { position: absolute; top: .9rem; right: 1rem; border: none; background: none;
+                   font-size: 1.4rem; line-height: 1; color: var(--muted); }
+
+/* Edit mode. The columns are prepended to rows that already exist, so they are
+   styled by class rather than by position. */
+.bulk-col { width: 3.2rem; text-align: center; white-space: nowrap; }
+.bulk-col input[type="checkbox"] { width: auto; margin: 0; cursor: pointer; }
+/* The select-all box sits above its label rather than beside it: side by side
+   the column grew wider than the three words it is named after. */
+th.bulk-col { vertical-align: bottom; }
+th.bulk-col .bulk-all, th.ubulk-col .bulk-all { display: block; margin: 3px auto 0; }
+th.bulk-col .bulk-head, th.ubulk-col .bulk-head { display: block; }
+.bulk-col input[type="checkbox"]:disabled { cursor: not-allowed; opacity: .3; }
+.edit-btn.active { outline: 2px solid currentColor; outline-offset: 2px; }
+.bulk-apply[hidden] { display: none; }
+
+/* A disabled row. Dimmed and struck through the name only: the row is still
+   readable, because you have to be able to find it to turn it back on. */
+tr.off { opacity: .55; }
+tr.off .name { text-decoration: line-through; text-decoration-thickness: 1px; }
+tr.off::after { content: none; }
+
+/* Apply changes and Edit wear the pane hue, so .add-btn already carries their
+   colour and their disabled state. Nothing to add here. */
+
+/* Start all and Stop all, on the Applications pane. Deliberately NOT wearing
+   .add-btn: that class carries the add handler as well as the look, and a
+   button that opens a drawer as a side effect of its colour is the trap the
+   note above this one describes. */
+/* The pane hue reaches this through the :is() list above, when the button
+   carries its pane's class. Start all and Stop all do not: they wear green and
+   red, which say more than the tab's colour would. */
+.svc-all {
+  font: inherit; cursor: pointer;
+  display: inline-flex; align-items: center; gap: .35rem;
+  padding: .35rem .7rem; border-radius: 6px;
+  /* The pane hue when the button carries its pane's class, the plain page
+     colours otherwise. Start all and Stop all take the fallback and then paint
+     green and red over it. */
+  background: var(--k-bg, var(--bg));
+  border: 1px solid var(--k-line, var(--line));
+  color: var(--k-fg, var(--fg));
+}
+.svc-all svg { width: 1em; height: 1em; }
+.svc-all.go     { color: var(--good); }
+.svc-all.go:hover     { border-color: var(--good); }
+.svc-all.danger { color: var(--bad); }
+.svc-all.danger:hover { border-color: var(--bad); }
+/* A disabled Start all looked EXACTLY like a working one: .svc-all is not an
+   .icon-btn, so it matched none of the disabled rules, and the only sign it
+   was off was that pressing it did nothing. Reported as "both buttons are
+   enabled" on 2026-09-09 while the DOM had them disabled. */
+.svc-all:disabled {
+  opacity: .4; cursor: not-allowed;
+  color: var(--muted); border-color: var(--line);
+}
+.svc-all:disabled:hover { border-color: var(--line); }
+
+/* The row-wide pair sits after the log button, with a gap so it reads as a
+   second group rather than as two more per-environment buttons. */
+/* The row-wide pair sits at the head of the row's own controls, before
+   Restart, with a gap after it. The owner tried it as a separate column and
+   preferred it back in the line. */
+.icon-btn.svc-row-all { margin-right: .1rem; }
+.icon-btn.svc-row-all + :not(.svc-row-all) { margin-left: .5rem; }
+
+/* Running and stopped, said in the table rather than only in the row's
+   colour. Same chip metrics as every other one. */
+.chip.up   { background: rgba(31,122,74,.16);  color: var(--good); }
+.chip.down { background: rgba(154,42,42,.16);  color: var(--bad); }
+
+/* The service dialog: one line per unit, ticked as each answers. */
+.svc-list { list-style: none; margin: .6rem 0; padding: 0; }
+.svc-list li {
+  display: flex; align-items: center; gap: .5rem;
+  padding: .35rem .1rem; border-bottom: 1px solid var(--line);
+}
+.svc-list li:last-child { border-bottom: 0; }
+.svc-list .svc-mark { width: 1.1em; text-align: center; flex: none; }
+.svc-list .svc-name { font-weight: 600; }
+.svc-list .svc-said { color: var(--muted); margin-left: auto; text-align: right; }
+.svc-list li.waiting { opacity: .5; }
+.svc-list li.ok  .svc-mark { color: var(--good); }
+.svc-list li.bad .svc-mark { color: var(--bad); }
+.svc-list li.bad .svc-said { color: var(--bad); }
+
+/* The config, shown rather than edited. Same metrics as the textarea it
+   replaced, so the file looks the same; the colour is what makes it readable
+   at a glance. Comments are off by default, so this is usually the settings
+   and the rows alone. */
+#raw-view.conf {
+  width: 100%; max-height: 70vh; overflow: auto;
+  font: 13px/1.45 ui-monospace, "Cascadia Code", monospace;
+  background: var(--bg); color: var(--fg);
+  border: 1px solid var(--line); border-radius: 6px; padding: .75rem;
+  white-space: pre; margin: 0;
+}
+#raw-view .c-note { color: var(--muted); }
+#raw-view .c-key  { color: light-dark(#2F5D86, #8FBEE4); font-weight: 600; }
+#raw-view .c-val  { color: light-dark(#2F6B4C, #8CCBA6); }
+/* The type word wears the same hue as its tab, so a row is placed by colour
+   before it is read. --k-fg comes from the pane class on the ancestor. */
+#raw-view .c-row  { font-weight: 600; }
+#raw-view .c-row.app      { color: light-dark(#2F5D86, #8FBEE4); }
+#raw-view .c-row.website,
+#raw-view .c-row.php,
+#raw-view .c-row.docroot  { color: light-dark(#2F6B4C, #8CCBA6); }
+#raw-view .c-row.proxy    { color: light-dark(#5B4380, #B7A2DE); }
+#raw-view .c-row.mailbox  { color: light-dark(#8A5326, #E0B183); }
+#raw-view .c-row.panel    { color: light-dark(#8A3060, #E0A0BF); }
+
+/* A select that is still being filled in. It carries a real option saying so,
+   and this makes the waiting visible rather than only readable: an empty-
+   looking dropdown and a slow one are otherwise the same thing on screen. */
+select.loading {
+  opacity: .6;
+  animation: projpulse 1.1s ease-in-out infinite;
+}
+@keyframes projpulse {
+  0%, 100% { opacity: .45; }
+  50%      { opacity: .85; }
+}
+/* The same rule the spinner follows: motion off, but still visibly waiting. */
+@media (prefers-reduced-motion: reduce) {
+  select.loading { animation: none; opacity: .55; }
+}
+
+/* The password box beside a newly ticked address in a website drawer. Indented
+   under its label so it reads as belonging to that address rather than to the
+   list, which is what a full-width box did. */
+#mbx-list .mbx-pw {
+    margin: -.15rem 0 .35rem 1.6rem;
+    max-width: 18rem;
+}
+
+/* A control that cannot be used says so by looking used up, not by hiding its
+   reason in a tooltip. Used by the Data from box when a row is the only
+   application on the machine. */
+#drawer-fields label.is-off { opacity: .5; cursor: not-allowed; }
+
+/* A unit on its way up, and one systemd keeps retrying. Both are states the
+   table used to show as nothing at all. */
+.chip.run  { background: var(--warn-bg, #f5e6c8); color: var(--warn-fg, #6b4e00); }
+.chip.bad  { background: var(--bad-bg, #f6d4d4); color: var(--bad-fg, #7a1c1c); }
+/* A Jenkins build that finished with warnings: not a failure, not a pass. */
+.chip.warn { background: var(--warn-bg, #f5e6c8); color: var(--warn-fg, #6b4e00); }
+
+/* The clone URL, beside the button that copies it. Monospace because it is a
+   thing to be copied exactly, and it wraps rather than widening the table. */
+.url-col { white-space: nowrap; width: 100%; }
+.url-col .clone-url {
+  font: 12px/1.4 ui-monospace, "Cascadia Code", monospace;
+  color: var(--muted); margin-right: .35rem;
+}
+
+/* The copy button is its own column so every one of them lines up down the
+   edge of the table. Beside the URL they stepped in and out with the length of
+   each repository name, which is the one place a column of identical buttons
+   should not move. */
+.copy-col { text-align: right; white-space: nowrap; padding-left: .8rem; }
+
+/* The stage strip in the redeploy dialog. A build's seven stages in a row, so
+   "where did it get to" is answered by looking rather than by reading a
+   thousand console lines. Wraps at phone width rather than scrolling: a strip
+   you have to scroll sideways hides exactly the stage that failed. */
+/* One stage per line, like the service dialog's list. The owner, 2026-09-10:
+   a row of pills wrapped at the dialog's width and the order stopped being
+   readable, where a list reads top to bottom in the order they run. */
+.stage-strip { list-style: none; margin: .6rem 0; padding: 0; }
+.stage-strip li {
+  display: flex; align-items: center; gap: .5rem;
+  padding: .35rem .1rem; border-bottom: 1px solid var(--line);
+  font-size: .9rem;
+}
+.stage-strip li:last-child { border-bottom: 0; }
+/* The time each stage took, right-aligned, so the durations line up as a
+   column the eye can run down. */
+.stage-strip li .ms {
+  margin-left: auto; color: var(--muted);
+  font-variant-numeric: tabular-nums; font-size: .82rem;
+}
+/* A dot rather than a filled pill: the row is the line, and colouring the whole
+   line made four stages read as four warnings. */
+.stage-strip li::before {
+  content: ''; width: 9px; height: 9px; border-radius: 50%; flex: none;
+  background: light-dark(rgba(0,0,0,.22), rgba(255,255,255,.28));
+}
+.stage-strip li.ok::before   { background: var(--good); }
+.stage-strip li.bad::before  { background: var(--bad); }
+.stage-strip li.run::before  { background: var(--warn); }
+.stage-strip li.run  { color: var(--warn); font-weight: 600; }
+.stage-strip li.bad  { color: var(--bad); }
+/* Skipped is not a fault and must not read as one: a deploy that finds nothing
+   changed skips its last two stages every single time. */
+.stage-strip li.skipped { opacity: .55; }
+
+/* The last five builds, newest first, beside the pipeline word. One result
+   cannot tell "it failed" from "it has been failing all morning", and that is
+   the difference that decides whether anybody opens the job. */
+.bdots { display: inline-flex; gap: 3px; margin-left: .4rem; vertical-align: middle; }
+.bdot  { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.bdot.ok   { background: var(--good); }
+.bdot.bad  { background: var(--bad); }
+.bdot.run  { background: var(--warn); }
+/* Nothing changed, and cancelled: neither is a fault and neither is a success. */
+.bdot.none { background: light-dark(rgba(0,0,0,.22), rgba(255,255,255,.28)); }
+/* The pipeline word and its dots stay on one line: wrapped, the column grew
+   taller than the row and pushed the dots under the word. */
+.pipe-col { white-space: nowrap; }
+
+/* The Users tab's own tick column. NOT .bulk-col: bulk.js removes every
+   .bulk-col outside edit mode (bulk.js:209), and it did exactly that here, so
+   the boxes were gone from a table bulk.js does not manage at all. */
+.pick-col { width: 3.2rem; text-align: center; white-space: nowrap; }
+.pick-col input[type="checkbox"] { width: auto; margin: 0; cursor: pointer; }
+
+/* Two views of one tab's rows, chosen 2026-09-10: thirteen columns answering
+   two different questions is what nobody could read. Serving answers "is it
+   up", Pipeline answers "did the last deploy work". */
+.sub-tabs { display: flex; gap: .4rem; margin: .6rem 0 .7rem; }
+/* The pane div carries --k-bg/--k-fg/--k-line for its own hue, so these two
+   buttons take the tab's colour rather than an amber of their own. The owner,
+   2026-09-10: a control inside a coloured pane that is a different colour reads
+   as belonging to something else. */
+.sub-tabs button {
+  border: 1px solid var(--line); border-radius: 6px;
+  background: var(--bg); color: var(--muted);
+  padding: .25rem .8rem; font-size: 12.5px; cursor: pointer;
+}
+.sub-tabs button:hover { color: var(--k-fg, var(--fg)); border-color: var(--k-line, var(--line)); }
+.sub-tabs button[aria-pressed="true"] {
+  background: var(--k-bg); border-color: var(--k-line); color: var(--k-fg);
+  font-weight: 600;
+}
+/* The dots keep their own column here, so they no longer ride the word. */
+.dots-col   { white-space: nowrap; }
+.sha-col    { white-space: nowrap; font: 12px/1 ui-monospace, monospace; }
+.behind-col { white-space: nowrap; }
+
+
+/* The build's facts, one per line with a label saying what the number is.
+   the owner, 2026-09-10: it was three sentences of prose, and "Deployed 0146693,
+   the tip of live" told him nothing about what was being claimed. */
+.facts {
+  display: grid; grid-template-columns: max-content 1fr;
+  gap: .15rem .8rem; margin: .6rem 0; font-size: .92rem;
+}
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; font-variant-numeric: tabular-nums; }
+.facts dd.good { color: var(--good); }
+.facts dd.warn { color: var(--warn); font-weight: 600; }
+
+/* The facts and the stages, side by side. Stacked they cost about eleven lines
+   of height and left Jenkins' output two and a half rows tall, which is the one
+   thing you read while a build runs. The owner, 2026-09-10. */
+.redeploy-top {
+  display: flex; gap: 1.4rem; align-items: flex-start;
+  margin: .6rem 0;
+}
+.redeploy-top > * { flex: 1 1 0; min-width: 0; margin: 0; }
+/* The stage names are the longer half, so they get the wider share. */
+.redeploy-top > .stage-strip { flex-grow: 1.3; }
+/* One under the other again when there is no room for two columns. */
+@media (max-width: 640px) { .redeploy-top { flex-direction: column; gap: .4rem; } }
+
+/* The two foldable halves of the deploy dialog. Their summaries look like the
+   headings they are, rather than like the browser's default disclosure text. */
+#redeploy-history > summary,
+#redeploy-log-box > summary {
+  cursor: pointer; font-weight: 600; font-size: .9rem;
+  padding: .3rem 0; color: var(--muted);
+}
+#redeploy-history > summary:hover,
+#redeploy-log-box > summary:hover { color: var(--fg); }
+#redeploy-log-box[open] > summary { margin-bottom: .3rem; }
+
+/* The Users tab's own tick columns. NOT .bulk-col: bulk.js removes every
+   .bulk-col from every table it does not manage (bulk.js:209), which is what
+   emptied this header the first time it was tried. Same metrics, different
+   name, so the two mechanisms cannot reach into each other. */
+.ubulk-col { width: 4.6rem; text-align: center; white-space: nowrap; vertical-align: bottom; }
+.ubulk-col input[type="checkbox"] { width: auto; margin: 0; cursor: pointer; }
+.ubulk-col input[type="checkbox"]:disabled { cursor: not-allowed; opacity: .35; }
+
+/* An input holding something that cannot be saved. Only the border: colouring
+   the text as well makes a half-typed address look like an error message. */
+input.bad, select.bad {
+  border-color: var(--bad, #c0392b);
+  outline-color: var(--bad, #c0392b);
+}
+
+/* The bell on a Requests view button. Red because it is the one control on the
+   page that means somebody is waiting: an admin for work, a customer for an
+   answer. Hidden entirely at zero rather than showing a 0, which reads as a
+   count of something rather than as nothing to do. */
+.bell {
+  display: inline-flex;
+  align-items: center;
+  gap: .25rem;
+  margin-left: .35rem;
+  padding: .05rem .4rem;
+  border-radius: 999px;
+  background: var(--bad, #c0392b);
+  color: #fff;
+  font-size: .78em;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.bell .ico { width: .8em; height: .8em; fill: currentColor; }
+
+/* The reason box on a request. It is prose, not config, so almost nothing the
+   global textarea rule does is right for it: that rule exists for the config
+   view and carries min-height 60vh, monospace and white-space: pre. Left alone
+   it took 749px of a 1248px viewport, which is the owner's "75% of my viewport"
+   on 2026-09-11.
+
+   Two rows to start, five at most, and it scrolls after that. A reason longer
+   than five lines is an essay nobody asked for. */
+#req-reason {
+  min-height: 0;
+  height: auto;
+  max-height: calc(5 * 1.45em + 1.6rem);
+  font: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  overflow-x: hidden;
+}
+
+  /* Who is signed in, top right. A full admin's opens a list of who else has
+     the page open, each with a Kick. */
+  .who { position: relative; }
+  .who-btn { display: inline-flex; align-items: center; gap: .35rem; font-weight: 600; }
+  .key-link { text-decoration: none; font-size: 1.1rem; }
+  .who-count { font-size: .75rem; padding: 0 .4rem; border-radius: 999px;
+               background: rgba(26,127,55,.14); color: var(--good); }
+  .who-list { position: absolute; right: 0; top: calc(100% + .3rem); z-index: 20;
+              min-width: 14rem; background: var(--card); border: 1px solid var(--line);
+              border-radius: 8px; padding: .5rem .7rem; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
+  .who-list p { margin: 0 0 .3rem; }
+  .who-list ul { list-style: none; margin: 0; padding: 0; }
+  .who-list ul + .who-signout { border-top: 1px solid var(--line, currentColor); margin-top: .4rem; padding-top: .4rem; }
+  .who-signout { display: block; white-space: nowrap; }
+  .who-list li { display: flex; justify-content: space-between; align-items: center;
+                 gap: .6rem; padding: .25rem 0; }
+  .who-kick { font-size: .8rem; padding: .15rem .5rem; color: var(--bad); }
+
+  .page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
+  .tabs-menu-btn { display: none; }
+
+  /* Phone width. The tabs fold into a menu, and the header stacks. */
+  @media (max-width: 640px) {
+    body { padding: 1rem; }
+    .wrap { max-width: 100%; }
+    .page-head { flex-direction: column-reverse; gap: .6rem; }
+    .head-controls { flex-wrap: wrap; }
+    .card { padding: .85rem; }
+    .tabs-menu-btn { display: flex; align-items: center; gap: .5rem; width: 100%;
+                     margin-bottom: .5rem; text-align: left;
+                     background: var(--k-bg, var(--card)); color: var(--k-fg, var(--fg));
+                     border-color: var(--k-line, var(--line)); }
+    .tabs { display: none; flex-direction: column; flex-wrap: nowrap; }
+    .tabs.open { display: flex; }
+    .tab, .tab.svc { width: 100%; justify-content: flex-start; }
+  }
+
+  /* Phone width: a row is a card, each cell a line with its header as label. */
+  @media (max-width: 640px) {
+    table[data-table] thead { display: none; }
+    table[data-table], table[data-table] tbody { display: block; width: 100%; }
+    table[data-table] tr { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 8px;
+                           padding: .45rem .7rem; margin-bottom: .6rem; }
+    table[data-table] td:not([hidden]) { display: flex; gap: .6rem; align-items: baseline;
+                                         border: 0; padding: .2rem 0; overflow-wrap: anywhere; }
+    table[data-table] td:empty { display: none; }
+    table[data-table] td[data-label]::before { content: attr(data-label); flex: none; width: 6.5rem;
+                                               color: var(--muted); font-weight: 600; }
+  }
+  @media (max-width: 640px) {
+    table[data-table] td.card-title { order: -1; font-size: 1rem; font-weight: 700; }
+    table[data-table] td.card-title::before { content: none; }
+    /* A mailbox address is one thing: local part, @ and domain on one line. */
+    table[data-table="mailboxes"] tr { flex-direction: row; flex-wrap: wrap; }
+    table[data-table="mailboxes"] td { flex: 1 0 100%; }
+    table[data-table="mailboxes"] td:is(.local, .at-col, :nth-child(4)) { flex: 0 0 auto; gap: 0; }
+    table[data-table="mailboxes"] td:is(.local, .at-col, :nth-child(4))::before { content: none; }
+  }

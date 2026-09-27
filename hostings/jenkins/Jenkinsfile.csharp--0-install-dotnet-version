@@ -1,0 +1,69 @@
+// =============================================================================
+// Put the .NET runtime and SDK on this machine. One task, one job.
+//
+// Numbered 0 because it comes before building anything and is run once per
+// machine, not once per release. app-all-release-csharp-repository does NOT
+// call it: installing a runtime in the middle of a deploy is a package
+// transaction that cannot be rolled back, and a release should not be the thing
+// that changes what is installed.
+//
+// Press it when a fresh machine has no dotnet, or when an application starts
+// needing a version this box does not have.
+//
+// The version is the distribution's default on purpose. Newest can silently
+// drop something the stack depends on, and the default is what the rest of the
+// machine is tested against.
+// =============================================================================
+
+pipeline {
+    agent any
+
+    options {
+        timeout(time: 45, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+        // A package transaction. Two at once is how dpkg state gets corrupted.
+        disableConcurrentBuilds()
+    }
+
+    stages {
+        stage('Check out the configuration') {
+            steps {
+                checkout scm
+                sh '''
+                    export GIT_TERMINAL_PROMPT=0
+                    git submodule status | awk 'substr($2, 1, 8) != ".claude/" {print $2}' | while read -r p; do
+                        git submodule update --init "$p" || echo "skipped $p (needs a credential)"
+                    done
+                '''
+            }
+        }
+
+        stage('What is installed now') {
+            steps {
+                // Printed before and after, so the log says what changed rather
+                // than only that something ran.
+                sh 'dotnet --info || echo "No dotnet on this machine yet."'
+            }
+        }
+
+        stage('Install') {
+            steps {
+                sh 'sudo bash /usr/local/lib/linuxbasics/install_scripts/add_dotnet.sh'
+            }
+        }
+
+        stage('What is installed now, again') {
+            steps {
+                sh 'dotnet --info'
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo 'The install did not finish. A part-way package transaction is the one'
+            echo 'thing here that is worth looking at by hand before running anything else:'
+            echo '  sudo dpkg --configure -a'
+        }
+    }
+}

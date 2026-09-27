@@ -1,0 +1,97 @@
+// =============================================================================
+// Request or renew the certificates for every hostname in hostings.conf.
+//
+// Two modes, and the default is the harmless one. Staging rehearses the whole
+// challenge against Let's Encrypt's test server and keeps nothing, so it proves
+// the vhosts, the webroot and DNS without spending anything.
+//
+// Real is chosen by hand on the build form, and that choice is the only gate:
+// a failed validation is rate limited at five per hostname per hour, and this
+// config has sixteen hostnames, so one run against a machine that cannot answer
+// the challenge locks all of them out together for an hour. Leaving MODE alone
+// cannot do that.
+//
+// The usual reason it cannot answer is not in this repository at all: the
+// router still forwards port 80 to a different machine. Nothing here can see
+// that, because every hostname resolves to the household's public address
+// whichever machine you are standing on.
+// =============================================================================
+
+pipeline {
+    agent any
+
+    parameters {
+        choice(
+            name: 'MODE',
+            choices: ['staging', 'real'],
+            description: 'staging rehearses and keeps nothing. real issues certificates browsers trust.'
+        )
+        choice(
+            name: 'ENVIRONMENT',
+            choices: ['all', 'live', 'test'],
+            description: 'Narrow a real run to one environment. The rate limit is per hostname, ' +
+                         'so doing live first and test after means one mistake cannot take ' +
+                         'everything with it.'
+        )
+    }
+
+    options {
+        timeout(time: 30, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '60'))
+        // Two certbot runs at once fight over /etc/letsencrypt and over the
+        // rate limit, and the loser reports something unrelated to the cause.
+        disableConcurrentBuilds()
+    }
+
+    stages {
+        stage('Check out the configuration') {
+            steps {
+                checkout scm
+                sh '''
+                    export GIT_TERMINAL_PROMPT=0
+                    git submodule status | awk 'substr($2, 1, 8) != ".claude/" {print $2}' | while read -r p; do
+                        git submodule update --init "$p" || echo "skipped $p (needs a credential)"
+                    done
+                '''
+            }
+        }
+
+        stage('Request') {
+            steps {
+                script {
+                    // CERT_DRY_RUN is passed explicitly either way, which also
+                    // overrides CERT_STAGING in the config. That means a real
+                    // run needs no commit, and a rehearsal cannot be defeated
+                    // by somebody having flipped the config earlier.
+                    // Flags, not `sudo env VAR=1`. A sudoers rule names a
+                    // literal command, so that form needs /usr/bin/env granted
+                    // to jenkins, and env can run anything as root.
+                    def dry = (params.MODE == 'real') ? '--real' : '--dry-run'
+                    def only = (params.ENVIRONMENT == 'all') ? '' : "--only ${params.ENVIRONMENT}"
+                    sh """
+                        sudo bash /usr/local/lib/linuxbasics/hostings/scripts/add_site_certificates.sh ${dry} ${only}
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            script {
+                if (params.MODE == 'staging') {
+                    echo 'Rehearsal passed. Nothing was installed: staging keeps nothing.'
+                    echo 'Run again with MODE=real once the router points here.'
+                } else {
+                    echo 'Certificates installed. Renewal is certbot.timer\'s job from here,'
+                    echo 'and the script proved it works with certbot renew --dry-run.'
+                }
+            }
+        }
+        failure {
+            echo 'Read the skipped list in the output above before running this again.'
+            echo 'A hostname with no vhost, or one whose challenge reaches another machine,'
+            echo 'is skipped rather than failed, and costs nothing.'
+        }
+    }
+}

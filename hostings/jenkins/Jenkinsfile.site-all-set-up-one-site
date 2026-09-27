@@ -1,0 +1,191 @@
+// =============================================================================
+// Everything one row needs, by calling the jobs that each do one thing.
+//
+// This job runs no script itself. It is the composition:
+//
+//   site-1-write-service-unit  →  site-2-write-apache-vhost  →  site-3-request-certificate  →  site-2-write-apache-vhost  →  machine/check-sites-answer
+//
+// site-2-write-apache-vhost runs twice on purpose. The first pass can only write HTTP, because
+// the certificate does not exist yet; the second adds the HTTPS half once it
+// does. That is also why they are separate jobs rather than stages here: each
+// one is a thing you can press on its own when only that part failed.
+//
+// The checkboxes are the same idea as the console's: a row that needs no
+// certificate should not have one asked for.
+//
+// AGENT NONE, AND IT IS NOT COSMETIC. A parent job waits while a child runs. If
+// the parent holds an executor and the child needs one, two builds are enough to
+// deadlock Jenkins with no error at all, just spinning. This job must hold none.
+// =============================================================================
+
+pipeline {
+    agent none
+
+    parameters {
+        string(
+            name: 'ROW',
+            defaultValue: '',
+            description: 'The name in the second column of hostings.conf. ' +
+                         'Comma separated for several.'
+        )
+        booleanParam(
+            name: 'WRITE_UNIT',
+            defaultValue: true,
+            description: 'Write the systemd unit. Turn off for a website row, which has none.'
+        )
+        booleanParam(
+            name: 'WRITE_VHOST',
+            defaultValue: true,
+            description: 'Write the Apache vhost.'
+        )
+        booleanParam(
+            name: 'GET_CERTIFICATE',
+            defaultValue: true,
+            description: 'Ask for the certificate, then write the vhost again so it can ' +
+                         'serve HTTPS. Turn off for a row that publishes nothing.'
+        )
+        booleanParam(
+            name: 'DEPLOY',
+            defaultValue: true,
+            description: 'Deploy every environment this row is in once it is set up. ' +
+                         'Without this the unit exists with nothing to run, and crash-loops.'
+        )
+        booleanParam(
+            name: 'VERIFY',
+            defaultValue: true,
+            description: 'Ask whether the sites answer afterwards. Changes nothing.'
+        )
+    }
+
+    options {
+        timeout(time: 60, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '60'))
+        disableConcurrentBuilds()
+    }
+
+    stages {
+        stage('Refuse an empty row') {
+            steps {
+                script {
+                    // The folder is the site: a job at
+                    // ispaddress_api/2-write-apache-vhost knows its row without being
+                    // told. A parameter still wins, so this same file works as a
+                    // top-level job with a name typed in.
+                    env.ROW_NAME = params.ROW?.trim() ?:
+                        (env.JOB_NAME.contains('/') ? env.JOB_NAME.split('/')[0] : '')
+                    if (!env.ROW_NAME) {
+                        error('ROW is empty. Give a name from the second column of ' +
+                              'hostings.conf, or run hosting-apply for the whole machine.')
+                    }
+                }
+            }
+        }
+
+        stage('Unit') {
+            when { expression { params.WRITE_UNIT } }
+            steps {
+                build job: '1-write-service-unit',
+                      parameters: [string(name: 'ROW', value: env.ROW_NAME)],
+                      wait: true
+            }
+        }
+
+        stage('Vhost') {
+            when { expression { params.WRITE_VHOST } }
+            steps {
+                build job: '2-write-apache-vhost',
+                      parameters: [string(name: 'ROW', value: env.ROW_NAME)],
+                      wait: true
+            }
+        }
+
+        stage('Certificate') {
+            when { expression { params.GET_CERTIFICATE } }
+            steps {
+                build job: '3-request-certificate',
+                      parameters: [string(name: 'ROW', value: env.ROW_NAME),
+                                   string(name: 'ENVIRONMENT', value: 'all')],
+                      wait: true
+            }
+        }
+
+        stage('Vhost again, now with HTTPS') {
+            when { expression { params.GET_CERTIFICATE && params.WRITE_VHOST } }
+            steps {
+                build job: '2-write-apache-vhost',
+                      parameters: [string(name: 'ROW', value: env.ROW_NAME)],
+                      wait: true
+            }
+        }
+
+        // Setting a row up wrote a unit pointing at a directory that does not
+        // exist yet, so the unit crash-loops until something is deployed into it.
+        // Deploying is what finishes the environment, not an extra.
+        //
+        // Two stages because of the executor: reading the row needs one, and a
+        // parent holding an executor while its children queue for one is how
+        // this pipeline deadlocks. The read releases it before the builds start.
+        stage('Which environments') {
+            when { expression { params.DEPLOY } }
+            agent any
+            steps {
+                script {
+                    env.ROW_ENVS = sh(returnStdout: true, script:
+                        "bash /usr/local/lib/linuxbasics/hostings/scripts/resolve_deploy_target.sh --envs '${env.ROW_NAME}'"
+                    ).trim()
+                    echo "${env.ROW_NAME} is in: ${env.ROW_ENVS ?: 'no environment'}"
+                }
+            }
+        }
+
+        stage('Deploy') {
+            when { expression { params.DEPLOY && env.ROW_ENVS } }
+            steps {
+                script {
+                    // A row with no deploy job is a proxy or a row whose jobs have
+                    // not been generated yet. Saying so beats a red build: nothing
+                    // about this row's setup went wrong.
+                    env.ROW_ENVS.split(' ').each { e ->
+                        if (!e) { return }
+                        try {
+                            build job: "deploy-${e}", wait: true
+                        } catch (hudson.AbortException x) {
+                            currentBuild.result = 'UNSTABLE'
+                            echo "deploy-${e} did not run: ${x.message}"
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Verify') {
+            when { expression { params.VERIFY } }
+            steps {
+                script {
+                    // YELLOW, NOT RED. Verify is machine-wide on purpose, because
+                    // a change to one vhost can break another. But that means it
+                    // reports every pre-existing gap too: a hostname whose DNS
+                    // does not point here yet fails it, and that is not something
+                    // this row's setup did. Failing here would mean the job is red
+                    // whatever you do, which teaches people to ignore red.
+                    def r = build job: '/machine/check-sites-answer',
+                                  wait: true, propagate: false
+                    if (r.result != 'SUCCESS') {
+                        currentBuild.result = 'UNSTABLE'
+                        echo "This row was set up. The machine-wide check came back " +
+                             "${r.result}, which is usually a site whose DNS or certificate " +
+                             "is not in place yet. Open machine/check-sites-answer to read it."
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo "Applying '${env.ROW_NAME}' stopped part way."
+            echo 'Each step is its own job, so the one that went red says which. Fix that'
+            echo 'and press it on its own rather than starting this again from the top.'
+        }
+    }
+}

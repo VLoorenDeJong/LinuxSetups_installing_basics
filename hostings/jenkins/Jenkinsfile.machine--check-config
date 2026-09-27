@@ -1,0 +1,70 @@
+// =============================================================================
+// Nightly drift check. Reads the machine, writes nothing.
+//
+// This is the job that makes the whole arrangement trustworthy. It answers one
+// question every night: does this machine still match hostings.conf. Without it
+// the answer is only ever known at the moment somebody runs the apply job by
+// hand, which is exactly when they least want a surprise.
+//
+// It goes red on drift. That is deliberate and not a false alarm: a machine
+// that has quietly diverged from its configuration IS the failure, whether or
+// not anything is visibly broken yet.
+// =============================================================================
+
+pipeline {
+    agent any
+
+    triggers {
+        // Nightly. Late enough that a deploy during the evening is included.
+        cron('0 2 * * *')
+    }
+
+    options {
+        // A check that hangs is a check nobody trusts. It reads a config file
+        // and inspects local units; it has no business taking ten minutes.
+        timeout(time: 10, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '60'))
+        disableConcurrentBuilds()
+    }
+
+    stages {
+        stage('Check out the configuration') {
+            steps {
+                // The branch is pinned by the job, not chosen by the build.
+                // Jenkins runs these scripts with root rights, so a job that
+                // took its steps from whatever branch was pushed would turn a
+                // pull request into a way to run commands as root.
+                checkout scm
+                sh '''
+                    export GIT_TERMINAL_PROMPT=0
+                    git submodule status | awk 'substr($2, 1, 8) != ".claude/" {print $2}' | while read -r p; do
+                        git submodule update --init "$p" || echo "skipped $p (needs a credential)"
+                    done
+                '''
+            }
+        }
+
+        // Reads the checked-out tree only, so no sudo. Item 125.
+        stage('No SSH key outside the first clone') {
+            steps {
+                sh 'bash tests/no_ssh_key_outside_first_clone.sh'
+            }
+        }
+
+        stage('Report the difference') {
+            steps {
+                sh 'sudo bash /usr/local/lib/linuxbasics/hostings/scripts/maintain_services.sh --check'
+            }
+        }
+    }
+
+    post {
+        failure {
+            // Two different things land here: the machine drifted, or the check
+            // itself could not run. The log distinguishes them; this line only
+            // makes sure nobody assumes the first.
+            echo 'Either this machine no longer matches hostings.conf, or the check could not complete.'
+            echo 'Read the output above before running the apply job.'
+        }
+    }
+}

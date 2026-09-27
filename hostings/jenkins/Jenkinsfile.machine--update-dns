@@ -1,0 +1,84 @@
+// =============================================================================
+// Point every domain's apex record at this household's current address.
+//
+// Triggered by ISPAddressChecker when it sees a genuinely NEW address, over
+// localhost, because the router does not forward to this machine and a webhook
+// from outside cannot arrive.
+//
+// NOT ON CONNECTIVITY FLAPPING. A line that drops and returns with the same
+// address must trigger nothing: the detector decides that, and the script here
+// is the second line of defence, because it compares before it writes and does
+// nothing when every record already holds the right address.
+//
+// It refuses outright on a machine where MACHINE_IS_LIVE is no. Two machines
+// writing the address record is how every site ends up pointing at the wrong
+// one, and a replacement built beside the live one runs these same scripts from
+// the same branch.
+//
+// Startable by hand too. The address changing while something else is broken is
+// exactly when you want to press a button rather than find the right command.
+// =============================================================================
+
+pipeline {
+    agent any
+
+    parameters {
+        string(
+            name: 'IPV4',
+            defaultValue: '',
+            description: 'Leave empty to detect it. Fill it in only when you know ' +
+                         'better than the detector, which is rare.'
+        )
+    }
+
+    options {
+        timeout(time: 10, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '200'))
+        // Two runs at once would race over six records and the loser's writes
+        // would be silently overwritten.
+        disableConcurrentBuilds()
+    }
+
+    stages {
+        stage('Check out the configuration') {
+            steps {
+                checkout scm
+                sh '''
+                    export GIT_TERMINAL_PROMPT=0
+                    git submodule status | awk 'substr($2, 1, 8) != ".claude/" {print $2}' | while read -r p; do
+                        git submodule update --init "$p" || echo "skipped $p (needs a credential)"
+                    done
+                '''
+            }
+        }
+
+        stage('Report') {
+            steps {
+                // Always, even on an automatic run. This job writes the record
+                // every hostname depends on, and the build log is the only
+                // record of what it saw before it acted.
+                sh 'sudo bash /usr/local/lib/linuxbasics/hostings/scripts/update_dns_apex.sh --check'
+            }
+        }
+
+        stage('Write') {
+            steps {
+                script {
+                    def cmd = 'sudo bash /usr/local/lib/linuxbasics/hostings/scripts/update_dns_apex.sh'
+                    if (params.IPV4?.trim()) {
+                        cmd += " --ipv4 ${params.IPV4.trim()}"
+                    }
+                    sh cmd
+                }
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo 'The apex records were not fully updated.'
+            echo 'Sites may resolve to the old address until this succeeds.'
+            echo 'The script only writes what still differs, so running it again is safe.'
+        }
+    }
+}

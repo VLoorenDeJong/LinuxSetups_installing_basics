@@ -1,0 +1,69 @@
+// =============================================================================
+// Write one row's systemd unit. One task, one job.
+//
+// Does not write the vhost, does not ask for a certificate, does not verify.
+// Those are site-2-write-apache-vhost, site-3-request-certificate and machine/check-sites-answer. set-up-this-site is the
+// compound that runs them in order.
+// =============================================================================
+
+pipeline {
+    agent any
+
+    parameters {
+        string(
+            name: 'ROW',
+            defaultValue: '',
+            description: 'The name in the second column of hostings.conf. ' +
+                         'Comma separated for several.'
+        )
+    }
+
+    options {
+        timeout(time: 15, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '60'))
+        // Two runs writing units and reloading systemd at once.
+        disableConcurrentBuilds()
+    }
+
+    stages {
+        stage('Check out the configuration') {
+            steps {
+                checkout scm
+                sh '''
+                    export GIT_TERMINAL_PROMPT=0
+                    git submodule status | awk 'substr($2, 1, 8) != ".claude/" {print $2}' | while read -r p; do
+                        git submodule update --init "$p" || echo "skipped $p (needs a credential)"
+                    done
+                '''
+            }
+        }
+
+        stage('Refuse an empty row') {
+            steps {
+                script {
+                    // The folder is the site: a job at
+                    // ispaddress_api/2-write-apache-vhost knows its row without being
+                    // told. A parameter still wins, so this same file works as a
+                    // top-level job with a name typed in.
+                    env.ROW_NAME = params.ROW?.trim() ?:
+                        (env.JOB_NAME.contains('/') ? env.JOB_NAME.split('/')[0] : '')
+                    if (!env.ROW_NAME) {
+                        error('ROW is empty. Give a name from the second column of hostings.conf.')
+                    }
+                }
+            }
+        }
+
+        stage('Write the unit') {
+            steps {
+                sh "sudo bash /usr/local/lib/linuxbasics/hostings/scripts/add_app_services.sh --only-row '${env.ROW_NAME}'"
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo "No unit was written for '${env.ROW_NAME}'. Nothing else was touched."
+        }
+    }
+}

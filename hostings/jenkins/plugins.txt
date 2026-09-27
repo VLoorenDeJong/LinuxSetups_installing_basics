@@ -1,0 +1,52 @@
+# Plugins installed by add_jenkins.sh before the setup wizard runs.
+#
+# This is Jenkins' own "suggested" set, minus four that are dead weight on this
+# machine. Every plugin is loaded at startup and costs memory, which is worth
+# caring about on a Pi.
+#
+# Dependencies are resolved automatically, so only the things actually wanted
+# are listed. Blank lines and # comments are ignored.
+#
+# Deliberately NOT here, and why:
+#
+#   ant, gradle    Java build tools. This machine builds .NET.
+#   ssh-slaves     For building on other machines. Everything runs on the Pi.
+#   ldap           For a corporate directory. There isn't one.
+#   blueocean      Beautiful, and far too heavy for a Pi.
+#
+# Adding one: put its ID here, not its display name. The ID is the last part of
+# its URL on plugins.jenkins.io.
+
+# --- Without these, the Jenkinsfiles in this folder do not run ----------------
+workflow-aggregator
+git
+github-branch-source
+credentials-binding
+
+# --- Housekeeping that matters more on a small board -------------------------
+# Every build leaves a checked-out repository behind on the SD card.
+ws-cleanup
+# A hung build otherwise holds an executor for ever.
+build-timeout
+
+# --- Reading a build afterwards ----------------------------------------------
+timestamper
+pipeline-graph-view
+# The stage API, wfapi/describe: which stage a build is on, what each one
+# concluded and how long it took. The console log has all of that buried in a
+# thousand lines; the hosting manager draws it as a strip above the log.
+pipeline-stage-view
+cloudbees-folder
+
+# --- Security ----------------------------------------------------------------
+# Escapes user-supplied markup in build descriptions.
+antisamy-markup-formatter
+# Per-user, per-job permissions. Needed the moment there is a second account.
+matrix-auth
+
+# --- Optional, inert until configured ----------------------------------------
+# Both do nothing at all until an SMTP server is set, so they cost only disk.
+mailer
+email-ext
+# Shared pipeline libraries from a GitHub repository.
+pipeline-github-lib

@@ -1,0 +1,280 @@
+// =============================================================================
+// Publish a static website into its document root. One job per environment.
+//
+// A separate family from app-* because a website has no RUNTIME: no unit, no
+// restart, no process. Apache serves the files off disk.
+//
+// It may still have a BUILD. That sentence used to read "a website is not
+// built", which was true until 2026-09-05 and is the reason a Vue or Angular
+// repository published its package.json and src/ and served nothing. Those
+// compile to plain files and then behave exactly like any other static site,
+// so the build is a stage here and changes nothing downstream.
+//
+// THE JOB KNOWS WHAT IT IS WITHOUT BEING TOLD
+//
+//   example_org/deploy-test
+//   └── folder: the row          └── job: the environment
+//
+// so a push can start it with no parameters at all. The row's repository and
+// the environment's branch both come from hostings.conf, which means a branch
+// renamed there moves the job with it. Parameters still exist and still win,
+// so this same file works as a one-off job with values typed in.
+//
+// WHY FOUR JOBS AND NOT ONE
+//
+// One job serving four environments through a BRANCH parameter cannot be
+// triggered by a push: the hook says which branch changed, but the job would
+// build with its default, so a push to test would publish test's content to
+// live. Four jobs, each pinned to one branch, is what makes the trigger safe.
+//
+// THE SITE IS CHECKED OUT WITH checkout(), NOT WITH git clone
+//
+// That is what records the repository against this job, and a GitHub webhook
+// only reaches jobs whose recorded SCM matches the repository that changed.
+// A shell clone is invisible to it.
+//
+// NO SUDO. deploy_static_site.sh only writes files, and the document root is
+// owned by jenkins:www-data for exactly this reason. A sudoers rule is only
+// needed for a C# row, which has a service to restart.
+// =============================================================================
+
+pipeline {
+    agent any
+
+    parameters {
+        string(
+            name: 'ROW',
+            defaultValue: '',
+            description: 'Leave empty. Taken from the folder name, which is the row.'
+        )
+        string(
+            name: 'ENVIRONMENT',
+            defaultValue: '',
+            description: 'Leave empty. Taken from the job name: deploy-test is the test environment.'
+        )
+        string(
+            name: 'REPOSITORY',
+            defaultValue: '',
+            description: 'Leave empty. Taken from the row in hostings.conf.'
+        )
+        booleanParam(
+            name: 'DRY_RUN',
+            defaultValue: false,
+            description: 'Shows what would change and copies nothing. Off, because a job started by a push has nobody watching to turn it off.'
+        )
+    }
+
+    triggers {
+        // Reaches this job only because the site repository is checked out with
+        // checkout() below. Until a job has run once Jenkins knows only the
+        // Jenkinsfile's own repository, so the generated config.xml carries this
+        // trigger as well rather than waiting for a first build to register it.
+        githubPush()
+    }
+
+    options {
+        // 60, not 20: an Uno WebAssembly build takes about 15 minutes on this machine.
+        timeout(time: 60, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '40'))
+        disableConcurrentBuilds()
+    }
+
+    stages {
+        stage('Work out what this job is') {
+            steps {
+                // NO checkout HERE. The declarative agent already ran
+                // "Checkout SCM" and put this repository in the workspace, so a
+                // second checkout fetched and checked out the same revision
+                // twice on every build. Measured 2026-08-26: 585 no-change
+                // builds that day, 105 seconds each, 913 executor-minutes.
+                script {
+                    def parts = env.JOB_NAME.split('/')
+                    def tail = parts[parts.size() - 1]
+
+                    env.ROW_NAME = params.ROW?.trim() ?: (parts.size() > 1 ? parts[0] : '')
+                    env.ENV_NAME = params.ENVIRONMENT?.trim() ?:
+                        (tail.startsWith('deploy-') ? tail.substring(7) : '')
+
+                    if (!env.ROW_NAME) {
+                        error('No row. This job belongs in a folder named after a row in hostings.conf.')
+                    }
+                    if (!env.ENV_NAME) {
+                        error('No environment. Name the job deploy-<env>, for example deploy-test.')
+                    }
+
+                    // Branch and repository both come from the config, so
+                    // renaming a branch there moves this job with it and
+                    // nothing has to be edited inside Jenkins.
+                    def resolved = sh(
+                        returnStdout: true,
+                        script: 'bash hostings/scripts/resolve_deploy_target.sh ' +
+                                '"' + env.ROW_NAME + '" "' + env.ENV_NAME + '"'
+                    ).trim()
+
+                    def bits = resolved.split('\\|', -1)
+                    env.DEPLOY_BRANCH = bits.size() > 0 ? bits[0] : ''
+                    def confRepo = bits.size() > 1 ? bits[1] : ''
+                    env.SITE_REPO = params.REPOSITORY?.trim() ?: confRepo
+
+                    if (!env.DEPLOY_BRANCH) {
+                        error("No branch for environment '" + env.ENV_NAME + "'. Check <ENV>_BRANCH in hostings.conf.")
+                    }
+                    if (!env.SITE_REPO) {
+                        error("Row '" + env.ROW_NAME + "' has no Repository in hostings.conf, so there is nothing to clone.")
+                    }
+                    echo env.ROW_NAME + ', ' + env.ENV_NAME + ' environment, from branch ' + env.DEPLOY_BRANCH
+                }
+            }
+        }
+
+        stage('Check out the site') {
+            steps {
+                // checkout() rather than a shell clone: this is what registers
+                // the repository against the job, and a webhook only reaches
+                // jobs whose recorded SCM matches the repository that changed.
+                checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: '*/' + env.DEPLOY_BRANCH]],
+                    userRemoteConfigs: [[
+                        url: env.SITE_REPO,
+                        // github-token-<owner>: a Jenkins App credential reaches one
+                        // owner only (add_jenkins_github_credentials.sh makes one each).
+                        credentialsId: 'github-token-' + env.SITE_REPO.substring(env.SITE_REPO.indexOf('github.com') + 11).split('/')[0]
+                    ]],
+                    extensions: [
+                        [$class: 'RelativeTargetDirectory', relativeTargetDir: 'site'],
+                        [$class: 'CloneOption', shallow: true, depth: 1, noTags: true],
+                        [$class: 'CleanBeforeCheckout']
+                    ]
+                ])
+                // Submodules, which this checkout never did: no job on this
+                // machine carried SubmoduleOption, measured 2026-09-12, so a
+                // customer site using one was deployed without it and went
+                // green. Done here rather than by adding SubmoduleOption,
+                // because the plugin would authenticate with the job's own
+                // org-scoped credential and a submodule under another owner
+                // 404s: that is the fault that aborted builds 264 and 265.
+                //
+                // sudo, because the jenkins account cannot read the App key.
+                sh '''
+                    cd site 2>/dev/null || exit 0
+                    [ -f .gitmodules ] || exit 0
+                    export GIT_TERMINAL_PROMPT=0
+                    HELPER=/usr/local/lib/linuxbasics/hostings/scripts/git_credential_github_app.sh
+                    git -c credential.helper= \
+                        -c credential.helper="!sudo -n bash $HELPER" \
+                        -c credential.useHttpPath=true \
+                        submodule update --init --recursive || true
+                '''
+                script {
+                    def missed = sh(returnStdout: true, script: '''
+                        cd site 2>/dev/null || exit 0
+                        git submodule status --recursive 2>/dev/null \
+                          | awk '$1 ~ /^-/ { print $2 }'
+                    ''').trim()
+                    if (missed) {
+                        currentBuild.result = 'UNSTABLE'
+                        echo "These submodules did not check out, so the site is missing part of its source:\n${missed}"
+                    }
+                }
+                script {
+                    // WHY THIS JOB MIGHT HAVE NOTHING TO DO.
+                    //
+                    // The GitHub plugin associates a job with EVERY repository
+                    // it can see in that job, and this one reads its Jenkinsfile
+                    // from the config repository. So a push to the config repository starts every
+                    // site deploy: 19 of them in one evening on 2026-08-23, each
+                    // republishing a live site because an install script changed.
+                    //
+                    // IgnoreNotifyCommit and poll:false were both tried and
+                    // neither helps: they govern polling, not the association,
+                    // which was confirmed by asking Jenkins what repositories it
+                    // thinks this job watches. So the job answers the question
+                    // itself: if the site has not moved, there is nothing to do.
+                    env.SITE_SHA = sh(returnStdout: true,
+                        script: 'git -C site rev-parse HEAD').trim()
+
+                    def marker = "/var/lib/jenkins/last-deployed/${env.ROW_NAME}-${env.ENV_NAME}.sha"
+                    sh "mkdir -p /var/lib/jenkins/last-deployed"
+                    def previous = sh(returnStdout: true,
+                        script: "cat ${marker} 2>/dev/null || true").trim()
+
+                    if (previous == env.SITE_SHA && !params.DRY_RUN) {
+                        env.NOTHING_TO_DO = 'yes'
+                        echo "Already deployed ${env.SITE_SHA.take(8)}. Nothing changed."
+                        // Never downgrade an UNSTABLE set above: a submodule that did not
+                        // check out is silenced otherwise, because a repeat build of the
+                        // same commit lands here and NOT_BUILT reads as nothing to do.
+                        if (currentBuild.result == null || currentBuild.result == 'SUCCESS') {
+                            currentBuild.result = 'NOT_BUILT'
+                        }
+                        currentBuild.description = 'no change'
+                    }
+                    env.DEPLOY_MARKER = marker
+                }
+                // .git is NOT deleted here. deploy_static_site.sh already excludes
+                // it from the rsync and refuses outright if one appears under a
+                // document root, so this was a second lock on the same door and it
+                // cost a full re-clone of the site on every single build: with no
+                // .git in the workspace, CleanBeforeCheckout has nothing to reuse.
+            }
+        }
+
+        stage('Build, if it needs building') {
+            when { expression { env.NOTHING_TO_DO != 'yes' } }
+            steps {
+                script {
+                    // A plain HTML site has no package.json and this costs
+                    // nothing, so it runs for every row rather than only the
+                    // ones that need it: a row does not have to declare what
+                    // it is, and cannot declare it wrongly.
+                    //
+                    // NO SUDO, deliberately. npm ci and npm run build execute
+                    // lifecycle scripts out of the SITE repository, so they run
+                    // as jenkins and nothing more. build_npm_static_site.sh
+                    // refuses to run as root for the same reason.
+                    //
+                    // It prints the directory to publish on stdout and
+                    // everything a reader wants on stderr, so this captures one
+                    // and shows the other in the log.
+                    env.PUBLISH_DIR = sh(
+                        returnStdout: true,
+                        script: 'bash hostings/scripts/build_npm_static_site.sh "$WORKSPACE/site"'
+                    ).trim()
+
+                    if (!env.PUBLISH_DIR) {
+                        error('The build named no directory to publish.')
+                    }
+                    echo 'Publishing from ' + env.PUBLISH_DIR
+                }
+            }
+        }
+
+        stage('Publish') {
+            when { expression { env.NOTHING_TO_DO != 'yes' } }
+            steps {
+                script {
+                    def prefix = params.DRY_RUN ? 'DRY_RUN=1 ' : ''
+                    // PUBLISH_DIR, not $WORKSPACE/site: for a built site those
+                    // differ, and copying the checkout would publish sources.
+                    sh prefix + 'bash hostings/scripts/deploy_static_site.sh ' +
+                       "'" + env.ROW_NAME + "' \"" + env.PUBLISH_DIR + "\" '" + env.ENV_NAME + "'"
+                    if (params.DRY_RUN) {
+                        echo 'DRY_RUN was on, so nothing was copied. Turn it off to publish.'
+                    } else {
+                        // Written only after a successful copy, so a failed
+                        // deploy is retried rather than remembered as done.
+                        sh "printf '%s' '${env.SITE_SHA}' > ${env.DEPLOY_MARKER}"
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo 'Publishing failed. That environment still holds its previous content:'
+            echo 'the script refuses before copying, and removes files last.'
+        }
+    }
+}

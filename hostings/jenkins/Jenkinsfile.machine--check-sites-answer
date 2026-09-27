@@ -1,0 +1,36 @@
+// =============================================================================
+// Ask whether the sites answer. Changes nothing.
+//
+// Machine-wide on purpose, and therefore takes no ROW: a change to one vhost
+// can break another, so verifying only the row you touched would miss exactly
+// the failure worth catching.
+// =============================================================================
+
+pipeline {
+    agent any
+
+    options {
+        timeout(time: 15, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '60'))
+    }
+
+    stages {
+        stage('Check out the configuration') {
+            steps {
+                checkout scm
+                sh '''
+                    export GIT_TERMINAL_PROMPT=0
+                    git submodule status | awk 'substr($2, 1, 8) != ".claude/" {print $2}' | while read -r p; do
+                        git submodule update --init "$p" || echo "skipped $p (needs a credential)"
+                    done
+                '''
+            }
+        }
+
+        stage('Verify') {
+            steps {
+                sh 'sudo bash /usr/local/lib/linuxbasics/hostings/scripts/maintain_services.sh --verify'
+            }
+        }
+    }
+}

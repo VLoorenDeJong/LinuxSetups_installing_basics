@@ -1,0 +1,174 @@
+// =============================================================================
+// One repository, one branch, every row it feeds. This job runs no build and no
+// deploy itself: it is the composition.
+//
+//   csharp/1-build-application (once per project)  →  the site's own deploy-csharp-application (once per row)
+//
+// This is where "one build, many deployments" actually happens. The four
+// progress tenants are one codebase and four rows, so they share a build. An
+// API and a dashboard in one repository are two projects, so they get two
+// builds. rows_for_repo.sh --with-path is what tells the two apart: rows are
+// grouped by their Path column, and each distinct path is built once.
+//
+// The branch is the environment. A build of `live` reaches every row that takes
+// part in live; a row with a Branch override is reached only by that branch;
+// a feature branch reaches nothing at all. rows_for_repo.sh decides all three,
+// so this file contains no rules of its own.
+//
+// AGENT NONE except the one stage that has to read the config. A parent job
+// waits while a child runs, and a parent holding an executor while its child
+// needs one deadlocks Jenkins with no error, just spinning.
+// =============================================================================
+
+pipeline {
+    agent none
+
+    parameters {
+        string(
+            name: 'REPOSITORY',
+            defaultValue: '',
+            description: 'The clone URL, as written in the ninth column of hostings.conf.'
+        )
+        string(
+            name: 'BRANCH',
+            defaultValue: 'live',
+            description: 'The branch to release. It is also the environment, unless a row ' +
+                         'overrides it in its Branch column.'
+        )
+        booleanParam(
+            name: 'DEPLOY',
+            defaultValue: true,
+            description: 'Turn off to build only, and see which rows would have been ' +
+                         'deployed without touching any of them.'
+        )
+    }
+
+    options {
+        timeout(time: 90, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '40'))
+        disableConcurrentBuilds()
+    }
+
+    stages {
+        stage('Which rows does this repository feed') {
+            agent any
+            steps {
+                checkout scm
+                script {
+                    if (!params.REPOSITORY?.trim()) {
+                        error('REPOSITORY is empty. Fill in the ninth column of hostings.conf ' +
+                              'for at least one row, then pass the same URL here.')
+                    }
+
+                    def out = sh(returnStdout: true, script:
+                        "bash hostings/scripts/rows_for_repo.sh " +
+                        "'${params.REPOSITORY}' '${params.BRANCH}' " +
+                        "--branch '${params.BRANCH}' --with-path").trim()
+
+                    if (!out) {
+                        // Not an error. A repository filled in before its rows
+                        // exist, or a branch that is not an environment, both
+                        // land here and both are ordinary.
+                        error("No row in hostings.conf names ${params.REPOSITORY} and takes " +
+                              "part in '${params.BRANCH}'. Nothing to release. Check the " +
+                              "ninth column, and remember a branch that is not an " +
+                              "environment only reaches rows that name it in Branch.")
+                    }
+
+                    // name|path per line. Grouped by path so a project shared by
+                    // several rows is built once.
+                    def byProject = [:]
+                    out.split('\n').each { line ->
+                        def parts = line.trim().split(/\|/)
+                        def name = parts[0].trim()
+                        def path = parts.size() > 1 ? parts[1].trim() : ''
+                        byProject.get(path, []).add(name)
+                    }
+                    env.PLAN = byProject.collect { p, rows ->
+                        "${p}=${rows.join(',')}"
+                    }.join(';')
+
+                    echo "Branch:  ${params.BRANCH}"
+                    byProject.each { p, rows ->
+                        echo "Project '${p}' builds once, deploys to: ${rows.join(', ')}"
+                    }
+                }
+            }
+        }
+
+        stage('Build and deploy each project') {
+            steps {
+                script {
+                    env.PLAN.split(';').each { entry ->
+                        def path = entry.split('=')[0]
+                        def rows = entry.split('=')[1].split(',')
+
+                        build job: '1-build-application',
+                              parameters: [
+                                  string(name: 'REPOSITORY', value: params.REPOSITORY),
+                                  string(name: 'BRANCH',     value: params.BRANCH),
+                                  string(name: 'PROJECT',    value: path)
+                              ],
+                              wait: true
+
+                        // Rebuilt here rather than read back from the child, so
+                        // the two jobs pass nothing but strings. csharp/1-build-application derives
+                        // the same path from the same three parameters.
+                        def slug = params.REPOSITORY
+                            .replaceAll(/\.git$/, '')
+                            .replaceAll(/^git@[^:]+:/, '')
+                            .replaceAll(/^https?:\/\/[^\/]+\//, '')
+                            .replaceAll(/[^A-Za-z0-9._-]/, '-')
+                        def projectSlug = (path ?: 'default').replaceAll(/[^A-Za-z0-9._-]/, '-')
+                        def out = "/var/lib/jenkins/artifacts/${slug}/${params.BRANCH}/${projectSlug}"
+
+                        if (!params.DEPLOY) {
+                            echo "DEPLOY is off. Would have deployed ${out} to: ${rows.join(', ')}"
+                            return
+                        }
+
+                        rows.each { row ->
+                            // The site's own folder holds its deploy job, so the
+                            // row name is the path. That is the same job the
+                            // operator can press by hand inside that folder.
+                            build job: "/${row}/deploy-csharp-application",
+                                  parameters: [
+                                      string(name: 'ROW',         value: row),
+                                      string(name: 'SOURCE_DIR',  value: out),
+                                      string(name: 'ENVIRONMENT', value: params.BRANCH)
+                                  ],
+                                  wait: true
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Verify') {
+            when { expression { params.DEPLOY } }
+            steps {
+                script {
+                    // Yellow, not red: the same reasoning as set-up-this-site. The
+                    // check is machine-wide, so it reports gaps this release did
+                    // not cause. The deploys themselves already rolled back if
+                    // they failed.
+                    def r = build job: '/machine/check-sites-answer',
+                                  wait: true, propagate: false
+                    if (r.result != 'SUCCESS') {
+                        currentBuild.result = 'UNSTABLE'
+                        echo "The deploys finished. The machine-wide check came back " +
+                             "${r.result}. Open machine/check-sites-answer to read it."
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo 'The release stopped part way. Each step is its own job, so the red one'
+            echo 'says which project or which row. A failed deploy has already put the'
+            echo 'previous version back; a failed build changed nothing at all.'
+        }
+    }
+}

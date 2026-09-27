@@ -1,0 +1,148 @@
+// =============================================================================
+// Make the machine match hostings.conf. Started by hand, never on a timer.
+//
+// The drift report is printed first and the job then applies without waiting.
+// Pressing Build is the confirmation: nothing here runs on a push or a timer,
+// and the check job exists to be read before this one is started.
+//
+// Nothing here reboots. It takes no parameters: one job, one behaviour, whoever
+// starts it. It writes the rows the last publish changed and removes orphans,
+// and the orphan list is in the drift report above the Apply step.
+// =============================================================================
+
+pipeline {
+    agent any
+
+    options {
+        timeout(time: 30, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '60'))
+        disableConcurrentBuilds()
+    }
+
+    stages {
+        stage('Check out the configuration') {
+            steps {
+                // No checkout here: Declarative already did one, and a second
+                // is another full fetch of the commit already on disk.
+                sh '''
+                    export GIT_TERMINAL_PROMPT=0
+                    git submodule status | awk 'substr($2, 1, 8) != ".claude/" {print $2}' | while read -r p; do
+                        git submodule update --init "$p" || echo "skipped $p (needs a credential)"
+                    done
+                '''
+                // Everything this job runs under sudo lives in the root-owned
+                // tree and reads ITS copy of hostings.conf, not the workspace
+                // one. Without this refresh the job would apply whatever config
+                // was there when the tree was last installed, while the log
+                // showed the workspace checkout it did not use.
+                //
+                // Unconditional, and that is the point. This used to skip the
+                // refresh whenever the workspace and the root-owned tree were at
+                // the same commit, which is not the same question: a console save
+                // is a commit AND a config change, so an equal SHA was read as an
+                // equal config. Build 263 printed "already at f778be0. Not
+                // refreshing." and then applied a config that still said
+                // Enabled = no for a row the save had switched on. Every step
+                // reported ok and the unit stayed stopped.
+                //
+                // A fetch costs seconds. Deciding not to fetch cost a whole
+                // re-tick that looked like it had worked.
+                sh 'sudo bash /usr/local/lib/linuxbasics/hostings/scripts/add_pipeline_scripts.sh'
+                // The console page is built from its own clone, which nothing
+                // refreshed except a save in the browser. A config pushed from
+                // anywhere else was therefore invisible on the page, and the
+                // operator's next save was refused for editing a stale file.
+                // Never fatal: a stale page is worse than an apply that stops.
+                sh 'sudo bash /usr/local/lib/linuxbasics/hostings/scripts/publish_hostings.sh --refresh || echo "console clone not refreshed, carrying on"'
+            }
+        }
+
+        stage('Repositories') {
+            steps {
+                // Before the machine work: branches live on GitHub and depend
+                // on nothing here, so a failing certificate must not stop them.
+                // Ask first, so no drift means no GitHub write.
+                // One call, not two. --check followed by --reconcile was meant
+                // to skip the GitHub write when nothing differs, but the guard
+                // reads for "Every repository already matches its row." and
+                // example_org has three branches no environment uses, which
+                // --reconcile reports and deliberately will not delete. So the
+                // drift never clears, the guard never matches, and every apply
+                // asked GitHub for the same ten repositories twice to print the
+                // same paragraph twice.
+                //
+                // --reconcile does its own checking and writes only what it has
+                // to, so the first call was never protecting anything.
+                sh 'sudo bash /usr/local/lib/linuxbasics/hostings/scripts/provision_repo.sh --reconcile'
+            }
+        }
+
+        // No separate report stage. --apply prints the same pre-flight and the
+        // same drift report before it writes anything, so running --check first
+        // was a second full pass for lines that appear either way.
+
+        stage('Apply') {
+            steps {
+                script {
+                    // One behaviour, always. This used to be two booleans, so the
+                    // same job did different things depending on who started it
+                    // and nothing on screen said which: a build from the UI
+                    // rewrote all 17 units and read as a bug.
+                    //
+                    // --apply is spelled out because a sudoers rule ending in
+                    // '*' does not match a command run with no arguments.
+                    //
+                    // --changed narrows the writing to the rows the last publish
+                    // moved. It falls back to writing everything whenever it
+                    // cannot tell honestly, so this is a speed-up and never a
+                    // correctness risk. The drift report and the prune still read
+                    // the whole config.
+                    //
+                    // To rewrite every row on a machine in an unknown state, run
+                    // it on the machine without --changed. That is a deliberate
+                    // act, not a checkbox nobody remembers the meaning of.
+                    def cmd = 'sudo bash /usr/local/lib/linuxbasics/hostings/scripts/maintain_services.sh --apply --changed --prune'
+                    // The apply already asks the rows it wrote. Exit 3 is its way
+                    // of saying "applied, but a site did not answer", which used
+                    // to need a second stage asking every hostname again. A
+                    // staging certificate answers 000 by design, and on a machine
+                    // that is not live yet that is most of the list, so this is
+                    // UNSTABLE and never a failure.
+                    def rc = sh(returnStatus: true, script: cmd)
+
+                    // REFRESH THE DRIFT REPORT, whatever the apply did.
+                    //
+                    // The console's drift banner is built from last-check.txt
+                    // rather than computed, and only check_hostings.sh writes
+                    // that file. Nothing re-ran it after an apply, so the page
+                    // could sit for hours on a verdict the apply had already
+                    // made false. On 2026-09-04 it showed "Fix drift" over a
+                    // machine with zero drift, naming a vhost fixed minutes
+                    // earlier.
+                    //
+                    // Run on failure too, and never fatally: a page telling the
+                    // truth about a half-applied machine is worth more than a
+                    // page frozen on the state before it.
+                    sh(returnStatus: true, script: 'sudo bash /usr/local/lib/linuxbasics/hostings/scripts/check_hostings.sh >/dev/null 2>&1')
+
+                    if (rc == 3) {
+                        currentBuild.result = 'UNSTABLE'
+                        echo 'The config was applied. Some sites did not answer: see the list above.'
+                    } else if (rc != 0) {
+                        error "maintain_services.sh exited ${rc}"
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo 'The apply did not finish. The machine may be part way changed.'
+            echo 'Run the check job to see where it now stands before trying again.'
+        }
+        unstable {
+            echo 'The machine matches the config. Only the site answers were short.'
+        }
+    }
+}

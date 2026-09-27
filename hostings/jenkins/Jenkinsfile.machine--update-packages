@@ -1,0 +1,78 @@
+// =============================================================================
+// Install operating system updates on this machine.
+//
+// Runs LinuxBasics' updates_install_and_clean.sh, which is the same script a
+// human would run over SSH. Nothing is duplicated here: this job exists so the
+// run is logged, repeatable and startable from a browser.
+//
+// The console page's "update this machine" button will call this job. Until
+// that page exists, pressing Build is the button.
+//
+// IT NEVER REBOOTS.
+//
+// Only one thing in this repository may reboot, and it is not a pipeline. A
+// kernel update that wants a restart is reported here and left for you: a
+// machine restarting itself mid-deploy, or while somebody is reading a
+// customer's site, is not a trade this job gets to make.
+// =============================================================================
+
+pipeline {
+    agent any
+
+    options {
+        // Longer than the others. An apt run that has to fetch a new kernel on
+        // a slow line is not stuck, it is downloading.
+        timeout(time: 60, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '60'))
+        // Two apt runs at once fight over the dpkg lock, and the loser leaves
+        // the package database half configured.
+        disableConcurrentBuilds()
+    }
+
+    stages {
+        stage('Check out the configuration') {
+            steps {
+                checkout scm
+                sh '''
+                    export GIT_TERMINAL_PROMPT=0
+                    git submodule status | awk 'substr($2, 1, 8) != ".claude/" {print $2}' | while read -r p; do
+                        git submodule update --init "$p" || echo "skipped $p (needs a credential)"
+                    done
+                '''
+            }
+        }
+
+        stage('Update') {
+            steps {
+                // apt runs in its own systemd unit and this step only follows
+                // it: an upgrade of Jenkins restarts Jenkins, and that must not
+                // kill dpkg mid-write.
+                sh 'sudo bash /usr/local/lib/linuxbasics/hostings/scripts/run_updates_detached.sh'
+            }
+        }
+
+        stage('Reboot needed?') {
+            steps {
+                sh '''
+                    if [ -f /var/run/reboot-required ]; then
+                        echo "A reboot is required to finish these updates:"
+                        cat /var/run/reboot-required.pkgs 2>/dev/null || true
+                        echo ""
+                        echo "This job will not do it. Reboot when it suits you."
+                    else
+                        echo "No reboot needed."
+                    fi
+                '''
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo 'The update did not finish, or this job lost sight of it.'
+            echo 'The log above names the os-updates-* unit: journalctl -u <that unit>'
+            echo 'If dpkg is complaining about an interrupted install, run:'
+            echo '  sudo dpkg --configure -a'
+        }
+    }
+}

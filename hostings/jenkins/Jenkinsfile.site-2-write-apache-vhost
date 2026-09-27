@@ -1,0 +1,70 @@
+// =============================================================================
+// Write one row's Apache vhost. One task, one job.
+//
+// Run twice in a full apply: once before the certificate exists, which produces
+// an HTTP-only vhost, and once after, which adds the HTTPS half. That is why it
+// is its own job rather than a stage inside another.
+// =============================================================================
+
+pipeline {
+    agent any
+
+    parameters {
+        string(
+            name: 'ROW',
+            defaultValue: '',
+            description: 'The name in the second column of hostings.conf. ' +
+                         'Comma separated for several.'
+        )
+    }
+
+    options {
+        timeout(time: 15, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '60'))
+        // Apache config is shared by every row, and this reloads it.
+        disableConcurrentBuilds()
+    }
+
+    stages {
+        stage('Check out the configuration') {
+            steps {
+                checkout scm
+                sh '''
+                    export GIT_TERMINAL_PROMPT=0
+                    git submodule status | awk 'substr($2, 1, 8) != ".claude/" {print $2}' | while read -r p; do
+                        git submodule update --init "$p" || echo "skipped $p (needs a credential)"
+                    done
+                '''
+            }
+        }
+
+        stage('Refuse an empty row') {
+            steps {
+                script {
+                    // The folder is the site: a job at
+                    // ispaddress_api/2-write-apache-vhost knows its row without being
+                    // told. A parameter still wins, so this same file works as a
+                    // top-level job with a name typed in.
+                    env.ROW_NAME = params.ROW?.trim() ?:
+                        (env.JOB_NAME.contains('/') ? env.JOB_NAME.split('/')[0] : '')
+                    if (!env.ROW_NAME) {
+                        error('ROW is empty. Give a name from the second column of hostings.conf.')
+                    }
+                }
+            }
+        }
+
+        stage('Write the vhost') {
+            steps {
+                sh "sudo bash /usr/local/lib/linuxbasics/hostings/scripts/add_app_vhosts.sh --only-row '${env.ROW_NAME}'"
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo "No vhost was written for '${env.ROW_NAME}'. Apache was left as it was:"
+            echo 'the script tests the configuration before reloading.'
+        }
+    }
+}
