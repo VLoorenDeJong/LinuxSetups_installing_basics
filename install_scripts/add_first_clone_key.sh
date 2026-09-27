@@ -18,10 +18,11 @@ unset _a _dbg_args
 # ===== USAGE =====
 # Put the SSH key for the FIRST CLONE on a blank machine, out of 1Password.
 #
-#   sudo bash add_first_clone_key.sh --vault "<vault name>"
+#   sudo bash add_first_clone_key.sh
 #   sudo bash add_first_clone_key.sh --vault "<vault>" --item "file git-push-key"
 #
-#     --vault <name>     the 1Password vault the service account opens. Required
+#     --vault <name>     the vault holding the item. Default: every vault the
+#                        token opens is searched, and exactly one must hold it
 #     --item  <title>    the item holding the key. Default: file git-push-key.
 #                        That default is what the store titles an item with no
 #                        alias. If the private config sets a SECRET_ITEM_ alias
@@ -170,7 +171,6 @@ trap 'spinner_stop; stty echo 2>/dev/null < /dev/tty || true; rm -f "$LOG" "$LOG
 # Pre-flight
 # =============================================================================
 ERRORS=()
-[ -n "$VAULT" ] || ERRORS+=("No vault given. Run: sudo bash $0 --vault \"<your vault name>\"")
 [ -n "$ITEM" ]  || ERRORS+=("--item cannot be empty.")
 [ -n "$CLONE_HOME" ] || ERRORS+=("User '$CLONE_USER' has no home directory, so there is nowhere to put the key.")
 case "$KEY_PATH" in
@@ -195,7 +195,7 @@ if [ ${#ERRORS[@]} -gt 0 ]; then
 fi
 
 print_header "The key for the first clone"
-print_info "Vault: $VAULT"
+print_info "Vault: ${VAULT:-whichever one the token opens that holds the item}"
 print_info "Item:  $ITEM"
 print_info "Key:   $KEY_PATH, owned by $CLONE_USER"
 
@@ -214,7 +214,7 @@ if [ ${#NEED_APT[@]} -eq 0 ]; then
     print_success "op $(op --version 2>/dev/null) and jq are already installed."
 elif [ "$TEST_ONLY" = "1" ]; then
     print_error "Missing: ${NEED_APT[*]}. There is nothing to test."
-    print_action "Run: sudo bash $0 --vault \"$VAULT\""
+    print_action "Run: sudo bash $0${VAULT:+ --vault \"$VAULT\"}"
     exit 1
 else
     if ! command -v op >/dev/null 2>&1; then
@@ -276,7 +276,7 @@ vault_opens() {
 }
 
 if [ "$TEST_ONLY" = "0" ]; then
-    print_action "NEEDED: the 1Password service account token for vault $VAULT"
+    print_action "NEEDED: the 1Password service account token${VAULT:+ for vault $VAULT}"
     print_hint   "it starts with ops_ and was shown once, when the service account was made."
     print_hint   "if you kept it: ${HL}1Password -> your own vault -> the service account item${NC}"
     print_hint   "if it is lost: ${HL}my.1password.eu -> Developer -> the service account -> Regenerate token${NC}"
@@ -302,21 +302,57 @@ else
     TOKEN="$CURRENT"
     if [ -z "$TOKEN" ]; then
         print_error "No token at $OP_TOKEN_FILE, so there is nothing to test."
-        print_action "Run: sudo bash $0 --vault \"$VAULT\""
+        print_action "Run: sudo bash $0${VAULT:+ --vault \"$VAULT\"}"
         exit 1
     fi
 fi
 
-spinner_start "Opening vault $VAULT..."
-if ! vault_opens "$TOKEN"; then
+# Every vault the token opens that holds the item, one name per line.
+vaults_holding_item() {
+    local list names v
+    list="$(OP_SERVICE_ACCOUNT_TOKEN="$TOKEN" op vault list --format json 2>"$LOG")" || return 1
+    names="$(printf '%s' "$list" | jq -r '.[].name')" || return 1
+    while IFS= read -r v; do
+        [ -n "$v" ] || continue
+        OP_SERVICE_ACCOUNT_TOKEN="$TOKEN" op item get "$ITEM" --vault "$v" --format json >/dev/null 2>&1 \
+            && printf '%s\n' "$v"
+    done <<< "$names"
+}
+
+if [ -z "$VAULT" ]; then
+    spinner_start "Looking for '$ITEM' in every vault the token opens..."
+    if ! FOUND="$(vaults_holding_item)"; then
+        spinner_stop
+        print_error "The token could not list its vaults:"
+        tail -3 "$LOG"
+        exit 1
+    fi
     spinner_stop
-    print_error "The token does not open vault '$VAULT':"
-    tail -3 "$LOG"
-    print_info "Check the service account was given '$VAULT' with read access."
-    exit 1
+    FOUND_COUNT="$(printf '%s' "$FOUND" | grep -c . || true)"
+    if [ "$FOUND_COUNT" -eq 0 ]; then
+        print_error "No vault this token opens holds '$ITEM'."
+        print_info "Check the service account was given read access to the vault holding it."
+        exit 1
+    elif [ "$FOUND_COUNT" -gt 1 ]; then
+        print_error "More than one vault holds '$ITEM':"
+        printf '%s\n' "$FOUND" | sed 's/^/     /'
+        print_action "Name the right one: sudo bash $0 --vault \"<one of the above>\""
+        exit 1
+    fi
+    VAULT="$FOUND"
+    print_success "Found '$ITEM' in vault '$VAULT'."
+else
+    spinner_start "Opening vault $VAULT..."
+    if ! vault_opens "$TOKEN"; then
+        spinner_stop
+        print_error "The token does not open vault '$VAULT':"
+        tail -3 "$LOG"
+        print_info "Check the service account was given '$VAULT' with read access."
+        exit 1
+    fi
+    spinner_stop
+    print_success "The token opens vault '$VAULT'."
 fi
-spinner_stop
-print_success "The token opens vault '$VAULT'."
 
 # =============================================================================
 # The key
