@@ -27,6 +27,9 @@ unset _a _dbg_args
 
 export DEBIAN_FRONTEND=noninteractive
 
+# Prompts. print_action cannot be one: it ends with a newline.
+prompt_ask()    { printf "\n   \033[33m%s\033[0m %s" "$1" "${2:-}"; }
+
 print_status() {
     printf "\e[34m🔧 %s\e[0m\n" "$1"
 }
@@ -60,7 +63,7 @@ NEW_HOSTNAME="$1"
 if [ -z "$NEW_HOSTNAME" ]; then
     print_status "Current hostname: $CURRENT_HOSTNAME"
     if [ -e /dev/tty ]; then
-        printf "\e[34m🔧 New hostname (Enter to keep the current one): \e[0m"
+        prompt_ask "New hostname (Enter to keep the current one):"
         read -r NEW_HOSTNAME < /dev/tty
     fi
 fi
