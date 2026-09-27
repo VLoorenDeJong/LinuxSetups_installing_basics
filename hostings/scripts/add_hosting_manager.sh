@@ -820,13 +820,8 @@ printf '%s\n' '#!/bin/sh' \
 chmod 0755 "$OTP_MOTD"
 print_success "Installed $OTP_MOTD"
 
-# /etc/samba/smb.conf is a symlink into a clone of this repository, and that
-# symlink is the declaration of WHICH clone is authoritative. It points at the
-# clone this installer was run from, so the file you edit by hand is the file
-# Samba reads.
-#
-# publish_smb.sh follows the same link: after pushing, it pulls whatever clone
-# the link resolves into. Nothing here hardcodes a path.
+# /etc/samba/smb.conf is a symlink to the config directory's smb.conf, so the
+# file the console saves is the file Samba reads.
 SMB_LINK="/etc/samba/smb.conf"
 SMB_TARGET="/etc/hostings/smb/smb.conf"
 if [ -f "$SMB_TARGET" ]; then
