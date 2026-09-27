@@ -212,7 +212,7 @@ SITES_CONF="${SITES_CONF:-$(conf_active "/etc/hostings")}"
 # uses. Guarded separately, because SITES_CONF can be set by hand to somewhere
 # that is not in a repository at all.
 MANAGER_CLONE="/var/lib/hosting-manager/config-repo"
-[ -f "$SITES_CONF" ] || SITES_CONF="$(conf_active "${MANAGER_CLONE}/backup_config")"
+[ -f "$SITES_CONF" ] || SITES_CONF="$(conf_active "/etc/hostings")"
 git -C "$REPO_ROOT" rev-parse --git-dir >/dev/null 2>&1 || REPO_ROOT="$MANAGER_CLONE"
 
 GITHUB_CRED_DIR="/etc/github-api"
@@ -382,7 +382,7 @@ app_token_available() {
     local sh
     for sh in "$SCRIPT_DIR/github_app_token.sh" \
               "/usr/local/lib/linuxbasics/hostings/scripts/github_app_token.sh" \
-              "${MANAGER_CLONE}/hostings/scripts/github_app_token.sh"; do
+              "/usr/local/lib/linuxbasics/hostings/scripts/github_app_token.sh"; do
         [ -f "$sh" ] || continue
         [ -n "$(SITES_CONF="$SITES_CONF" bash "$sh" 2>/dev/null)" ] && return 0
     done
@@ -590,7 +590,7 @@ TOKEN=""
 # pipeline tree is where the other privileged scripts read their siblings from.
 TOKEN_SH="$SCRIPT_DIR/github_app_token.sh"
 [ -f "$TOKEN_SH" ] || TOKEN_SH="/usr/local/lib/linuxbasics/hostings/scripts/github_app_token.sh"
-[ -f "$TOKEN_SH" ] || TOKEN_SH="${MANAGER_CLONE}/hostings/scripts/github_app_token.sh"
+[ -f "$TOKEN_SH" ] || TOKEN_SH="/usr/local/lib/linuxbasics/hostings/scripts/github_app_token.sh"
 TOKEN_SOURCE=""
 if [ -f "$TOKEN_SH" ]; then
     if TOKEN="$(SITES_CONF="$SITES_CONF" bash "$TOKEN_SH" 2>/dev/null)" \
@@ -1340,7 +1340,7 @@ if [ "$MODE" = "step" ]; then
             fi
             _seed="$SCRIPT_DIR/$_seed_name"
             [ -f "$_seed" ] || _seed="/usr/local/lib/linuxbasics/hostings/scripts/$_seed_name"
-            [ -f "$_seed" ] || _seed="${MANAGER_CLONE}/hostings/scripts/$_seed_name"
+            [ -f "$_seed" ] || _seed="/usr/local/lib/linuxbasics/hostings/scripts/$_seed_name"
             if [ -f "$_seed" ]; then
                 run_step "$_seed_label" \
                     env SITES_CONF="$SITES_CONF" bash "$_seed" --push --only-row "$STEP_ROW" || _rc=1
@@ -1589,7 +1589,7 @@ MD
 
     SEED_SH="$SCRIPT_DIR/$_seed_name"
     [ -f "$SEED_SH" ] || SEED_SH="/usr/local/lib/linuxbasics/hostings/scripts/$_seed_name"
-    [ -f "$SEED_SH" ] || SEED_SH="${MANAGER_CLONE}/hostings/scripts/$_seed_name"
+    [ -f "$SEED_SH" ] || SEED_SH="/usr/local/lib/linuxbasics/hostings/scripts/$_seed_name"
     if [ -f "$SEED_SH" ]; then
         run_step "$_seed_label" \
             env SITES_CONF="$SITES_CONF" bash "$SEED_SH" --push --only-row "$name" \
@@ -1617,7 +1617,7 @@ if [ "$CREATED" -gt 0 ]; then
         local n="$1"
         for c in "$SCRIPT_DIR/$n" \
                  "/usr/local/lib/linuxbasics/hostings/scripts/$n" \
-                 "${MANAGER_CLONE}/hostings/scripts/$n"; do
+                 "/usr/local/lib/linuxbasics/hostings/scripts/$n"; do
             [ -f "$c" ] && { printf '%s' "$c"; return 0; }
         done
         return 1

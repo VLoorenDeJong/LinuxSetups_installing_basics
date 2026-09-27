@@ -102,7 +102,7 @@ SITES_CONF="${SITES_CONF:-$(conf_active "/etc/hostings")}"
 # is /usr and holds none of this, so the pipeline tree is the fallback.
 BG_DIR="/etc/hostings/apache/www/under-construction"
 [ -d "$BG_DIR" ] || BG_DIR="/etc/hostings/apache/www/under-construction"
-[ -d "$BG_DIR" ] || BG_DIR="/var/lib/hosting-manager/config-repo/backup_config/apache/www/under-construction"
+[ -d "$BG_DIR" ] || BG_DIR="/etc/hostings/apache/www/under-construction"
 
 if [ ! -f "$SITES_CONF" ]; then
     print_error "Site config not found: $SITES_CONF"

@@ -31,7 +31,7 @@
 
 // The file in force, asked of config.sh so the page and the scripts share one rule.
 define('CONF', (function () {
-    $dir = '/var/lib/hosting-manager/config-repo/backup_config';
+    $dir = '/etc/hostings';
     $out = trim((string) @shell_exec('bash -c '
         . escapeshellarg('. "$0/../hostings/scripts/config.sh" && conf_active "$0"')
         . ' ' . escapeshellarg($dir) . ' 2>/dev/null'));
@@ -75,7 +75,7 @@ const LOGIN_STORE_STATUS = '/var/lib/hostings-login-store/status';
 // What customers have asked for, and what was said back.
 const REQUESTS    = '/usr/local/sbin/manage_requests.sh';
 const CHECKDOMAIN = '/usr/local/sbin/check_domain_available.sh';
-const DNSIFACE    = '/var/lib/hosting-manager/config-repo/hostings/scripts/dns.sh';
+const DNSIFACE    = '/usr/local/lib/linuxbasics/hostings/scripts/dns.sh';
 // The settings a row's application reads, out of its repository.
 const READSETTINGS = '/usr/local/sbin/read_appsettings.sh';
 const MAILSET     = '/usr/local/sbin/app_mail_settings.sh';
@@ -100,7 +100,7 @@ const LISTBRANCHES = '/usr/local/sbin/list_repo_branches.sh';
 
 // Samba. Read from the same clone as hostings.conf, because /etc/samba/smb.conf
 // is a symlink into the deploy account's home and www-data cannot traverse it.
-const SMBCONF     = '/var/lib/hosting-manager/config-repo/backup_config/smb/smb.conf';
+const SMBCONF     = '/etc/hostings/smb/smb.conf';
 const SMBSTAGING  = '/var/lib/hosting-manager/smb.conf.candidate';
 const SMBBASEHASH = '/var/lib/hosting-manager/smb.candidate.base';
 const PUBSMB      = '/usr/local/sbin/publish_smb.sh';

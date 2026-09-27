@@ -93,7 +93,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." 2>/dev/null && pwd || echo "")"
     || conf_active() { printf '%s/hostings.conf' "$1"; }
 SITES_CONF="${SITES_CONF:-$(conf_active "/etc/hostings")}"
 # The installed copy lives in /usr/local/sbin, where the repo is not above it.
-[ -f "$SITES_CONF" ] || SITES_CONF="$(conf_active "/var/lib/hosting-manager/config-repo/backup_config")"
+[ -f "$SITES_CONF" ] || SITES_CONF="$(conf_active "/etc/hostings")"
 
 LE_LIVE="/etc/letsencrypt/live"
 CHALLENGE_HOOK="/usr/local/sbin/transip_dns_challenge.sh"

@@ -93,7 +93,7 @@ case "$ACTION" in
         # the config declares, so `deploy-anything` cannot reach a job by name.
         _env="${ACTION#deploy-}"
         _envs="$(grep -E '^[[:space:]]*ENVS[[:space:]]*=' \
-                 "${SITES_CONF:-$(conf_active /var/lib/hosting-manager/config-repo/backup_config)}" \
+                 "${SITES_CONF:-$(conf_active /etc/hostings)}" \
                  2>/dev/null | head -1 | cut -d= -f2- | tr -d ' \r' | tr ',' ' ')"
         case " ${_envs:-live test accept skunk} " in
             *" $_env "*) ;;
@@ -129,11 +129,11 @@ TOKEN_FILE="${MANAGER_HOME}/jenkins-token"
 #
 # 11002 stays as the fallback, so a machine whose config cannot be read behaves
 # exactly as it did before.
-JENKINS_PORT="$(grep -v '^[[:space:]]*#' "${SITES_CONF:-$(conf_active /var/lib/hosting-manager/config-repo/backup_config)}" 2>/dev/null | grep '|' \
+JENKINS_PORT="$(grep -v '^[[:space:]]*#' "${SITES_CONF:-$(conf_active /etc/hostings)}" 2>/dev/null | grep '|' \
     | awk -F'|' '{gsub(/ /,"",$2); gsub(/ /,"",$3); if ($2=="jenkins") print $3}' | head -1)"
 JENKINS_URL="http://127.0.0.1:${JENKINS_PORT:-11002}"
 CLONE="${MANAGER_HOME}/config-repo"
-SITES_CONF="${SITES_CONF:-$(conf_active "${CLONE}/backup_config")}"
+SITES_CONF="${SITES_CONF:-$(conf_active "/etc/hostings")}"
 
 print_header "Start '$ACTION' for $ROW"
 

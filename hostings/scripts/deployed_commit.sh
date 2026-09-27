@@ -62,7 +62,7 @@ fi
 
 ROW="${1:-}"
 ENV="${2:-}"
-CONF="${SITES_CONF:-$(conf_active /var/lib/hosting-manager/config-repo/backup_config)}"
+CONF="${SITES_CONF:-$(conf_active /etc/hostings)}"
 MARKER_DIR="/var/lib/jenkins/last-deployed"
 
 if [ -z "$ROW" ] || [ -z "$ENV" ]; then

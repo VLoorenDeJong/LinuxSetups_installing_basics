@@ -108,7 +108,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
     || conf_active() { printf '%s/hostings.conf' "$1"; }
 SITES_CONF="${SITES_CONF:-$(conf_active "/etc/hostings")}"
 [ -f "$SITES_CONF" ] || SITES_CONF="$(conf_active "/etc/hostings")"
-[ -f "$SITES_CONF" ] || SITES_CONF="$(conf_active "/var/lib/hosting-manager/config-repo/backup_config")"
+[ -f "$SITES_CONF" ] || SITES_CONF="$(conf_active "/etc/hostings")"
 [ -f "$SITES_CONF" ] || { json_out '{"error":"no config to read the row from"}'; exit 0; }
 
 trim() {

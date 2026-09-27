@@ -121,7 +121,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
     || . /usr/local/lib/linuxbasics/hostings/scripts/config.sh 2>/dev/null \
     || conf_active() { printf '%s/hostings.conf' "$1"; }
 SITES_CONF="${SITES_CONF:-$(conf_active "/etc/hostings")}"
-[ -f "$SITES_CONF" ] || SITES_CONF="$(conf_active "/var/lib/hosting-manager/config-repo/backup_config")"
+[ -f "$SITES_CONF" ] || SITES_CONF="$(conf_active "/etc/hostings")"
 
 conf_one() {
     local key="$1" def="$2" v

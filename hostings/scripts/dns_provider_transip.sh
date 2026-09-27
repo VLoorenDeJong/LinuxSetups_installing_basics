@@ -68,7 +68,7 @@ declare -F conf_active >/dev/null \
     || . "$_dns_dir/config.sh" 2>/dev/null \
     || conf_active() { printf '%s/hostings.conf' "$1"; }
 DNS_SITES_CONF="${SITES_CONF:-$(conf_active "$_dns_repo/backup_config")}"
-[ -f "$DNS_SITES_CONF" ] || DNS_SITES_CONF="$(conf_active /var/lib/hosting-manager/config-repo/backup_config)"
+[ -f "$DNS_SITES_CONF" ] || DNS_SITES_CONF="$(conf_active /etc/hostings)"
 
 # A caller usually has conf_get already. Define one only if it does not, and
 # read the same file either way.

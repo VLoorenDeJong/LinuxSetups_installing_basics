@@ -91,8 +91,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 . "$SCRIPT_DIR/config.sh" 2>/dev/null \
     || . /usr/local/lib/linuxbasics/hostings/scripts/config.sh 2>/dev/null \
     || conf_active() { printf '%s/hostings.conf' "$1"; }
-if [ -f "$CLONE/backup_config/hostings.conf" ]; then
-    SITES_CONF="${SITES_CONF:-$(conf_active "$CLONE/backup_config")}"
+if [ -f "/etc/hostings/hostings.conf" ]; then
+    SITES_CONF="${SITES_CONF:-$(conf_active "/etc/hostings")}"
 else
     SITES_CONF="${SITES_CONF:-$(conf_active "/etc/hostings")}"
 fi

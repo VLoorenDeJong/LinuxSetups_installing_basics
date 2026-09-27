@@ -60,11 +60,11 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
     || conf_active() { printf '%s/hostings.conf' "$1"; }
 SITES_CONF="${SITES_CONF:-$(conf_active "/etc/hostings")}"
 MANAGER_CLONE="/var/lib/hosting-manager/config-repo"
-[ -f "$SITES_CONF" ] || SITES_CONF="$(conf_active "${MANAGER_CLONE}/backup_config")"
+[ -f "$SITES_CONF" ] || SITES_CONF="$(conf_active "/etc/hostings")"
 
 TOKEN_SH="$SCRIPT_DIR/github_app_token.sh"
 [ -f "$TOKEN_SH" ] || TOKEN_SH="/usr/local/lib/linuxbasics/hostings/scripts/github_app_token.sh"
-[ -f "$TOKEN_SH" ] || TOKEN_SH="${MANAGER_CLONE}/hostings/scripts/github_app_token.sh"
+[ -f "$TOKEN_SH" ] || TOKEN_SH="/usr/local/lib/linuxbasics/hostings/scripts/github_app_token.sh"
 [ -f "$TOKEN_SH" ] || fail "no App token script"
 
 OWNER="${SLUG%%/*}"

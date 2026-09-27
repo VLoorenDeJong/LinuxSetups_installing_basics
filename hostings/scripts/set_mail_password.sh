@@ -78,7 +78,7 @@ fi
 
 # Fixed path, like the other console scripts. Nothing here is taken from the
 # caller; SITES_CONF is honoured only so the script can be tested.
-SITES_CONF="${SITES_CONF:-$(conf_active /var/lib/hosting-manager/config-repo/backup_config)}"
+SITES_CONF="${SITES_CONF:-$(conf_active /etc/hostings)}"
 
 MODE="${1:-}"
 LOCAL="${2:-}"

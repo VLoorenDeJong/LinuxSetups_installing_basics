@@ -88,7 +88,7 @@ fi
 # Fixed paths. Nothing here is taken from the caller.
 MANAGER_HOME="/var/lib/hosting-manager"
 CLONE="${MANAGER_HOME}/config-repo"
-SITES_CONF="${SITES_CONF:-$(conf_active "${CLONE}/backup_config")}"
+SITES_CONF="${SITES_CONF:-$(conf_active "/etc/hostings")}"
 
 if [ ! -f "$SITES_CONF" ]; then
     print_error "No config at $SITES_CONF, so the row could not be checked."

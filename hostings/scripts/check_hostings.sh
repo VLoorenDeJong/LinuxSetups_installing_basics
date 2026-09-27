@@ -105,9 +105,9 @@ RAW="$(mktemp)"
 STARTED="$(date '+%Y-%m-%d %H:%M:%S %Z')"
 
 STAGING="${MANAGER_HOME}/hostings.conf.candidate"
-. "$CLONE/hostings/scripts/config.sh" 2>/dev/null \
+. "/usr/local/lib/linuxbasics/hostings/scripts/config.sh" 2>/dev/null \
     || conf_active() { printf '%s/hostings.conf' "$1"; }
-PUBLISHED="$(conf_active "$CLONE/backup_config")"
+PUBLISHED="$(conf_active "/etc/hostings")"
 # A candidate that matches the branch file is not an edit, so it is not reported
 # as one.
 if [ -s "$STAGING" ] && ! cmp -s "$STAGING" "$PUBLISHED"; then
@@ -121,7 +121,7 @@ print_status "Checking $SUBJECT"
 
 set +e
 SITES_CONF="$TARGET" \
-    bash "$CLONE/hostings/scripts/maintain_services.sh" --check >"$RAW" 2>&1
+    bash "/usr/local/lib/linuxbasics/hostings/scripts/maintain_services.sh" --check >"$RAW" 2>&1
 RC=$?
 set -e
 

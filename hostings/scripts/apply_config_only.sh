@@ -78,7 +78,7 @@ SCRIPTS="${PIPELINE_ROOT}/hostings/scripts"
 # against without being told a commit it would have to trust.
 . "${SCRIPTS}/config.sh" 2>/dev/null \
     || conf_active() { printf '%s/hostings.conf' "$1"; }
-CONSOLE_CONF="$(conf_active /var/lib/hosting-manager/config-repo/backup_config)"
+CONSOLE_CONF="$(conf_active /etc/hostings)"
 TREE_CONF="$(conf_active "/etc/hostings")"
 
 print_header "Apply the configuration only"

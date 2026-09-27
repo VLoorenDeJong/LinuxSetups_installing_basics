@@ -663,9 +663,9 @@ chmod 0755 "$MANAGER_HOME"
 
 # The page reads the config out of the clone, so that one path must be readable
 # by the page while the key beside it is not.
-chmod 0755 "$CLONE" "$CLONE/backup_config"
-chmod 0644 "$CLONE/backup_config/hostings.conf"
-[ -f "$CLONE/backup_config/hostings.test.conf" ] && chmod 0644 "$CLONE/backup_config/hostings.test.conf"
+chmod 0755 "$CLONE" "/etc/hostings"
+chmod 0644 "/etc/hostings/hostings.conf"
+[ -f "/etc/hostings/hostings.test.conf" ] && chmod 0644 "/etc/hostings/hostings.test.conf"
 
 # Where the page drops the edited file. Writable by the page, and nothing else
 # in this directory is.

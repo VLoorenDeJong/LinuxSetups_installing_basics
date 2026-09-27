@@ -19,7 +19,7 @@
 
 // The file in force, asked of config.sh so the page and the scripts share one rule.
 define('CONF', (function () {
-    $dir = '/var/lib/hosting-manager/config-repo/backup_config';
+    $dir = '/etc/hostings';
     $out = trim((string) @shell_exec('bash -c '
         . escapeshellarg('. "$0/../hostings/scripts/config.sh" && conf_active "$0"')
         . ' ' . escapeshellarg($dir) . ' 2>/dev/null'));

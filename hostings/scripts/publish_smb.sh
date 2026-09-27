@@ -130,7 +130,7 @@ GH_TOKEN=""
 mint_token() {
     local sh
     for sh in /usr/local/lib/linuxbasics/hostings/scripts/github_app_token.sh \
-              "${CLONE}/hostings/scripts/github_app_token.sh"; do
+              "/usr/local/lib/linuxbasics/hostings/scripts/github_app_token.sh"; do
         [ -f "$sh" ] || continue
         GH_TOKEN="$(SITES_CONF= \
             bash "$sh" 2>/dev/null || true)"

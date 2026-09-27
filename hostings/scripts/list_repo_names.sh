@@ -43,7 +43,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SITES_CONF="${SITES_CONF:-$(conf_active "/etc/hostings")}"
 
 MANAGER_CLONE="/var/lib/hosting-manager/config-repo"
-[ -f "$SITES_CONF" ] || SITES_CONF="$(conf_active "${MANAGER_CLONE}/backup_config")"
+[ -f "$SITES_CONF" ] || SITES_CONF="$(conf_active "/etc/hostings")"
 git -C "$REPO_ROOT" rev-parse --git-dir >/dev/null 2>&1 || REPO_ROOT="$MANAGER_CLONE"
 
 # CACHED, because this costs one GitHub round trip per owner and the page waits
@@ -98,7 +98,7 @@ CREATE_ORG="$(conf_get GITHUB_ORG "")"
 # privileged script reads its siblings from.
 TOKEN_SH="$SCRIPT_DIR/github_app_token.sh"
 [ -f "$TOKEN_SH" ] || TOKEN_SH="/usr/local/lib/linuxbasics/hostings/scripts/github_app_token.sh"
-[ -f "$TOKEN_SH" ] || TOKEN_SH="${MANAGER_CLONE}/hostings/scripts/github_app_token.sh"
+[ -f "$TOKEN_SH" ] || TOKEN_SH="/usr/local/lib/linuxbasics/hostings/scripts/github_app_token.sh"
 if [ ! -f "$TOKEN_SH" ]; then
     print_error "github_app_token.sh not found, so no repository names can be read."
     print_action "Refresh the pipeline tree: sudo /usr/local/lib/linuxbasics/hostings/scripts/add_pipeline_scripts.sh"
