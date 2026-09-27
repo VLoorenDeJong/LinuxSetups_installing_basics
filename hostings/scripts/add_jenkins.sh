@@ -836,6 +836,13 @@ case "$GIT_URL" in
     git@*) GIT_URL="https://${GIT_HOST}/$(echo "$GIT_URL" | sed -E 's#^git@[^:]+:##')" ;;
 esac
 GIT_BRANCH="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null)"
+# Detached at a pinned commit (a submodule): the jobs follow the branch that
+# holds it. Only the Jenkinsfiles come from there; the scripts they run are the
+# pinned runtime tree.
+if [ "$GIT_BRANCH" = "HEAD" ]; then
+    GIT_BRANCH="$(git -C "$REPO_ROOT" for-each-ref --contains HEAD --format='%(refname:lstrip=3)' refs/remotes/origin 2>/dev/null \
+                  | grep -vx HEAD | head -1)"
+fi
 
 if [ -z "$GIT_URL" ] || [ -z "$GIT_BRANCH" ]; then
     print_action "Could not read the git remote or branch, so no jobs were created."
