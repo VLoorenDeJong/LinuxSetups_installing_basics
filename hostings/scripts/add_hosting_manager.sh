@@ -203,9 +203,6 @@ ufw_allows() {
 }
 
 MANAGER_HOME="/var/lib/hosting-manager"
-CLONE="${MANAGER_HOME}/config-repo"
-SSH_DIR="${MANAGER_HOME}/.ssh"
-SSH_KEY="${SSH_DIR}/id_ed25519"
 WEB_ROOT="/var/www/hosting-manager"
 PUBLISHER="/usr/local/sbin/publish_hostings.sh"
 UPDATER="/usr/local/sbin/trigger_update.sh"
@@ -335,12 +332,9 @@ AUTH_ROOT="$(conf_get AUTH_WEB_ROOT /var/www/auth)"
 SESSION_KEY="$(conf_get AUTH_SESSION_KEY_FILE /etc/apache2/session-crypto.key)"
 LOGIN_PAGE="login.html"
 
-BRANCH="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
-ORIGIN="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || echo "")"
 
 print_header "Hosting manager"
-print_status "Clone:  $CLONE"
-print_status "Branch: ${BRANCH:-unknown}"
+print_status "Config: /etc/hostings"
 print_status "Page:   $WEB_ROOT"
 print_status "Port:   ${LAN_PORT:-none, so the page is installed but nothing serves it}"
 print_status "Mode:   $MODE"
@@ -376,10 +370,8 @@ fi
 [ -f "$SRC_CHECKER" ]   || ERRORS+=("The check runner is missing: $SRC_CHECKER")
 [ -f "$SRC_PROVISIONER" ] || ERRORS+=("The provisioner is missing: $SRC_PROVISIONER")
 [ -f "$SRC_PERSONENTRY" ] || ERRORS+=("The 1Password entry script is missing: $SRC_PERSONENTRY")
-[ -n "$BRANCH" ]        || ERRORS+=("$REPO_ROOT is not a git checkout, so there is no branch to publish to")
-[ -n "$ORIGIN" ]        || ERRORS+=("$REPO_ROOT has no origin remote")
+[ -d /etc/hostings ]    || ERRORS+=("No config directory at /etc/hostings. Run install_hostings.sh first.")
 
-command -v git >/dev/null 2>&1 || ERRORS+=("git is not installed")
 id www-data >/dev/null 2>&1    || ERRORS+=("There is no www-data user, so Apache is not installed")
 
 if [ -z "$PHP_FPM_VER" ]; then
@@ -440,52 +432,8 @@ if [ ${#ERRORS[@]} -gt 0 ]; then
     exit 1
 fi
 
-# WHICH KEY ROOT PUSHES WITH, chosen here rather than beside the ssh-keygen that
-# used to hold it, so --check reports the key the real run will actually pick.
-# A dry run naming a different key from the run is worse than no dry run.
-#
-# GIT_PUSH_KEY in the config decides, and the same value is what
-# publish_hostings.sh, provision_repo.sh and publish_smb.sh push with. It exists
-# because naming jenkins' key implicitly broke every console save the day that
-# key was deleted: all four fell through to the manager's own key, which is a
-# real file GitHub has never accepted.
-#
-# Nothing is written here. Only the choice is made.
-NEW_KEY=0
-NEED_NEW_KEY=0
-JENKINS_KEY="/var/lib/jenkins/.ssh/id_ed25519"
-CONF_KEY="$(conf_get GIT_PUSH_KEY "")"
-
-if [ -n "$CONF_KEY" ] && [ -f "$CONF_KEY" ]; then
-    SSH_KEY="$CONF_KEY"
-    KEY_SOURCE="Using GIT_PUSH_KEY at $SSH_KEY"
-else
-    # A configured key that is not there is said out loud. Falling back in
-    # silence is what turned a deleted key into "GitHub is unreachable".
-    [ -n "$CONF_KEY" ] && print_action "GIT_PUSH_KEY names $CONF_KEY, which does not exist. Falling back."
-    if [ -f "$JENKINS_KEY" ]; then
-        SSH_KEY="$JENKINS_KEY"
-        KEY_SOURCE="Using Jenkins' key at $SSH_KEY"
-    elif [ ! -f "$SSH_KEY" ]; then
-        NEED_NEW_KEY=1
-        KEY_SOURCE="Would generate a deploy key at $SSH_KEY"
-    else
-        KEY_SOURCE="Key already present at $SSH_KEY"
-    fi
-fi
-
-# A path with whitespace breaks GIT_SSH_COMMAND, and one carrying an ssh option
-# would run as root. Config is operator-editable, so it is checked rather than
-# trusted.
-case "$SSH_KEY" in
-    *[[:space:]]*) print_error "The push key path contains whitespace: $SSH_KEY"
-                   print_action "Set GIT_PUSH_KEY to a path without spaces."
-                   exit 1 ;;
-esac
-
 if [ "$MODE" = "check" ]; then
-    print_status "would create $MANAGER_HOME and clone $BRANCH into it"
-    print_status "$KEY_SOURCE"
+    print_status "would create $MANAGER_HOME"
     print_status "would run the page as $PAGE_USER, in its own PHP pool at $POOL_FILE"
     print_status "would install the privileged commands and the sudo grant for $PAGE_USER"
     print_status "would install the page at $WEB_ROOT"
@@ -544,126 +492,26 @@ else
 fi
 
 # =============================================================================
-# The clone, and its key
+# The manager's home
 #
-# 0755 root:root. The page has to TRAVERSE this directory: its four candidate
-# files live here and it reads the config through the clone below. What keeps
-# the deploy key from it is $SSH_DIR at 0700 and the key itself at 0600, never
-# this mode. Setting 0750 here only breaks the page.
+# 0755 root:root. The page has to TRAVERSE this directory: its candidate files
+# live here. Setting 0750 only breaks the page.
 # =============================================================================
 retire_the_console
 
-mkdir -p "$MANAGER_HOME" "$SSH_DIR"
-chmod 0755 "$MANAGER_HOME"
-chmod 0700 "$SSH_DIR"
-chown -R root:root "$MANAGER_HOME"
+mkdir -p "$MANAGER_HOME"
 
-# Jenkins' key, reused rather than a second one created.
-#
-# Decided 2026-08-08. A separate key would keep the blast radius smaller: if the
-# page were compromised you would revoke one key and Jenkins would keep working.
-# Against that, it is another key to create, add to GitHub and remember, and
-# both keys can already push to the same branch, so the difference is who you
-# can blame afterwards rather than what an attacker can do.
-#
-# The consequence, stated because it is the part that bites: the manager and
-# Jenkins now share push rights and neither can be revoked without the other.
-#
-# The page still cannot read it. The key belongs to jenkins, the publisher runs
-# as root, and the page runs as neither.
-#
-# GIT_PUSH_KEY in the config decides, and the same value is what
-# publish_hostings.sh and provision_repo.sh push with. It exists because
-# naming jenkins' key implicitly broke every console save the day that key
-# was deleted: this fell through to the manager's own key, which is a real
-# file that GitHub has never accepted.
-#
-# EXISTING IS NOT WORKING. The chosen key is asked whether GitHub accepts it,
-# because a key on disk and a key on the repository look identical here and
-# only the second one publishes anything.
-if [ "$NEED_NEW_KEY" = "1" ]; then
-    print_info "No key named by GIT_PUSH_KEY and none at $JENKINS_KEY, so this needs one of its own."
-    ssh-keygen -q -t ed25519 -f "$SSH_KEY" -N "" -C "hosting-manager@$(hostname)"
-    NEW_KEY=1
-    print_success "Generated a deploy key at $SSH_KEY"
-else
-    print_success "$KEY_SOURCE"
-fi
-
-# ASKED, NOT ASSUMED. A key on disk and a key on the repository look identical
-# from here, and only the second one publishes anything. GitHub answers
-# "Hi <name>" while exiting 1, so the greeting decides and the exit code says
-# nothing.
-#
-# THREE OUTCOMES, NOT TWO. Reporting "refused" for a machine that simply could
-# not reach GitHub is how somebody replaces a working key over an outage.
-#
-# BatchMode stops a passphrased key prompting on /dev/tty, which would hang an
-# install run over SSH with no explanation; timeout bounds the whole exchange,
-# where ConnectTimeout bounds only the TCP connect.
-KEY_STATE="unknown"
-if [ "$NEW_KEY" = "0" ]; then
-    _probe="$(timeout 20 ssh -i "$SSH_KEY" -o IdentitiesOnly=yes -o BatchMode=yes \
-        -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
-        -T git@github.com 2>&1 || true)"
-    case "$_probe" in
-        *"successfully authenticated"*) KEY_STATE="accepted" ;;
-        *"Permission denied"*)          KEY_STATE="refused" ;;
-        *)                              KEY_STATE="unreachable" ;;
-    esac
-    unset _probe
-fi
-
-GIT_HOST="$(printf '%s' "$ORIGIN" | sed -n 's/.*@\([^:]*\):.*/\1/p')"
-[ -z "$GIT_HOST" ] && GIT_HOST="github.com"
-if [ ! -f "${SSH_DIR}/known_hosts" ] || ! grep -q "$GIT_HOST" "${SSH_DIR}/known_hosts" 2>/dev/null; then
-    ssh-keyscan -t rsa,ecdsa,ed25519 "$GIT_HOST" 2>/dev/null >> "${SSH_DIR}/known_hosts"
-    chmod 600 "${SSH_DIR}/known_hosts"
-fi
-
-export GIT_SSH_COMMAND="ssh -i '$SSH_KEY' -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
-
-if [ ! -d "$CLONE/.git" ]; then
-    if [ "$NEW_KEY" = "1" ]; then
-        print_info "The clone cannot be made until this key can read the repository."
-        echo ""
-        print_action "Add it on GitHub, with WRITE ACCESS TICKED:"
-        print_action "  Settings -> Deploy keys -> Add deploy key -> Allow write access"
-        echo ""
-        cat "${SSH_KEY}.pub"
-        echo ""
-        printf "\033[33m⚠️ Press Enter once it is added: \033[0m"
-        read -r _ < /dev/tty
-    fi
-
-    if ! git clone --quiet --branch "$BRANCH" "$ORIGIN" "$CLONE"; then
-        print_error "Could not clone. The key is probably not on the repository yet."
-        print_info "Public half:"
-        cat "${SSH_KEY}.pub"
-        exit 1
-    fi
-    print_success "Cloned $BRANCH into $CLONE"
-else
-    # Reset, not just fetch. A clone that is behind means the page shows an old
-    # config, and saving that page writes the old text over the new one. Fetch
-    # alone left exactly that gap.
-    #
-    # As the GitHub App, through the publisher's own refresh: the SSH key above
-    # is for the first clone only, the owner 2026-09-13.
-    if bash "$SCRIPT_DIR/publish_hostings.sh" --refresh; then
-        :
-    else
-        print_info "Could not fetch, so the page may show an older config."
-        print_info "The publisher refuses to overwrite a file it has not seen, so nothing can be lost."
-    fi
-fi
+# Brought up to date before the page shows it: a page showing an older config
+# invites saving it over the newer one. The save refuses that anyway; this
+# saves the round trip.
+bash "$SCRIPT_DIR/publish_hostings.sh" --refresh \
+    || print_info "Could not refresh the config directory, so the page may show an older config."
 
 chown -R root:root "$MANAGER_HOME"
 chmod 0755 "$MANAGER_HOME"
 
-# The page reads the config out of the clone, so that one path must be readable
-# by the page while the key beside it is not.
-chmod 0755 "$CLONE" "/etc/hostings"
+# The page reads the config, so the directory must be readable by it.
+chmod 0755 /etc/hostings
 chmod 0644 "/etc/hostings/hostings.conf"
 [ -f "/etc/hostings/hostings.test.conf" ] && chmod 0644 "/etc/hostings/hostings.test.conf"
 
@@ -1234,55 +1082,8 @@ echo ""
 # one. Items 29 and 59 are both "printed a red line and exited 0".
 EXIT_RC=0
 
-# WHAT PUBLISHES NOW IS THE APP, so that is what is proved. Item 89, the owner's
-# decision 2026-09-06: the SSH key is for the first clone on a fresh machine and
-# nothing else.
-#
-# Proved by MINTING, never by a file test. Item 74's lesson: a present key with
-# a revoked installation looks identical on disk to a working one.
-APP_TOKEN_OK=0
-for _ts in "$SCRIPT_DIR/github_app_token.sh" \
-           /usr/local/lib/linuxbasics/hostings/scripts/github_app_token.sh; do
-    [ -f "$_ts" ] || continue
-    if SITES_CONF="$SITES_CONF" bash "$_ts" >/dev/null 2>&1; then APP_TOKEN_OK=1; fi
-    break
-done
-unset _ts
-
-if [ "$APP_TOKEN_OK" = "1" ]; then
-    print_info "1. Nothing to add: the GitHub App mints a token, and that is what publishes."
-    print_info "   $SSH_KEY is kept for the FIRST CLONE on a fresh machine only."
-elif [ "$NEW_KEY" = "1" ]; then
-    print_error "1. No App token could be minted, so publishing falls back to a key."
-    print_action "   Either fix the App:  sudo add_github_app.sh"
-    print_action "   or add this deploy key to the repository, WITH WRITE ACCESS:"
-    echo ""
-    cat "${SSH_KEY}.pub"
-    echo ""
-    EXIT_RC=3
-elif [ "$KEY_STATE" = "accepted" ]; then
-    print_action "1. No App token could be minted, so the fallback key is publishing."
-    print_info "   GitHub accepts $SSH_KEY, so the page works. Fix the App anyway:"
-    print_info "     sudo add_github_app.sh"
-elif [ "$KEY_STATE" = "refused" ]; then
-    print_error "1. No App token, and GitHub REFUSED $SSH_KEY. The page cannot publish."
-    print_action "   Fix the App:  sudo add_github_app.sh"
-    print_action "   Or point GIT_PUSH_KEY at a key GitHub accepts, or add this one"
-    print_action "   to the repository with write access:"
-    echo ""
-    cat "${SSH_KEY}.pub" 2>/dev/null || print_action "   (no public half beside $SSH_KEY)"
-    echo ""
-    EXIT_RC=3
-else
-    # Unreachable is not refused. Saying so stops a working key being replaced
-    # because GitHub was down for twenty seconds.
-    print_action "1. No App token, and GitHub could not be reached to check $SSH_KEY."
-    print_action "   Check both before trusting the page to publish:"
-    print_action "     sudo ssh -i $SSH_KEY -o IdentitiesOnly=yes -o BatchMode=yes -T git@github.com"
-fi
-
-if [ ! -f "${MANAGER_HOME}/jenkins-token" ]; then
-    print_action "2. A Jenkins token, so Apply and Update can start their jobs:"
+if id -u jenkins >/dev/null 2>&1 && [ ! -f "${MANAGER_HOME}/jenkins-token" ]; then
+    print_action "1. A Jenkins token, so Apply and Update can start their jobs:"
     print_action "   In Jenkins: your user -> Security -> API token -> Add new token"
     print_action "   Then, replacing the parts in angle brackets:"
     print_action "     sudo install -m 600 -o root -g root /dev/null ${MANAGER_HOME}/jenkins-token"
@@ -1295,7 +1096,7 @@ echo ""
 if [ -n "$LAN_PORT" ]; then
     print_success "Open it at http://$(hostname -I | awk '{print $1}'):${LAN_PORT}, and sign in as ${ADMIN_USER}."
 else
-    print_action "3. PANEL = console has no port in $SITES_CONF, so nothing serves the page."
+    print_action "2. PANEL = console has no port in $SITES_CONF, so nothing serves the page."
 fi
 
 # 3 means installed but unable to publish: the page will render and every save

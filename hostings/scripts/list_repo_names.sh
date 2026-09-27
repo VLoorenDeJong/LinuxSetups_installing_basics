@@ -42,9 +42,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
     || conf_active() { printf '%s/hostings.conf' "$1"; }
 SITES_CONF="${SITES_CONF:-$(conf_active "/etc/hostings")}"
 
-MANAGER_CLONE="/var/lib/hosting-manager/config-repo"
 [ -f "$SITES_CONF" ] || SITES_CONF="$(conf_active "/etc/hostings")"
-git -C "$REPO_ROOT" rev-parse --git-dir >/dev/null 2>&1 || REPO_ROOT="$MANAGER_CLONE"
 
 # CACHED, because this costs one GitHub round trip per owner and the page waits
 # on it. Measured 2026-09-03: 2.6 seconds, which is the Repositories tab filling
@@ -106,7 +104,7 @@ fi
 
 # The personal account, read from the checkout this script came out of, which is
 # the same derivation provision_repo.sh uses.
-url="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || true)"
+url="$(git -C "$(readlink -f /etc/hostings)" remote get-url origin 2>/dev/null || true)"
 case "$url" in
     git@*:*)   PERSONAL="$(echo "$url" | sed -E 's#^[^:]+:([^/]+)/.*$#\1#')" ;;
     https://*) PERSONAL="$(echo "$url" | sed -E 's#^https://[^/]+/([^/]+)/.*$#\1#')" ;;

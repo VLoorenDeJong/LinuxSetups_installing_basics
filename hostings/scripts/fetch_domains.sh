@@ -81,7 +81,6 @@ fi
 
 # Fixed paths. Nothing here is taken from the caller.
 MANAGER_HOME="/var/lib/hosting-manager"
-CLONE="${MANAGER_HOME}/config-repo"
 OUT="${MANAGER_HOME}/owned-domains"
 
 # The clone when there is one, so the page and this read the same config. Falls

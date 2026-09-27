@@ -82,14 +82,13 @@ fi
 
 # Fixed paths. Nothing here is taken from the caller.
 MANAGER_HOME="/var/lib/hosting-manager"
-CLONE="${MANAGER_HOME}/config-repo"
 REPORT="${MANAGER_HOME}/last-check.txt"
 LOCK="/var/lock/check_hostings.lock"
 
 print_header "Check the published config"
 
-if [ ! -d "$CLONE/.git" ]; then
-    print_error "No clone at $CLONE. Run add_hosting_manager.sh first."
+if [ ! -d /etc/hostings ]; then
+    print_error "No config directory at /etc/hostings. Run install_hostings.sh first."
     exit 1
 fi
 

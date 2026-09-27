@@ -59,7 +59,6 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
     || . /usr/local/lib/linuxbasics/hostings/scripts/config.sh 2>/dev/null \
     || conf_active() { printf '%s/hostings.conf' "$1"; }
 SITES_CONF="${SITES_CONF:-$(conf_active "/etc/hostings")}"
-MANAGER_CLONE="/var/lib/hosting-manager/config-repo"
 [ -f "$SITES_CONF" ] || SITES_CONF="$(conf_active "/etc/hostings")"
 
 TOKEN_SH="$SCRIPT_DIR/github_app_token.sh"

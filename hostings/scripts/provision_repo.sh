@@ -211,9 +211,7 @@ SITES_CONF="${SITES_CONF:-$(conf_active "/etc/hostings")}"
 # Both fall back to the manager's clone, the same one promote_certificate.sh
 # uses. Guarded separately, because SITES_CONF can be set by hand to somewhere
 # that is not in a repository at all.
-MANAGER_CLONE="/var/lib/hosting-manager/config-repo"
 [ -f "$SITES_CONF" ] || SITES_CONF="$(conf_active "/etc/hostings")"
-git -C "$REPO_ROOT" rev-parse --git-dir >/dev/null 2>&1 || REPO_ROOT="$MANAGER_CLONE"
 
 GITHUB_CRED_DIR="/etc/github-api"
 GITHUB_CRED_NAME="ghapi"
@@ -321,7 +319,7 @@ read_token() {
 # rather than configured: a machine built from a fork provisions into that fork.
 github_owner() {
     local url
-    url="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || true)"
+    url="$(git -C "$(readlink -f /etc/hostings)" remote get-url origin 2>/dev/null || true)"
     case "$url" in
         git@*:*)   echo "$url" | sed -E 's#^[^:]+:([^/]+)/.*$#\1#' ;;
         https://*) echo "$url" | sed -E 's#^https://[^/]+/([^/]+)/.*$#\1#' ;;
@@ -1015,141 +1013,39 @@ write_back_url() {
     # from, still says `new`.
     publish_config "$name" "$url"
 }
-
-# THE WRITE-BACK HAS TO BE PUSHED, or it is not a fact, only a local edit.
+# THE WRITE-BACK HAS TO BE RECORDED, or it is not a fact, only a local edit.
 #
 # On 2026-09-02 a repository was created, its URL written into the config, and
-# then discarded the next time add_hosting_manager.sh refreshed the clone from
-# origin. The row said `new` again and asked to create a repository that
-# already existed.
-#
-# Whoever created the repository is the one that knows the URL is true, so it
-# records it. Git runs as the deploy account, which is the identity that holds
-# a key here; root has none.
-publish_config() {
-    local name="$1" tree conf err
-
-    # PUSHED FROM THE CONSOLE CLONE, whatever tree this run happens to read.
-    #
-    # The tree beside $SITES_CONF is usually /usr/local/lib/linuxbasics, which
-    # is root:root and unwritable by every other account BY DESIGN: that is the
-    # whole point of add_pipeline_scripts.sh. Running git there as the deploy
-    # account could never work, so this function had never once succeeded on
-    # this machine: `git log -S` finds the URL only in commits authored by the
-    # console. The write died in a tree nobody pulls from, the next refresh
-    # reset the row to `new`, and the deploy job then tried to clone a
-    # repository literally called new.
-    #
-    # The console clone is the one place that exists to be pushed from: it has
-    # a key, publish_hostings.sh pushes from it every time you press a button,
-    # and it is the tree the page itself reads.
-    tree="$MANAGER_CLONE"
-    conf="$(conf_active "${tree}/backup_config")"
-    if ! git -C "$tree" rev-parse --git-dir >/dev/null 2>&1 || [ ! -f "$conf" ]; then
+# then lost on the next refresh: the row said `new` again and asked to create a
+# repository that already existed. So the URL goes into the config directory
+# between the same CONFIG_SAVE_HOOK pre and post a console save uses.
+publish_config() {  # <row name> <url>
+    local name="$1" conf hook
+    conf="$(conf_active /etc/hostings)"
+    hook="$(sed -n 's/^[[:space:]]*CONFIG_SAVE_HOOK[[:space:]]*=[[:space:]]*//p' "$conf" 2>/dev/null \
+            | head -1 | sed 's/[[:space:]]*#.*//; s/[[:space:]]*$//')"
+    [ "$hook" = "-" ] && hook=""
+    if [ -n "$hook" ] && ! bash "$hook" pre; then
         print_action "  Set the row's Repository field from the console, or it will ask to create it again."
-        print_error "$name: no console clone at $tree, so the URL was written to $SITES_CONF only."
+        print_error "$name: the config directory could not be refreshed, so the URL was not written."
         return 1
     fi
-
-    # AS ROOT, AS THE GITHUB APP, which is what publish_hostings.sh does from
-    # this very clone on every console save. No key fallback: the SSH key is for
-    # the first clone of a machine only, the owner 2026-09-13.
-    local push_url=""
-    push_url="$(repo_https_url "$(git -C "$tree" remote get-url origin 2>/dev/null || true)" 2>/dev/null || true)"
-    if [ -z "$push_url" ]; then
-        print_action "  Publish it from the console, or the row will ask to create it again."
-        print_error "$name: the console clone's origin is not a URL the forge understands, so the URL was not published."
-        return 1
-    fi
-
-    err="$(mktemp)"
-
-    # Pulled first: the console pushes on every save, so this clone is usually
-    # behind by the time a create finishes, and a push onto a moved branch is
-    # refused with "fetch first".
-    #
-    # A fetch-and-rebase onto FETCH_HEAD rather than `pull`, because
-    # `git fetch <url>` leaves origin/<branch> where it was and a plain pull
-    # would rebase onto the stale ref.
-    local _br
-    _br="$(git -C "$tree" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
-    if [ -n "$_br" ] && repo_git -C "$tree" fetch -q "$push_url" "$_br" 2>>"$err"; then
-        git -C "$tree" rebase -q FETCH_HEAD 2>>"$err" || git -C "$tree" rebase --abort 2>/dev/null || true
-    fi
-    # The same edit, made again in the clone. Re-run rather than copied: the two
-    # files can differ in rows this run never touched, and copying one over the
-    # other would publish whatever else the pipeline tree happened to hold.
     if [ "$conf" != "$SITES_CONF" ]; then
         local saved="$SITES_CONF"
         SITES_CONF="$conf"
-        # || true, because a non-zero here is "already correct" or "no such row",
-        # neither of which is a reason for set -e to end the run. The push below
-        # is what decides whether this step succeeded.
         _write_row_url "$name" "$2" || true
         SITES_CONF="$saved"
     fi
-
-    # A RERUN IS NOT A FAILURE. If the clone already carries this URL there is
-    # nothing to commit, and `git commit` exits 1 saying so. Left unhandled that
-    # reads as a failed push on the one path most likely to be taken twice: the
-    # console's per-step rerun button.
-    if ! git -C "$tree" add "$conf" 2>"$err"; then
-        print_action "  Publish it from the console, or the row will ask to create it again."
-        print_error "$name: the URL is written but NOT pushed. git said: $(tr '\n' ' ' < "$err" | tail -c 200)"
-        rm -f "$err"
-        return 1
-    fi
-    # NOTHING TO COMMIT IS NOT NOTHING TO PUSH, and conflating them fails OPEN.
-    #
-    # Run 1: commit succeeds, push fails. The commit stays in the clone. Run 2,
-    # which is the rerun button and therefore the likeliest path: the row is
-    do_push() {
-        local b
-        b="$(git -C "$tree" rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)"
-        repo_git -C "$tree" push -q "$push_url" "HEAD:$b" 2>>"$err"
-    }
-    # already correct, nothing stages, and an index-only test would report
-    # success over a commit origin has never seen. The row still reverts to
-    # `new` on the next refresh, and the operator was told it was fine.
-    #
-    # The commit is local and near-certain; the push is the fragile half. So
-    # the question is whether the branch is ahead, not whether the file changed.
-    if git -C "$tree" diff --cached --quiet -- "$conf"; then
-        _ahead="$(git -C "$tree" rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)"
-        if [ "${_ahead:-0}" -eq 0 ]; then
-            print_success "$name: the clone already carries this URL, so there was nothing to publish."
-            rm -f "$err"
-            return 0
-        fi
-        print_status "$name: nothing new to record, but $_ahead commit(s) are unpushed. Pushing."
-        if do_push; then
-            print_success "$name: the URL is published, so a clone refresh cannot lose it."
-            rm -f "$err"
-            return 0
-        fi
-        print_action "  Publish it from the console, or the row will ask to create it again."
-        print_error "$name: the URL is written but NOT pushed. git said: $(tr '\n' ' ' < "$err" | tail -c 200)"
-        rm -f "$err"
-        return 1
-    fi
-
-    if git -C "$tree" \
-            -c user.email="root@$(hostname)" \
-            -c user.name="provision_repo.sh" \
-            commit -q -m "Record the repository created for ${name}" 2>>"$err" \
-       && do_push; then
-        print_success "$name: the URL is published, so a clone refresh cannot lose it."
-        rm -f "$err"
+    if [ -z "$hook" ]; then
+        print_success "$name: the URL is in $conf."
         return 0
     fi
-
-    # THE REASON IS PRINTED LAST, and that is load bearing rather than style.
-    # run_step records a failed step's note as the last non-empty line the step
-    # printed, so an advice line printed after the reason would become the note
-    # and the operator would read "publish it from the console" with no cause.
-    print_action "  Publish it from the console, or the row will ask to create it again."
-    print_error "$name: the URL is written but NOT pushed. git said: $(tr '\n' ' ' < "$err" | tail -c 200)"
-    rm -f "$err"
+    if bash "$hook" post "provision_repo.sh" "Provision $name: record its repository URL"; then
+        print_success "$name: the URL is recorded, so a refresh cannot lose it."
+        return 0
+    fi
+    print_action "  Save anything from the console to retry recording it."
+    print_error "$name: the URL is in $conf, but recording it failed."
     return 1
 }
 

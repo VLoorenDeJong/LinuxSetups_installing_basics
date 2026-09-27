@@ -94,7 +94,6 @@ fi
 
 # Fixed paths. Nothing here is taken from the caller.
 MANAGER_HOME="/var/lib/hosting-manager"
-CLONE="${MANAGER_HOME}/config-repo"
 SITES_CONF="${SITES_CONF:-$(conf_active "/etc/hostings")}"
 SECRETS_DIR="${SECRETS_DIR:-/etc/app-secrets}"
 

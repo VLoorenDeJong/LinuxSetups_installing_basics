@@ -222,7 +222,6 @@ for _clone in /home/*/*/; do
     [ -d "$_clone/.git" ] && [ -d "$_clone/backup_config" ] && TREES+=("$_clone|working clone|git pull")
 done
 TREES+=(
-    "/var/lib/hosting-manager/config-repo|console clone|publish_hostings.sh"
     "/usr/local/lib/linuxbasics|pipeline tree|add_pipeline_scripts.sh"
 )
 
