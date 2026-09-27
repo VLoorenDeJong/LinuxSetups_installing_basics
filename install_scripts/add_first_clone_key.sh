@@ -266,8 +266,12 @@ fi
 # =============================================================================
 print_header "Service account token"
 
+# Encrypted to this host where systemd-creds exists, plain where it does not.
 CURRENT=""
-[ -f "$OP_TOKEN_FILE" ] && CURRENT="$(tr -d '[:space:]' < "$OP_TOKEN_FILE")"
+if [ -f "$OP_TOKEN_FILE" ]; then
+    CURRENT="$( { systemd-creds decrypt --name=op-token "$OP_TOKEN_FILE" - 2>/dev/null \
+                  || grep -m1 '^ops_' "$OP_TOKEN_FILE" 2>/dev/null; } | tr -d '[:space:]')"
+fi
 
 # Returns 0 when the token opens the vault. The token goes in through the
 # environment of this one command only.
@@ -388,7 +392,7 @@ if ! read_key > "$KEY_TMP"; then
     print_error "Could not read '$ITEM' from vault '$VAULT':"
     tail -3 "$LOG"
     print_action "Check the item's title. List what the account can see:"
-    print_hint   "  ${HL}sudo OP_SERVICE_ACCOUNT_TOKEN=\$(cat $OP_TOKEN_FILE) op item list --vault \"$VAULT\"${NC}"
+    print_hint   "  ${HL}sudo bash -c 'OP_SERVICE_ACCOUNT_TOKEN=\"\$(systemd-creds decrypt --name=op-token $OP_TOKEN_FILE - 2>/dev/null || cat $OP_TOKEN_FILE)\" op item list --vault \"$VAULT\"'${NC}"
     exit 1
 fi
 spinner_stop
@@ -482,10 +486,17 @@ esac
 if [ "$SAVE_TOKEN" = "1" ] && [ "$TOKEN" != "$CURRENT" ]; then
     [ -d "$(dirname "$OP_TOKEN_FILE")" ] || install -d -m 0700 "$(dirname "$OP_TOKEN_FILE")"
     TMP="$(mktemp "$(dirname "$OP_TOKEN_FILE")/.op-token.XXXXXX")"
-    printf '%s\n' "$TOKEN" > "$TMP"
+    # On stdin, so the plain token never lands on disk where it can be encrypted.
+    if command -v systemd-creds >/dev/null 2>&1 && rm -f "$TMP" \
+       && printf '%s' "$TOKEN" | (umask 077; systemd-creds encrypt --name=op-token - "$TMP") 2>/dev/null; then
+        HOW="root, 0600, encrypted to this host"
+    else
+        printf '%s\n' "$TOKEN" > "$TMP"
+        HOW="root, 0600, plain: no systemd-creds here"
+    fi
     chmod 0600 "$TMP"
     mv -T -f "$TMP" "$OP_TOKEN_FILE"
-    print_success "Saved the token to $OP_TOKEN_FILE (root, 0600), so the install does not ask again."
+    print_success "Saved the token to $OP_TOKEN_FILE ($HOW), so the install does not ask again."
 fi
 unset TOKEN CURRENT
 
