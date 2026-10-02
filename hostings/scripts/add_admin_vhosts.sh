@@ -259,6 +259,13 @@ vhost_for() {
     DocumentRoot ${WEB_ROOT}
     ServerName ${host}
 
+    # Audit L1: no framing (clickjacking), no MIME guessing, no referrer leak.
+    # Scripts are not restricted: the page uses inline ones.
+    Header always set Content-Security-Policy "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+    Header always set X-Frame-Options "DENY"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set Referrer-Policy "same-origin"
+
     <Directory ${WEB_ROOT}>
         Options -Indexes +FollowSymLinks
         AllowOverride None
@@ -378,6 +385,28 @@ EOF
 ADDED=0; UPDATED=0; SAME=0; ORPHANED=0; REMOVED=0
 CHANGED=0
 
+# Everything this run writes or removes can be put back. Without it a refused
+# config stayed enabled, and the next Apache restart took every site down.
+UNDO_DIR="$(mktemp -d)"
+trap 'rm -rf "$UNDO_DIR"' EXIT
+NEW_FILES=()
+keep_for_undo() {  # <vhost file>, before it is overwritten or removed
+    [ -f "$1" ] && cp -p "$1" "$UNDO_DIR/"
+    return 0
+}
+undo_run() {
+    local f base
+    for f in ${NEW_FILES+"${NEW_FILES[@]}"}; do
+        rm -f "$f" "${ENABLED_DIR}/$(basename "$f")"
+    done
+    for f in "$UNDO_DIR"/*.conf; do
+        [ -e "$f" ] || continue
+        base="$(basename "$f")"
+        cp -p "$f" "${AVAILABLE_DIR}/${base}"
+        ln -sf "${AVAILABLE_DIR}/${base}" "${ENABLED_DIR}/${base}"
+    done
+}
+
 for host in ${WANT+"${WANT[@]}"}; do
     file="${AVAILABLE_DIR}/${ADMIN_PREFIX}${host}.conf"
     new="$(vhost_for "$host")"
@@ -391,6 +420,7 @@ for host in ${WANT+"${WANT[@]}"}; do
                             || { print_info "would UPDATE ${host}"; UPDATED=$((UPDATED + 1)); }
         continue
     fi
+    if [ "$what" = "add" ]; then NEW_FILES+=("$file"); else keep_for_undo "$file"; fi
     printf '%s\n' "$new" > "$file"
     ln -sf "$file" "${ENABLED_DIR}/${ADMIN_PREFIX}${host}.conf"
     CHANGED=1
@@ -416,6 +446,7 @@ for file in "${AVAILABLE_DIR}/${ADMIN_PREFIX}"*.conf; do
     [ "$keep" = "1" ] && continue
     ORPHANED=$((ORPHANED + 1))
     if [ "$PRUNE" = "1" ] && [ "$MODE" = "apply" ]; then
+        keep_for_undo "$file"
         rm -f "$file" "${ENABLED_DIR}/${base}"
         REMOVED=$((REMOVED + 1)); CHANGED=1
         print_success "Removed ${host}: no row on that domain has an Owner who can sign in."
@@ -435,7 +466,9 @@ if [ "$CHANGED" = "1" ]; then
         if ! apache2ctl configtest >/dev/null 2>&1; then
             print_error "Apache refused the config, so it was NOT reloaded."
             apache2ctl configtest 2>&1 | tail -5
-            print_action "Fix the error above, then run: sudo systemctl reload apache2"
+            undo_run
+            print_info "This run's admin vhost changes were undone, so a restart still starts Apache."
+            print_action "Fix the error above, then run this script again."
             exit 1
         fi
     fi

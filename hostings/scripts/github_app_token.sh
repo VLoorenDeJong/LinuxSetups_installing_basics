@@ -105,6 +105,14 @@ is_admin_target() {
     return 1
 }
 
+# A caller that names a repository gets a token for that repository only, not
+# for everything the installation covers. Audit 2026-10-02, M3.
+SCOPE_REPO=""
+case "$TARGET" in
+    */*) SCOPE_REPO="${TARGET#*/}"; SCOPE_REPO="${SCOPE_REPO%.git}"
+         [[ "$SCOPE_REPO" =~ ^[A-Za-z0-9._-]+$ ]] || SCOPE_REPO="" ;;
+esac
+
 if [ -n "$TARGET" ] && [ "$TARGET" != "--owners" ]; then
     if [ -n "$ADMIN_TARGETS" ] && is_admin_target "$TARGET"; then
         APP_ID="$ADMIN_APP_ID"
@@ -201,9 +209,12 @@ if [ -n "$TARGET" ]; then
     fi
 fi
 
+SCOPE_BODY=""
+[ -n "$SCOPE_REPO" ] && SCOPE_BODY="{\"repositories\":[\"${SCOPE_REPO}\"]}"
 RESPONSE="$(curl -fsS -X POST \
     -H "Authorization: Bearer ${JWT}" \
     -H "Accept: application/vnd.github+json" \
+    ${SCOPE_BODY:+-d "$SCOPE_BODY"} \
     "https://api.github.com/app/installations/${INSTALL_ID}/access_tokens" 2>&1)" || {
     print_error "GitHub refused to mint a token."
     # The body, not a guess about it: GitHub says which of the three it is,

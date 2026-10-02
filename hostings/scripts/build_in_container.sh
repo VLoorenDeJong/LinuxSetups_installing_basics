@@ -95,13 +95,16 @@ run_in() {
         print_error "$dir is owned by root; refusing to build as root."
         return 1
     fi
-    mkdir -p "$NUGET_CACHE"
-    chmod 0777 "$NUGET_CACHE"
+    # One cache per build account, not one 0777 cache: a shared writable cache
+    # lets any local account plant a package the next build trusts. Audit M5.
+    local cache="$NUGET_CACHE/${owner%%:*}"
+    install -d -m 0755 -o root -g root "$NUGET_CACHE"
+    install -d -m 0700 -o "${owner%%:*}" -g "${owner##*:}" "$cache"
     timeout "$BUILD_TIMEOUT" docker run --rm \
         --user "$owner" \
         -e HOME=/tmp \
         -v "$dir":/src \
-        -v "$NUGET_CACHE":/nuget \
+        -v "$cache":/nuget \
         -w /src \
         "$IMAGE" "$@" >&2
 }

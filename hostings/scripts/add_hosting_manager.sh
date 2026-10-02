@@ -913,6 +913,13 @@ Listen ${LAN_PORT}
 <VirtualHost *:${LAN_PORT}>
     DocumentRoot ${WEB_ROOT}
 
+    # Audit L1: no framing (clickjacking), no MIME guessing, no referrer leak.
+    # Scripts are not restricted: the page uses inline ones.
+    Header always set Content-Security-Policy "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+    Header always set X-Frame-Options "DENY"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set Referrer-Policy "same-origin"
+
     <Directory ${WEB_ROOT}>
         Options -Indexes +FollowSymLinks
         AllowOverride None
@@ -1012,7 +1019,7 @@ EOF
 )"
 
     for mod in proxy_fcgi auth_form authn_file authz_user session session_cookie \
-               session_crypto request; do
+               session_crypto request headers; do
         a2enmod "$mod" >/dev/null 2>&1 || true
     done
 
