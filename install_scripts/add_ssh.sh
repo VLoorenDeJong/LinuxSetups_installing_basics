@@ -115,17 +115,11 @@ if command -v ufw &> /dev/null && sudo ufw status | grep -q "Status: active"; th
         done
         print_status "SSH allowed from: ${SSH_FROM[*]}"
 
-        # The old "22 from anywhere" rule goes only when this session cannot be
-        # the one it cuts: not over SSH, or over SSH from an on-link address.
-        client="${SSH_CONNECTION%% *}"
-        if [ -z "$client" ] || ! ip route get "$client" 2>/dev/null | grep -q " via "; then
-            while ufw status | grep -qE "^22/tcp( \(v6\))? +ALLOW +Anywhere"; do
-                ufw --force delete allow 22/tcp >"$SSH_LOG" 2>&1 || break
-            done
-            print_status "Removed any rule opening port 22 to everyone."
-        else
-            print_info "This session comes from $client, outside the LAN, so the rule opening port 22 to everyone was kept."
-            print_action "Re-run from the LAN or at the keyboard to remove it."
+        # An open-to-everyone rule is reported, never deleted here: under sudo
+        # this script cannot tell which session the delete would cut off.
+        if ufw status | grep -qE "^(22(/tcp)?|OpenSSH)( \(v6\))? +(ALLOW|LIMIT) +Anywhere"; then
+            print_info "Port 22 is still open to everyone by an older rule."
+            print_action "From the LAN or the keyboard: sudo ufw delete allow 22/tcp (or OpenSSH)"
         fi
     fi
 fi
@@ -138,7 +132,7 @@ HARDEN="/etc/ssh/sshd_config.d/10-linuxbasics-hardening.conf"
 {
     echo "# Written by add_ssh.sh. Audit 2026-10-02, H3."
     echo "PermitRootLogin no"
-    if [ -n "$REAL_USER" ] && [ -s "$REAL_HOME/.ssh/authorized_keys" ]; then
+    if [ -n "$REAL_USER" ] && [ -s "$REAL_HOME/.ssh/authorized_keys" ] \n       && journalctl -u ssh --no-pager 2>/dev/null | grep -q "Accepted publickey for $REAL_USER "; then
         echo "PasswordAuthentication no"
         echo "KbdInteractiveAuthentication no"
     fi
