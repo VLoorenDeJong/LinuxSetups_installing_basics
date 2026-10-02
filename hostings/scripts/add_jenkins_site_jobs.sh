@@ -294,7 +294,7 @@ write_job() {
         fi
         if [ -n "$cur_branch" ] && [ "$cur_branch" != "$GIT_BRANCH" ]; then
             if [ "$DRY_RUN" -eq 1 ]; then
-                print_status "  would move $folder/$job: */$cur_branch -> */$GIT_BRANCH"
+                print_status "  would move $folder/$job: */$cur_branch -> */$GIT_BRANCH"; healed=1
             else
                 sed -i "s#<name>\*/${cur_branch}</name>#<name>*/${GIT_BRANCH}</name>#" "$dir/config.xml"
                 print_status "  $folder/$job branch: */$cur_branch -> */$GIT_BRANCH"
@@ -303,7 +303,7 @@ write_job() {
         fi
         if [ -n "$cur_path" ] && [ "$cur_path" != "$want_path" ]; then
             if [ "$DRY_RUN" -eq 1 ]; then
-                print_status "  would point $folder/$job at $want_path"
+                print_status "  would point $folder/$job at $want_path"; healed=1
             else
                 sed -i "s#<scriptPath>${cur_path}</scriptPath>#<scriptPath>${want_path}</scriptPath>#" "$dir/config.xml"
                 print_status "  $folder/$job Jenkinsfile: $cur_path -> $want_path"
@@ -311,6 +311,7 @@ write_job() {
             fi
         fi
         if [ "$healed" -eq 1 ]; then
+            [ "$DRY_RUN" -eq 1 ] && return 0
             chown jenkins:jenkins "$dir/config.xml" 2>/dev/null || true
             REPOINTED=$((REPOINTED + 1))
             return 0
