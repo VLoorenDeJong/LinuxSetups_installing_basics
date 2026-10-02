@@ -920,6 +920,10 @@ Listen ${LAN_PORT}
     Header always set X-Content-Type-Options "nosniff"
     Header always set Referrer-Policy "same-origin"
 
+    # A create runs inside one request and takes about six minutes, measured
+    # 2026-10-02; the 300 s default answered 504 while it was still working.
+    ProxyTimeout 900
+
     <Directory ${WEB_ROOT}>
         Options -Indexes +FollowSymLinks
         AllowOverride None
