@@ -90,6 +90,25 @@ print_error() {
     printf "\033[31m❌ %s\033[0m\n" "$1"
 }
 
+print_info()    { printf "\033[36mℹ️ %s\033[0m\n" "$1"; }
+print_action()  { printf "\033[33m👉 %s\033[0m\n" "$1"; }
+print_hint()    { printf "   %s\n" "$1"; }
+prompt_ask()    { printf "\n   \033[33m%s\033[0m %s" "$1" "${2:-}"; }
+
+# One asterisk per keystroke, from the terminal: a caller may own stdin.
+read_masked() {
+    local out="" ch
+    while IFS= read -rsn1 ch; do
+        case "$ch" in
+            "")             break ;;
+            $'\177'|$'\b')  [ -n "$out" ] && { out="${out%?}"; printf '\b \b' > /dev/tty; } ;;
+            *)              out="$out$ch"; printf '*' > /dev/tty ;;
+        esac
+    done < /dev/tty
+    printf '\n' > /dev/tty
+    printf '%s' "$out"
+}
+
 if [ "$EUID" -ne 0 ]; then
     print_error "This script requires sudo privileges to run properly."
     print_warning "Please run with: sudo $0"
@@ -742,6 +761,55 @@ else
     print_status "No $SMB_CONFIG found - keeping the installed /etc/samba/smb.conf"
     SHARE_INFO=()
 fi
+
+# A SAMBA LOGIN FOR THE INSTALLING USER. A share that says
+# `write list = @smbwriters` is read-only to guests and writable with this
+# login, so an anonymous device on the LAN cannot write into code that runs.
+# Trace off for the whole block: -d would otherwise print the password.
+{ _xt=$-; set +x; } 2>/dev/null
+SMB_WRITERS="smbwriters"
+getent group "$SMB_WRITERS" >/dev/null || groupadd "$SMB_WRITERS"
+if [ "$ACTUAL_USER" = "root" ]; then
+    print_info "Run as root rather than through sudo, so no Samba login was made."
+    print_action "Run it from your own account: sudo bash $0"
+elif pdbedit -L 2>/dev/null | cut -d: -f1 | grep -qxF -- "$ACTUAL_USER"; then
+    usermod -aG "$SMB_WRITERS" "$ACTUAL_USER"
+    print_info "Samba login '$ACTUAL_USER' already exists."
+    print_hint "To change it: sudo smbpasswd $ACTUAL_USER, and the vault item samba-$ACTUAL_USER if there is one."
+else
+    usermod -aG "$SMB_WRITERS" "$ACTUAL_USER"
+    smb_pw=""
+    _secret_ask="$(dirname "${BASH_SOURCE[0]}")/../hostings/scripts/secret_ask.sh"
+    if [ -f "$_secret_ask" ]; then
+        # shellcheck source=/dev/null
+        . "$_secret_ask"
+        smb_pw="$(secret_ask "samba-$ACTUAL_USER" \
+            --label "a password for the shared folders (Samba login '$ACTUAL_USER')" \
+            --hint "typed in Windows Explorer when writing to a share; reading needs none")" || smb_pw=""
+    elif ! { : < /dev/tty; } 2>/dev/null; then
+        print_error "No terminal to ask the Samba password at."
+    else
+        for _try in 1 2 3; do
+            print_action "NEEDED: a password for the shared folders (Samba login '$ACTUAL_USER')"
+            print_hint "typed in Windows Explorer when writing to a share; reading needs none"
+            prompt_ask "Password:" > /dev/tty
+            smb_pw="$(read_masked)"
+            prompt_ask "Password, once more:" > /dev/tty
+            [ -n "$smb_pw" ] && [ "$smb_pw" = "$(read_masked)" ] && break
+            print_error "Empty, or the two did not match."
+            smb_pw=""
+        done
+    fi
+
+    if [ -n "$smb_pw" ] && printf '%s\n%s\n' "$smb_pw" "$smb_pw" | smbpasswd -s -a "$ACTUAL_USER" >/dev/null; then
+        print_success "Samba login '$ACTUAL_USER' created, in group $SMB_WRITERS"
+    else
+        print_error "No Samba login was created, so shares with a write list stay read-only for everyone."
+        print_action "Create it later: sudo smbpasswd -a $ACTUAL_USER"
+    fi
+    unset smb_pw
+fi
+[[ $_xt == *x* ]] && set -x
 
 print_status "Performing final system verification..."
 
