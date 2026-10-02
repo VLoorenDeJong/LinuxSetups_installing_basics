@@ -227,7 +227,7 @@ for entry in "${LOGIN_FILES[@]}"; do
     tmp=""
     # A restored private key leaves a stale .pub beside it, and a mismatched
     # pair fails as "the server refused the key" rather than as what it is.
-    if [ "$owner" != "root" ] && pub="$(ssh-keygen -y -f "$path" 2>/dev/null)"; then
+    if [ "$name" = "git-push-key" ] && pub="$(ssh-keygen -y -f "$path" 2>/dev/null)"; then
         printf '%s\n' "$pub" > "$path.pub"
         chown "$owner:$group" "$path.pub"
         chmod 0644 "$path.pub"

@@ -153,6 +153,7 @@ else
     if [ -f "$HARDEN.old" ]; then mv "$HARDEN.old" "$HARDEN"; else rm -f "$HARDEN"; fi
     print_error "sshd rejected the hardening, so the previous file was put back and SSH is unchanged. Output:"
     tail -5 "$SSH_LOG" 2>/dev/null || true
+    exit 1
 fi
 
 echo -e "\e[32m✅ SSH installation and configuration complete\e[0m"

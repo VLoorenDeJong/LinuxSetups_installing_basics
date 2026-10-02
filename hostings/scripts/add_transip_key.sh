@@ -144,7 +144,7 @@ chmod 700 "$CRED_DIR"
 LEGACY_KEY="/etc/letsencrypt/transip.key"
 LEGACY_LOGIN="/etc/letsencrypt/transip.login"
 MIGRATE=0
-if [ -f "$LEGACY_KEY" ]; then
+if [ "$TEST_ONLY" -eq 0 ] && [ -f "$LEGACY_KEY" ]; then
     if [ ! -f "$CRED_FILE" ]; then
         MIGRATE=1
     else
@@ -191,11 +191,16 @@ fi
 # =============================================================================
 WANT_KEY=1
 WANT_LOGIN=1
+PAIR_OK=0
+PAIR_TEST=""
+if [ "$TEST_ONLY" -eq 0 ] && [ "$REPLACE" -eq 0 ] && [ -f "$CRED_FILE" ] && [ -f "$LOGIN_FILE" ]; then
+    print_status "Testing the stored key and username with TransIP..."
+    PAIR_TEST="$(bash "${BASH_SOURCE[0]}" --test-only < /dev/null 2>&1)" && PAIR_OK=1
+fi
 if [ "$TEST_ONLY" -eq 1 ]; then
     WANT_KEY=0
     WANT_LOGIN=0
-elif [ "$REPLACE" -eq 0 ] && [ -f "$CRED_FILE" ] && [ -f "$LOGIN_FILE" ] \
-     && bash "${BASH_SOURCE[0]}" --test-only >/dev/null 2>&1; then
+elif [ "$PAIR_OK" -eq 1 ]; then
     # A pair TransIP accepts is kept without asking; --replace asks anyway.
     print_header "TransIP API key"
     print_success "The stored key and username work (TransIP issued a token), so both were kept."
@@ -207,6 +212,10 @@ elif [ "$REPLACE" -eq 0 ] && [ -f "$CRED_FILE" ] && [ -f "$LOGIN_FILE" ] \
     fi
 else
     print_header "TransIP API key"
+    if [ -n "$PAIR_TEST" ]; then
+        print_error "The stored key and username did not pass the test:"
+        printf '%s\n' "$PAIR_TEST" | grep -F '❌' | sed 's/^/   /'
+    fi
     # Asked separately, because the key and the account name are usually wrong
     # one at a time. Replacing both to fix one means pasting a key that was
     # already right.
@@ -391,7 +400,7 @@ BODY="$(jq -nc --arg login "$TRANSIP_LOGIN" --arg nonce "$NONCE" \
       global_key: true}')"
 SIG="$(printf '%s' "$BODY" | openssl dgst -sha512 -sign "$PLAIN_KEY" | openssl base64 -A)"
 
-RESPONSE="$(curl -s -X POST "$API_URL/auth" \
+RESPONSE="$(curl -s --max-time 20 -X POST "$API_URL/auth" \
     -H "Content-Type: application/json" \
     -H "Signature: $SIG" \
     --data-binary "$BODY")" || {

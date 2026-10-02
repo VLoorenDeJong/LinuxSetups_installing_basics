@@ -273,7 +273,9 @@ if [ "$TEST_ONLY" -ne 1 ] && { [ -z "$VAULT_APP_ID" ] || [ -z "$VAULT_INSTALL_ID
         print_hint   "  page and click ${HL}Install App${NC} in the left sidebar."
         ask_id INSTALL_ID "Installation ID" "87654321" "$OLD_INSTALL_ID"
     fi
-    WRITE_BACK=1
+    if [ "$APP_ID" != "${OLD_APP_ID-$APP_ID}" ] || [ "$INSTALL_ID" != "${OLD_INSTALL_ID-$INSTALL_ID}" ]; then
+        WRITE_BACK=1
+    fi
     if [ "${SECRET_READY:-0}" = "1" ]; then
         print_action "Add what you typed to the vault item '$(_file_title "${SECRET_NAME%-key}-info")'"
         print_hint   "  as fields ${HL}App ID${NC} and ${HL}Installation ID${NC}, and the next run asks nothing."

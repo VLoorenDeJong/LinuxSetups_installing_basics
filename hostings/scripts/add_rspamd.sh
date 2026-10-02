@@ -417,8 +417,12 @@ if [ "$MODE" != "check" ]; then
             bash "$SCRIPT_DIR/restore_logins.sh" --only "dkim-$dom" || true
         fi
         if [ -f "$(key_path "$dom")" ]; then
-            [ -f "$(pub_path "$dom")" ] || openssl rsa -in "$(key_path "$dom")" -pubout \
-                -out "$(pub_path "$dom")" 2>/dev/null
+            if [ ! -f "$(pub_path "$dom")" ] && ! openssl rsa -in "$(key_path "$dom")" -pubout \
+                    -out "$(pub_path "$dom")" 2>/dev/null; then
+                print_error "The DKIM key for $dom is not a readable RSA key: $(key_path "$dom")"
+                print_action "Remove it and re-run, to make a new one: the DNS record then changes too."
+                exit 1
+            fi
             print_success "DKIM key for $dom already exists."
             continue
         fi
