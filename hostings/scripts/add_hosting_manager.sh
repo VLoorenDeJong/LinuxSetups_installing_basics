@@ -122,8 +122,8 @@ retire_the_console() {
         rm -f "$old_vhost"
         print_status "Removed the old console-lan vhost, which also held Listen 10001."
     fi
-    [ -f /etc/sudoers.d/020_console-publish ] && rm -f /etc/sudoers.d/020_console-publish
-    [ -d /var/www/console ] && rm -rf /var/www/console
+    rm -f /etc/sudoers.d/020_console-publish
+    rm -rf /var/www/console
 }
 
 MODE="apply"
