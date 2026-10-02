@@ -451,6 +451,11 @@ install_key() {
 if [ "$TEST_ONLY" -ne 1 ]; then
     if [ -n "$KEY_SOURCE" ]; then
         install_key
+    elif [ -s "$KEY_FILE" ] && [ "${WRITE_BACK:-0}" != "1" ] \
+         && SITES_CONF="$SITES_CONF" bash "$SCRIPT_DIR/github_app_token.sh" ${TEST_TARGET:+"$TEST_TARGET"} >/dev/null 2>&1; then
+        # A key GitHub accepts is kept without asking. A broken one, or new IDs,
+        # still reach the question below. To swap a working key: --key-file.
+        print_success "The installed key at $KEY_FILE works (GitHub issued a token), so it was kept."
     elif [ -s "$KEY_FILE" ]; then
         # Asked even though one is installed, for the same reason as the IDs: a
         # wrong key is exactly why somebody runs this again, and a script that

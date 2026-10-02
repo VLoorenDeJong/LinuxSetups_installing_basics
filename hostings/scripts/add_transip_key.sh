@@ -24,6 +24,7 @@ unset _a _dbg_args
 #
 #   sudo bash add_transip_key.sh              paste the key, install it, test it
 #   sudo bash add_transip_key.sh --test-only  test what is already installed
+#   sudo bash add_transip_key.sh --replace    ask even when the stored pair works
 #
 # The key is created in the TransIP control panel under My Account -> API, with
 # NO IP whitelist. This machine shares the household's public address with the
@@ -66,17 +67,20 @@ print_header() {
 }
 
 usage() {
-    echo "Usage: $0 [--test-only]" >&2
+    echo "Usage: $0 [--test-only | --replace]" >&2
     echo "" >&2
     echo "  (no option)  paste the key, install it, then test it" >&2
     echo "  --test-only  test the key already installed, change nothing" >&2
+    echo "  --replace    ask to replace a key and username that already work" >&2
     exit 1
 }
 
 TEST_ONLY=0
+REPLACE=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --test-only) TEST_ONLY=1; shift ;;
+        --replace)   REPLACE=1; shift ;;
         -h|--help)   usage ;;
         *) print_error "Unknown option: $1"; usage ;;
     esac
@@ -190,6 +194,17 @@ WANT_LOGIN=1
 if [ "$TEST_ONLY" -eq 1 ]; then
     WANT_KEY=0
     WANT_LOGIN=0
+elif [ "$REPLACE" -eq 0 ] && [ -f "$CRED_FILE" ] && [ -f "$LOGIN_FILE" ] \
+     && bash "${BASH_SOURCE[0]}" --test-only >/dev/null 2>&1; then
+    # A pair TransIP accepts is kept without asking; --replace asks anyway.
+    print_header "TransIP API key"
+    print_success "The stored key and username work (TransIP issued a token), so both were kept."
+    WANT_KEY=0
+    WANT_LOGIN=0
+    if command -v secret_file_get >/dev/null 2>&1 \
+       && ! secret_file_get transip-username >/dev/null 2>&1; then
+        secret_save transip-username < "$LOGIN_FILE"
+    fi
 else
     print_header "TransIP API key"
     # Asked separately, because the key and the account name are usually wrong
