@@ -187,8 +187,12 @@ git_with_token() {
 # The ref to follow: the branch, or the pinned commit.
 if [ -n "$GIT_BRANCH" ]; then
     FETCH_REF="$GIT_BRANCH";  FOLLOW="origin/$GIT_BRANCH"
+    FOLLOW_CMD="reset -q --hard"
 else
     FETCH_REF="$GIT_SHA";     FOLLOW="$GIT_SHA"
+    # DETACHED, not reset onto the local branch: a tree left on "main" makes
+    # the next run from inside it follow origin/main, which has no hostings/.
+    FOLLOW_CMD="checkout -q -f --detach"
 fi
 
 if [ ${#ERRORS[@]} -gt 0 ]; then
@@ -236,7 +240,7 @@ if [ -d "$PIPELINE_ROOT/.git" ]; then
     # fixes, and the old message could not tell them apart.
     refresh_err="$( { flock 9
         git_with_token -C "$PIPELINE_ROOT" fetch -q origin "$FETCH_REF" \
-        && git -C "$PIPELINE_ROOT" reset -q --hard "$FOLLOW"
+        && git -C "$PIPELINE_ROOT" $FOLLOW_CMD "$FOLLOW"
       } 9>"$REFRESH_LOCK" 2>&1 )" && refresh_ok=1 || refresh_ok=0
     if [ "$refresh_ok" = "1" ]; then
         spinner_stop
@@ -253,7 +257,7 @@ else
     rm -rf "$PIPELINE_ROOT"
     if git_with_token clone -q ${GIT_BRANCH:+--branch "$GIT_BRANCH"} "$GIT_URL" "$PIPELINE_ROOT" 2>/dev/null \
        && git_with_token -C "$PIPELINE_ROOT" fetch -q origin "$FETCH_REF" \
-       && git -C "$PIPELINE_ROOT" reset -q --hard "$FOLLOW"; then
+       && git -C "$PIPELINE_ROOT" $FOLLOW_CMD "$FOLLOW"; then
         spinner_stop
         print_success "Cloned at $(git -C "$PIPELINE_ROOT" rev-parse --short HEAD)."
     else
