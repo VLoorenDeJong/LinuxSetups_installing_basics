@@ -944,6 +944,7 @@ Listen ${LAN_PORT}
         # config still reaches PHP whole. Measured 2026-09-23.
         Session On
         SessionCookieName manager_http path=/;httponly;SameSite=Strict
+        SessionMaxAge 1800
         SessionCryptoPassphraseFile ${SESSION_KEY}
         # ONLY THE NAMES THAT HOLD A ROLE. Item 105, the owner 2026-09-10.
         #
@@ -988,6 +989,7 @@ Listen ${LAN_PORT}
         AuthFormLoginSuccessLocation /
         Session On
         SessionCookieName manager_http path=/;httponly;SameSite=Strict
+        SessionMaxAge 1800
         SessionCryptoPassphraseFile ${SESSION_KEY}
         Require all granted
     </Location>
@@ -998,6 +1000,7 @@ Listen ${LAN_PORT}
         AuthFormLogoutLocation /${LOGIN_PAGE}
         Session On
         SessionCookieName manager_http path=/;httponly;SameSite=Strict
+        SessionMaxAge 1800
         SessionCryptoPassphraseFile ${SESSION_KEY}
         Require all granted
     </Location>

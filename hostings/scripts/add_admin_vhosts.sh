@@ -287,6 +287,7 @@ vhost_for() {
         # No KeptBodySize: see add_hosting_manager.sh, it segfaults Apache on a slow POST.
         Session On
         SessionCookieName manager_https path=/;httponly;secure;SameSite=Strict
+        SessionMaxAge 1800
         SessionCryptoPassphraseFile ${SESSION_KEY}
         # Every account in the password file. What each of them SEES is decided
         # inside index.php by their role and by each row's Owner, and every
@@ -314,6 +315,7 @@ vhost_for() {
         AuthFormLoginSuccessLocation /
         Session On
         SessionCookieName manager_https path=/;httponly;secure;SameSite=Strict
+        SessionMaxAge 1800
         SessionCryptoPassphraseFile ${SESSION_KEY}
         Require all granted
     </Location>
