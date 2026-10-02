@@ -169,7 +169,7 @@ if [ "$MIGRATE" -eq 1 ]; then
         if [ -f "$LEGACY_LOGIN" ]; then
             install -m 0600 -o root -g root "$LEGACY_LOGIN" "$LOGIN_FILE"
             rm -f "$LEGACY_LOGIN"
-            print_success "Account name moved to $LOGIN_FILE."
+            print_success "Username moved to $LOGIN_FILE."
         fi
     else
         print_error "systemd-creds could not encrypt it. Nothing was removed."
@@ -207,13 +207,13 @@ else
         fi
     fi
     if [ -f "$LOGIN_FILE" ]; then
-        print_success "An account name is already stored at $LOGIN_FILE"
+        print_success "A username is already stored at $LOGIN_FILE"
         printf "\033[33m⚠️ Replace it? Type yes to replace, anything else to keep it: \033[0m"
         read -r answer < /dev/tty
         if [ "$answer" = "yes" ]; then
             LOGIN_ASK_FLAG="--ask"
         else
-            WANT_LOGIN=0; print_status "Keeping the stored account name."
+            WANT_LOGIN=0; print_status "Keeping the stored username."
         fi
     fi
 fi
@@ -300,18 +300,18 @@ fi
 if [ "$WANT_LOGIN" -eq 1 ]; then
     login=""
     if command -v secret_ask >/dev/null 2>&1; then
-        login="$(secret_ask transip-login \
-                    --label "the TransIP account name" \
+        login="$(secret_ask transip-username \
+                    --label "your TransIP username" \
                     --hint "the name you sign in to transip.nl with." \
                     ${LOGIN_ASK_FLAG:+--ask})" || login=""
     else
         echo ""
-        print_action "TYPE YOUR TRANSIP ACCOUNT NAME, then press Enter."
-        printf "\033[33m⚠️ Account name: \033[0m"
+        print_action "TYPE YOUR TRANSIP USERNAME, then press Enter."
+        printf "\033[33m⚠️ TransIP username: \033[0m"
         read -r login < /dev/tty
     fi
     if [ -z "$login" ]; then
-        print_error "Nothing typed, so no account name was stored."
+        print_error "Nothing typed, so no username was stored."
         print_action "Re-run this script to finish."
         exit 1
     fi
@@ -350,7 +350,7 @@ if ! systemd-creds decrypt --name="$CRED_NAME" "$CRED_FILE" - > "$PLAIN_KEY" 2>/
 fi
 
 if [ -z "$TRANSIP_LOGIN" ]; then
-    print_error "No account name at $LOGIN_FILE."
+    print_error "No TransIP username at $LOGIN_FILE."
     print_info "TransIP's auth endpoint signs a body that must name the account,"
     print_info "so the key alone cannot identify you."
     print_action "Run without --test-only to be prompted for it."

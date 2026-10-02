@@ -453,7 +453,7 @@ setup_key() {
     print_header "API key"
 
     if [ -z "$DNS_LOGIN" ]; then
-        print_error "No account name at $LOGIN_FILE, and no DNS_LOGIN in $SITES_CONF"
+        print_error "No TransIP username at $LOGIN_FILE, and no DNS_LOGIN in $SITES_CONF"
         print_action "Store it with: sudo bash add_transip_key.sh"
         exit 1
     fi

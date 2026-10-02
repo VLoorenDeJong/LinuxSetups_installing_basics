@@ -276,7 +276,7 @@ dns_register_url() {
 dns_preflight() {
     local bad=0 tool
     [ -n "$DNS_API_URL" ] || { printf 'No DNS_API_URL in %s\n' "${SITES_CONF:-the config}"; bad=1; }
-    [ -n "$DNS_LOGIN" ]   || { printf 'No account name at %s. Run: sudo bash add_transip_key.sh\n' "$DNS_LOGIN_FILE"; bad=1; }
+    [ -n "$DNS_LOGIN" ]   || { printf 'No TransIP username at %s. Run: sudo bash add_transip_key.sh\n' "$DNS_LOGIN_FILE"; bad=1; }
     [ -f "$DNS_CRED_FILE" ] || { printf 'No API key at %s. Run: sudo bash add_transip_key.sh\n' "$DNS_CRED_FILE"; bad=1; }
     for tool in curl openssl jq systemd-creds python3; do
         command -v "$tool" >/dev/null 2>&1 || \
