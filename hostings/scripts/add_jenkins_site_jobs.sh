@@ -279,7 +279,7 @@ write_job() {
             grep -q '<credentialsId>' "$dir/config.xml" \
                 || sed -i "s#<url>${GIT_URL//#/\\#}</url>#<url>${GIT_URL//#/\\#}</url>\n          <credentialsId>github-token</credentialsId>#" "$dir/config.xml"
             chown jenkins:jenkins "$dir/config.xml" 2>/dev/null || true
-            REPOINTED=$((REPOINTED + 1))
+            REPOINTED=$((REPOINTED + 1)); REPAIRED_JOBS+=("$folder/$job")
             print_status "  $folder/$job repointed: $cur -> $GIT_URL"
         fi
 
@@ -313,7 +313,7 @@ write_job() {
         if [ "$healed" -eq 1 ]; then
             [ "$DRY_RUN" -eq 1 ] && return 0
             chown jenkins:jenkins "$dir/config.xml" 2>/dev/null || true
-            REPOINTED=$((REPOINTED + 1))
+            REPOINTED=$((REPOINTED + 1)); REPAIRED_JOBS+=("$folder/$job")
             return 0
         fi
         [ -n "$cur" ] && [ "$cur" != "$GIT_URL" ] && return 0
@@ -373,6 +373,7 @@ XML
 
 FOLDERS=0
 REPOINTED=0
+REPAIRED_JOBS=()
 EXPECTED_JOBS=()
 SKIPPED=()
 
@@ -622,6 +623,20 @@ if systemctl is-active --quiet jenkins 2>/dev/null; then
             sleep 2
         done
         print_success "Jenkins reloaded, so it sees the new folders."
+
+        # /reload does not re-read a job inside a folder: measured 2026-10-02,
+        # the disk said */Ubuntu_24.04_LTS and the next build still fetched
+        # */HEAD. Posting the file through the API replaces the loaded job.
+        for _j in "${REPAIRED_JOBS[@]}"; do
+            if curl -fsS -o /dev/null --max-time 30 -X POST -u "$(head -n1 "$_tok")" \
+                    -H 'Content-Type: application/xml' \
+                    --data-binary "@$JENKINS_HOME/jobs/${_j%%/*}/jobs/${_j#*/}/config.xml" \
+                    "${_url}/job/${_j%%/*}/job/${_j#*/}/config.xml" 2>/dev/null; then
+                print_success "  $_j loaded into Jenkins."
+            else
+                print_action "  $_j is repaired on disk, but Jenkins still runs the old one until it restarts."
+            fi
+        done
     else
         print_action "Could not reload Jenkins, so it may not see the new folders yet."
         print_action "  Reload it from Manage Jenkins, or restart it when nothing is building."
