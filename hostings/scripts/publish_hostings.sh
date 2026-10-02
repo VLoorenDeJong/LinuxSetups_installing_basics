@@ -72,6 +72,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     || . /usr/local/lib/linuxbasics/hostings/scripts/config.sh 2>/dev/null \
     || { print_error "config.sh not found beside $0."; exit 1; }
 
+# Installed alone in /usr/local/sbin, so the checker comes from the pipeline tree.
+MAINTAIN="$SCRIPT_DIR/maintain_services.sh"
+[ -f "$MAINTAIN" ] || MAINTAIN="/usr/local/lib/linuxbasics/hostings/scripts/maintain_services.sh"
+
 # Fixed paths. Nothing here is taken from the caller.
 MANAGER_HOME="/var/lib/hosting-manager"
 STAGING="${MANAGER_HOME}/hostings.conf.candidate"
@@ -129,7 +133,7 @@ validate() {  # <candidate> <target>
     log="$(mktemp)"
     cp "$1" "$probe"
     set +e
-    SITES_CONF="$probe" bash "$SCRIPT_DIR/maintain_services.sh" --check >"$log" 2>&1
+    SITES_CONF="$probe" bash "$MAINTAIN" --check >"$log" 2>&1
     rc=$?
     set -e
     rm -f "$probe"
