@@ -191,9 +191,16 @@ fi
 TOKEN_SH="$SCRIPT_DIR/github_app_token.sh"
 [ -f "$TOKEN_SH" ] || TOKEN_SH="/usr/local/lib/linuxbasics/hostings/scripts/github_app_token.sh"
 
+# Minted here, as root, for the repository's OWNER: git runs as $APP_RUN_USER,
+# which cannot read the App key, so the helper falls back to this token.
 GH_TOKEN=""
 if [ -f "$TOKEN_SH" ]; then
-    GH_TOKEN="$(SITES_CONF="$SITES_CONF" bash "$TOKEN_SH" 2>/dev/null || true)"
+    OWNER=""
+    case "$REPO" in
+        https://github.com/*) OWNER="${REPO#https://github.com/}"; OWNER="${OWNER%%/*}" ;;
+        git@github.com:*)     OWNER="${REPO#git@github.com:}";     OWNER="${OWNER%%/*}" ;;
+    esac
+    GH_TOKEN="$(SITES_CONF="$SITES_CONF" bash "$TOKEN_SH" ${OWNER:+"$OWNER"} 2>/dev/null || true)"
 fi
 export GH_TOKEN
 
