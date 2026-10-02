@@ -206,13 +206,13 @@ fi
 #
 # The token is minted at the point of use and never stored: it lives an hour.
 GH_TOKEN=""
-mint_token() {
+mint_token() {  # [owner]
     local sh
     for sh in /usr/local/lib/linuxbasics/hostings/scripts/github_app_token.sh \
               "$(dirname "${BASH_SOURCE[0]}")/github_app_token.sh"; do
         [ -f "$sh" ] || continue
         GH_TOKEN="$(SITES_CONF= \
-            bash "$sh" 2>/dev/null || true)"
+            bash "$sh" ${1:+"$1"} 2>/dev/null || true)"
         [ -n "$GH_TOKEN" ] && { export GH_TOKEN; return 0; }
     done
     return 1
@@ -578,6 +578,14 @@ while IFS="|" read -r type name port path sub ds opts auth repo branch rowenvs u
     case "$repo" in
         git@github.com:*) https_url="https://github.com/${repo#git@github.com:}" ;;
     esac
+
+    # The row's own owner: a token for the default org cannot push to a
+    # repository in another one, and the create puts it in GITHUB_ORG.
+    owner="${https_url#https://github.com/}"; owner="${owner%%/*}"
+    if ! mint_token "$owner"; then
+        FAILED+=("$name: no GitHub App token could be minted for '$owner'")
+        continue
+    fi
 
     work="$(sudo -n -u "$APP_RUN_USER" mktemp -d)"
     dir="$work/repo"
