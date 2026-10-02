@@ -33,7 +33,7 @@
 define('CONF', (function () {
     $dir = '/etc/hostings';
     $out = trim((string) @shell_exec('bash -c '
-        . escapeshellarg('. "$0/../hostings/scripts/config.sh" && conf_active "$0"')
+        . escapeshellarg('. /usr/local/lib/linuxbasics/hostings/scripts/config.sh && conf_active "$0"')
         . ' ' . escapeshellarg($dir) . ' 2>/dev/null'));
     return $out !== '' ? $out : $dir . '/hostings.conf';
 })());
