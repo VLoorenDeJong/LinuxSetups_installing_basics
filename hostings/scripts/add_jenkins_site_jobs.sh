@@ -117,6 +117,12 @@ fi
 # written down, so a fork or a rename needs no edit here.
 GIT_URL="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || true)"
 GIT_BRANCH="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+# Detached at a pinned commit (a submodule): follow the branch that holds it, as
+# add_jenkins.sh does. "*/HEAD" fetches refs/heads/HEAD, which never exists.
+if [ "$GIT_BRANCH" = "HEAD" ]; then
+    GIT_BRANCH="$(git -C "$REPO_ROOT" for-each-ref --contains HEAD --format='%(refname:lstrip=3)' refs/remotes/origin 2>/dev/null \
+                  | grep -vx HEAD | head -1 || true)"
+fi
 
 # HTTPS, and the direction of this conversion is the whole point.
 #
@@ -275,8 +281,41 @@ write_job() {
             chown jenkins:jenkins "$dir/config.xml" 2>/dev/null || true
             REPOINTED=$((REPOINTED + 1))
             print_status "  $folder/$job repointed: $cur -> $GIT_URL"
+        fi
+
+        # The branch and the Jenkinsfile path stop a job before it runs just as
+        # surely as the URL, so they are repaired by the same rule.
+        local cur_branch want_path cur_path healed=0
+        cur_branch="$(sed -n 's#.*<name>\*/\(.*\)</name>.*#\1#p' "$dir/config.xml" | head -1)"
+        want_path="hostings/jenkins/$jenkinsfile"
+        cur_path="$(sed -n 's#.*<scriptPath>\(.*\)</scriptPath>.*#\1#p' "$dir/config.xml" | head -1)"
+        if [ "$DRY_RUN" -ne 1 ] && { [ "$cur_branch" != "$GIT_BRANCH" ] || [ "$cur_path" != "$want_path" ]; }; then
+            cp -a "$dir/config.xml" "$dir/config.xml.bak-$(date +%Y%m%d-%H%M%S)"
+        fi
+        if [ -n "$cur_branch" ] && [ "$cur_branch" != "$GIT_BRANCH" ]; then
+            if [ "$DRY_RUN" -eq 1 ]; then
+                print_status "  would move $folder/$job: */$cur_branch -> */$GIT_BRANCH"
+            else
+                sed -i "s#<name>\*/${cur_branch}</name>#<name>*/${GIT_BRANCH}</name>#" "$dir/config.xml"
+                print_status "  $folder/$job branch: */$cur_branch -> */$GIT_BRANCH"
+                healed=1
+            fi
+        fi
+        if [ -n "$cur_path" ] && [ "$cur_path" != "$want_path" ]; then
+            if [ "$DRY_RUN" -eq 1 ]; then
+                print_status "  would point $folder/$job at $want_path"
+            else
+                sed -i "s#<scriptPath>${cur_path}</scriptPath>#<scriptPath>${want_path}</scriptPath>#" "$dir/config.xml"
+                print_status "  $folder/$job Jenkinsfile: $cur_path -> $want_path"
+                healed=1
+            fi
+        fi
+        if [ "$healed" -eq 1 ]; then
+            chown jenkins:jenkins "$dir/config.xml" 2>/dev/null || true
+            REPOINTED=$((REPOINTED + 1))
             return 0
         fi
+        [ -n "$cur" ] && [ "$cur" != "$GIT_URL" ] && return 0
 
         print_success "  $folder/$job already exists, left alone."
         return 0
@@ -321,7 +360,7 @@ write_job() {
         <hudson.plugins.git.extensions.impl.IgnoreNotifyCommit/>
       </extensions>
     </scm>
-    <scriptPath>jenkins/${jenkinsfile}</scriptPath>
+    <scriptPath>hostings/jenkins/${jenkinsfile}</scriptPath>
     <lightweight>true</lightweight>
   </definition>
   ${triggers_xml}
