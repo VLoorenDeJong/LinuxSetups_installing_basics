@@ -286,7 +286,7 @@ vhost_for() {
         AuthFormLoginRequiredLocation /${LOGIN_PAGE}
         # No KeptBodySize: see add_hosting_manager.sh, it segfaults Apache on a slow POST.
         Session On
-        SessionCookieName manager_https path=/;httponly;secure
+        SessionCookieName manager_https path=/;httponly;secure;SameSite=Strict
         SessionCryptoPassphraseFile ${SESSION_KEY}
         # Every account in the password file. What each of them SEES is decided
         # inside index.php by their role and by each row's Owner, and every
@@ -313,7 +313,7 @@ vhost_for() {
         AuthFormLoginRequiredLocation /${LOGIN_PAGE}
         AuthFormLoginSuccessLocation /
         Session On
-        SessionCookieName manager_https path=/;httponly;secure
+        SessionCookieName manager_https path=/;httponly;secure;SameSite=Strict
         SessionCryptoPassphraseFile ${SESSION_KEY}
         Require all granted
     </Location>

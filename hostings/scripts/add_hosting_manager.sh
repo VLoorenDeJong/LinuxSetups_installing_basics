@@ -943,7 +943,7 @@ Listen ${LAN_PORT}
         # pieces (a phone, a VPN) segfaults Apache 2.4.58; without it a 68 KB
         # config still reaches PHP whole. Measured 2026-09-23.
         Session On
-        SessionCookieName manager_http path=/;httponly
+        SessionCookieName manager_http path=/;httponly;SameSite=Strict
         SessionCryptoPassphraseFile ${SESSION_KEY}
         # ONLY THE NAMES THAT HOLD A ROLE. Item 105, the owner 2026-09-10.
         #
@@ -987,7 +987,7 @@ Listen ${LAN_PORT}
         AuthFormLoginRequiredLocation /${LOGIN_PAGE}
         AuthFormLoginSuccessLocation /
         Session On
-        SessionCookieName manager_http path=/;httponly
+        SessionCookieName manager_http path=/;httponly;SameSite=Strict
         SessionCryptoPassphraseFile ${SESSION_KEY}
         Require all granted
     </Location>
@@ -997,7 +997,7 @@ Listen ${LAN_PORT}
         AuthType None
         AuthFormLogoutLocation /${LOGIN_PAGE}
         Session On
-        SessionCookieName manager_http path=/;httponly
+        SessionCookieName manager_http path=/;httponly;SameSite=Strict
         SessionCryptoPassphraseFile ${SESSION_KEY}
         Require all granted
     </Location>

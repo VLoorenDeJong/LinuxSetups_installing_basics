@@ -190,6 +190,18 @@ if (is_array($lastApply) && is_array($lastApply['steps'] ?? null)) {
 // seconds while something is running: starting a job is a POST that returns at
 // once, so nothing else on this page knows when the work actually ends.
 
+// CSRF: a POST from another site's page is refused. Firefox sends the session
+// cookie cross-site unless SameSite says otherwise, so this is the second lock.
+function originHost(string $origin): string {
+    $port = parse_url($origin, PHP_URL_PORT);
+    return (string) parse_url($origin, PHP_URL_HOST) . ($port ? ':' . $port : '');
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SERVER['HTTP_ORIGIN'])
+    && originHost($_SERVER['HTTP_ORIGIN']) !== ($_SERVER['HTTP_HOST'] ?? '')) {
+    http_response_code(403);
+    exit('Refused: this request came from another site.');
+}
+
 // WHO IS SIGNED IN, AND WHAT THEY MAY DO. Item 107.
 //
 // REMOTE_USER is set by the form login in front of this page, verified on the
@@ -483,6 +495,16 @@ function limitedSaveProblem(string $candidate, string $who): string {
     // theirs by claiming it.
     $own = ownership($live);
 
+    // Path is free, but only among the folders their own rows already use: the
+    // drawer hides the others, and a POST could otherwise serve another
+    // customer's files, PHP source included. Apps and sites have separate roots.
+    $folderOf = fn(array $f): string => (strtolower($f[0]) === 'app' ? 'app' : 'web')
+        . '|' . explode('/', trim(trim($f[3] ?? ''), '/'))[0];
+    $myFolders = [];
+    foreach ($was as $f) {
+        if (rowOwner($f, $own) === $who && trim($f[3] ?? '') !== '') $myFolders[] = $folderOf($f);
+    }
+
     foreach ($now as $key => $f) {
         $name = $f[1];
         $mine = isset($f[15]) && trim($f[15]) !== '' && trim($f[15]) !== '-'
@@ -508,6 +530,9 @@ function limitedSaveProblem(string $candidate, string $who): string {
             if (!in_array($i, FREE_FIELDS, true)) {
                 $label = FIELDS[$i][1] ?? ('field ' . ($i + 1));
                 return "'" . $label . "' on '" . $name . "' is a request, not a save.";
+            }
+            if ($i === 3 && $b !== '' && !in_array($folderOf($f), $myFolders, true)) {
+                return "Path '" . $b . "' on '" . $name . "' is not one of your folders.";
             }
         }
         // Owner is inside FREE_FIELDS? No: 15 is not in the list, so a change
@@ -2021,7 +2046,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Checked, because it silently failed for weeks: the file did not
             // exist and the directory is not writable by www-data, so the guard
             // never ran and a stale page reverted a day of work on 2026-08-10.
-            $wroteBase = @file_put_contents(BASEHASH, trim((string) ($_POST['base'] ?? '')) . "\n" . savedBy($me) . "\n");
+            // Hex only: a newline in it would replace the "saved by" line below.
+            $postedBase = preg_replace('/[^0-9a-f]/i', '', (string) ($_POST['base'] ?? ''));
+            $wroteBase = @file_put_contents(BASEHASH, $postedBase . "\n" . savedBy($me) . "\n");
 
             if ($wroteBase === false) {
                 $message = 'Could not write ' . BASEHASH . ', so nothing was saved. '
@@ -2505,7 +2532,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $messageClass = 'bad';
         } else {
             $candidate = str_replace("\r\n", "\n", $candidate);
-            $wroteBase = @file_put_contents(SMBBASEHASH, trim((string) ($_POST['smbbase'] ?? '')) . "\n" . savedBy($me) . "\n");
+            $postedBase = preg_replace('/[^0-9a-f]/i', '', (string) ($_POST['smbbase'] ?? ''));
+            $wroteBase = @file_put_contents(SMBBASEHASH, $postedBase . "\n" . savedBy($me) . "\n");
 
             if ($wroteBase === false) {
                 $message = 'Could not write ' . SMBBASEHASH . ', so nothing was saved. '

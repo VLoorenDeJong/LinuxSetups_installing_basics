@@ -634,6 +634,13 @@ while IFS='|' read -r c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c11 c12 c13 c14 c15 c16 c17
 
     # Hostname rules. An underscore is invalid in a hostname: some resolvers
     # accept it, certificate authorities and browsers do not.
+    # Both are written unquoted into vhosts and ExecStart, so a space or a quote
+    # would break Apache for every site or hand dotnet extra arguments.
+    [[ -z "$path" || "$path" =~ ^[A-Za-z0-9._/-]+$ ]] \
+        || err "$label: Path '$path' may hold only letters, digits, dot, underscore, hyphen and /"
+    [[ -z "$sub" || "$sub" == "@" || "$sub" =~ ^=?[A-Za-z0-9.-]+$ ]] \
+        || err "$label: Domain '$sub' may hold only letters, digits, dot and hyphen"
+
     if [ -n "$sub" ]; then
         NEEDS_CERT=1
         case "$sub" in
