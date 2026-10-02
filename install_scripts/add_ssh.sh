@@ -132,7 +132,8 @@ HARDEN="/etc/ssh/sshd_config.d/10-linuxbasics-hardening.conf"
 {
     echo "# Written by add_ssh.sh. Audit 2026-10-02, H3."
     echo "PermitRootLogin no"
-    if [ -n "$REAL_USER" ] && [ -s "$REAL_HOME/.ssh/authorized_keys" ] \n       && journalctl -u ssh --no-pager 2>/dev/null | grep -q "Accepted publickey for $REAL_USER "; then
+    if [ -n "$REAL_USER" ] && [ -s "$REAL_HOME/.ssh/authorized_keys" ] \
+       && journalctl -u ssh --no-pager 2>/dev/null | grep -q "Accepted publickey for $REAL_USER "; then
         echo "PasswordAuthentication no"
         echo "KbdInteractiveAuthentication no"
     fi
