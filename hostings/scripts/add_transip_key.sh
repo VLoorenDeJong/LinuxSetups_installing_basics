@@ -125,6 +125,7 @@ done
 # first thing that can fail is still one of them. Guarded and never fatal: a
 # lone copy of this script on a bare machine keeps its own paste, below.
 KEY_ASK_FLAG=""
+LOGIN_ASK_FLAG=""
 if [ -f "$SCRIPT_DIR/secret_ask.sh" ]; then
     # shellcheck source=/dev/null
     . "$SCRIPT_DIR/secret_ask.sh" || true
@@ -209,7 +210,11 @@ else
         print_success "An account name is already stored at $LOGIN_FILE"
         printf "\033[33m⚠️ Replace it? Type yes to replace, anything else to keep it: \033[0m"
         read -r answer < /dev/tty
-        [ "$answer" = "yes" ] || { WANT_LOGIN=0; print_status "Keeping the stored account name."; }
+        if [ "$answer" = "yes" ]; then
+            LOGIN_ASK_FLAG="--ask"
+        else
+            WANT_LOGIN=0; print_status "Keeping the stored account name."
+        fi
     fi
 fi
 
@@ -293,10 +298,18 @@ fi
 # The account name is asked for here rather than kept in hostings.conf. That
 # file is committed, and half a credential in git is still a credential.
 if [ "$WANT_LOGIN" -eq 1 ]; then
-    echo ""
-    print_action "TYPE YOUR TRANSIP ACCOUNT NAME, then press Enter."
-    printf "\033[33m⚠️ Account name: \033[0m"
-    read -r login < /dev/tty
+    login=""
+    if command -v secret_ask >/dev/null 2>&1; then
+        login="$(secret_ask transip-login \
+                    --label "the TransIP account name" \
+                    --hint "the name you sign in to transip.nl with." \
+                    ${LOGIN_ASK_FLAG:+--ask})" || login=""
+    else
+        echo ""
+        print_action "TYPE YOUR TRANSIP ACCOUNT NAME, then press Enter."
+        printf "\033[33m⚠️ Account name: \033[0m"
+        read -r login < /dev/tty
+    fi
     if [ -z "$login" ]; then
         print_error "Nothing typed, so no account name was stored."
         print_action "Re-run this script to finish."
