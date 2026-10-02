@@ -117,6 +117,20 @@ if [ -n "$GIT_PUSH_USER" ]; then
     LOGIN_FILES+=("git-push-key|$(conf_get GIT_PUSH_KEY "/home/$GIT_PUSH_USER/.ssh/id_ed25519")|$GIT_PUSH_USER:$GIT_PUSH_USER|0600")
 fi
 
+# DKIM signing keys, one per domain: a reflash restores the key whose public
+# half DNS already publishes, instead of making a new one.
+DKIM_DIR="$(conf_get MAIL_DKIM_DIR /var/lib/rspamd/dkim)"
+DKIM_SEL="$(conf_get MAIL_DKIM_SELECTOR mail)"
+for k in "$DKIM_DIR"/*."$DKIM_SEL".key; do
+    [ -f "$k" ] || continue
+    LOGIN_FILES+=("dkim-$(basename "$k" ".$DKIM_SEL.key")|$k|_rspamd:_rspamd|0600")
+done
+# add_rspamd.sh asks for one by name before the key exists on this drive.
+case "$ONLY" in
+    dkim-*) printf '%s\n' "${LOGIN_FILES[@]}" | grep -q "^${ONLY}|" \
+                || LOGIN_FILES+=("$ONLY|$DKIM_DIR/${ONLY#dkim-}.$DKIM_SEL.key|_rspamd:_rspamd|0600") ;;
+esac
+
 if [ -n "$ONLY" ] && ! printf '%s\n' "${LOGIN_FILES[@]}" | grep -q "^${ONLY}|"; then
     print_error "'$ONLY' is not a login file. It is one of: $(printf '%s\n' "${LOGIN_FILES[@]}" | cut -d'|' -f1 | paste -sd, - | sed 's/,/, /g')."
     exit 1

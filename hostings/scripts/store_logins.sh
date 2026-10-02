@@ -86,6 +86,15 @@ if [ -n "$GIT_PUSH_USER" ]; then
     LOGIN_FILES+=("git-push-key|$(conf_get GIT_PUSH_KEY "/home/$GIT_PUSH_USER/.ssh/id_ed25519")|$GIT_PUSH_USER:$GIT_PUSH_USER|0600")
 fi
 
+# DKIM signing keys, one per domain: a reflash restores the key whose public
+# half DNS already publishes, instead of making a new one.
+DKIM_DIR="$(conf_get MAIL_DKIM_DIR /var/lib/rspamd/dkim)"
+DKIM_SEL="$(conf_get MAIL_DKIM_SELECTOR mail)"
+for k in "$DKIM_DIR"/*."$DKIM_SEL".key; do
+    [ -f "$k" ] || continue
+    LOGIN_FILES+=("dkim-$(basename "$k" ".$DKIM_SEL.key")|$k|_rspamd:_rspamd|0600")
+done
+
 # 0711 and a 0644 status: the console reads the status, nobody lists the rest.
 umask 077
 install -d -m 0711 "$STATE_DIR"

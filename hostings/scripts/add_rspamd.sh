@@ -413,7 +413,12 @@ if [ "$MODE" != "check" ]; then
     chmod 0700 "$DKIM_DIR"
 
     for dom in "${MAIL_DOMAINS[@]}"; do
+        if [ ! -f "$(key_path "$dom")" ] && [ -f "$SCRIPT_DIR/restore_logins.sh" ]; then
+            bash "$SCRIPT_DIR/restore_logins.sh" --only "dkim-$dom" || true
+        fi
         if [ -f "$(key_path "$dom")" ]; then
+            [ -f "$(pub_path "$dom")" ] || openssl rsa -in "$(key_path "$dom")" -pubout \
+                -out "$(pub_path "$dom")" 2>/dev/null
             print_success "DKIM key for $dom already exists."
             continue
         fi
