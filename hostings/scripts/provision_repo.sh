@@ -1030,12 +1030,12 @@ publish_config() {  # <row name> <url>
         print_error "$name: the config directory could not be refreshed, so the URL was not written."
         return 1
     fi
-    if [ "$conf" != "$SITES_CONF" ]; then
-        local saved="$SITES_CONF"
-        SITES_CONF="$conf"
-        _write_row_url "$name" "$2" || true
-        SITES_CONF="$saved"
-    fi
+    # Always, not only when the paths differ: "pre" resets the clone, which
+    # throws away the write write_back_url made before it.
+    local saved="$SITES_CONF"
+    SITES_CONF="$conf"
+    _write_row_url "$name" "$2" || true
+    SITES_CONF="$saved"
     if [ -z "$hook" ]; then
         print_success "$name: the URL is in $conf."
         return 0
