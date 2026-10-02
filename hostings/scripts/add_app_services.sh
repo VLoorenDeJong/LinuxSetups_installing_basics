@@ -470,6 +470,37 @@ else
     fi
 fi
 
+# THE SANDBOX FOR AN APP THAT RUNS AS THE RUN USER. Audit 2026-10-02, C3.
+# The run user is jenkins, which holds root sudo grants, so a broken app must
+# not reach sudo (NoNewPrivileges) nor Jenkins' own files and keys. Every app
+# shares that uid, so APP_ROOT and BACKUP_ROOT are emptied and only the app's
+# own folders are bound back: a sibling's dll and secrets are not there to
+# touch. Its state folder is its HOME: ASP.NET keeps its sign-in keys there.
+app_sandbox() {  # <app_root> <unit base name> <own dir> <backup dir> [data dir]
+    local hide="" e r
+    for e in "${ENV_LIST[@]}"; do
+        r="$(conf_get "APP_ROOT_$(echo "$e" | tr '[:lower:]' '[:upper:]')" "")"
+        [ -n "$r" ] && [ "$r" != "$1" ] && hide="$hide -$r"
+    done
+    cat <<EOF
+Environment=HOME=/var/lib/$2
+StateDirectory=$2
+NoNewPrivileges=yes
+RestrictSUIDSGID=yes
+CapabilityBoundingSet=
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+TemporaryFileSystem=$1:ro${BACKUP_ROOT:+ $BACKUP_ROOT:ro}
+BindPaths=-$3${BACKUP_ROOT:+ -$4}${5:+ -$5}
+InaccessiblePaths=-/var/lib/jenkins -/var/lib/hosting-manager -/etc/github-app -/etc/letsencrypt -/etc/app-secrets -/etc/apache2/session-crypto.key${hide}
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+EOF
+}
+
 # One row's second copy, for one environment. Made by root and handed to the
 # run user, rather than left for the application to create at the moment
 # somebody first loads a page.
@@ -599,6 +630,19 @@ while IFS='|' read -r type name port path subdomain datasource options auth repo
         # executes. Adding a language is one arm here, not a new row type.
         unit_user="$RUN_USER"
         unit_extra=""
+        # The data folder, resolved as apply_app_settings.sh does: =<path> as
+        # written, another row's name as that row's wwwroot, else inside work_dir.
+        ds="$(echo "${datasource:-}" | xargs)"
+        data_dir=""
+        case "$ds" in
+            ""|-) ;;
+            =*)   data_dir="${ds#=}" ;;
+            *)    ds_path="$(grep -v '^[[:space:]]*#' "$SITES_CONF" | awk -F'|' -v n="$ds" \
+                      '{ gsub(/ /, "", $2); if ($2 == n) { gsub(/ /, "", $4); print $4; exit } }')"
+                  [ -n "$ds_path" ] && data_dir="${app_root%/}/$(dirname "${ds_path#/}")/wwwroot" ;;
+        esac
+        sandbox="$(app_sandbox "$app_root" "app-${name}${suffix}" "$work_dir" \
+            "${BACKUP_ROOT%/}/${name}/${env}" "$data_dir")"
         case "$row_runtime" in
             dotnet|uno)
                 exec_start="${DOTNET_BIN} ${env_path} --urls \"http://localhost:${env_port}\""
@@ -616,6 +660,7 @@ while IFS='|' read -r type name port path subdomain datasource options auth repo
                 env_path="${app_root%/}/.docker/${image}.built"
                 work_dir="/"
                 unit_user="root"
+                sandbox=""
                 exec_start="/usr/bin/docker run --rm --name ${image} -p 127.0.0.1:${env_port}:8080 -e ASPNETCORE_ENVIRONMENT=Production ${image}:latest"
                 # The marker comment is how prune_orphans.sh finds it again.
                 unit_extra="ExecStartPre=-/usr/bin/docker rm -f ${image}
@@ -651,6 +696,7 @@ ExecStop=/usr/bin/docker stop ${image}
                 env_path="/var/lib/upstream/${pkg}/${env}"
                 work_dir="/"
                 unit_user="root"
+                sandbox=""
                 cport="$(recipe_all "$recipe" CONTAINER_PORT | head -n1)"
 
                 ds="$(echo "$datasource" | xargs)"
@@ -746,7 +792,8 @@ Restart=always
 RestartSec=10
 KillSignal=SIGINT
 SyslogIdentifier=app-${name}${suffix}
-User=${unit_user}
+User=${unit_user}${sandbox:+
+${sandbox}}
 Environment=ASPNETCORE_ENVIRONMENT=Production
 Environment=DOTNET_PRINT_TELEMETRY_MESSAGE=false
 
