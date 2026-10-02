@@ -1219,9 +1219,18 @@ if [ -n "$JENKINS_LAN_PORT" ]; then
     fi
 fi
 
+LAN_WEB_ROOT="$(conf_get AUTH_WEB_ROOT /var/www/auth)"
+LAN_SESSION_KEY="$(conf_get AUTH_SESSION_KEY_FILE /etc/apache2/session-crypto.key)"
+LAN_LOGIN_PAGE="login.html"
+
 if [ -n "$JENKINS_LAN_PORT" ] && ! command -v a2ensite >/dev/null 2>&1; then
     print_info "Apache is not installed, so the jenkins panel port was not applied."
     print_action "Run add_apache_webserver.sh, then this script again."
+elif [ -n "$JENKINS_LAN_PORT" ] && { [ ! -f "$LAN_WEB_ROOT/$LAN_LOGIN_PAGE" ] || [ ! -f "$LAN_SESSION_KEY" ]; }; then
+    # On a fresh install add_app_vhosts.sh, which installs both, runs after this
+    # script; install_hostings.sh runs this script again once it has.
+    print_warning "No login page or session key yet, so the jenkins panel port was not applied."
+    print_action "Run add_app_vhosts.sh, then this script again."
 elif [ -n "$JENKINS_LAN_PORT" ]; then
     LAN_AUTH_FILE="$(conf_get AUTH_USER_FILE /etc/apache2/.htpasswd-progress)"
     LAN_ADMIN_USER="$(conf_get AUTH_ADMIN_USER admin)"
