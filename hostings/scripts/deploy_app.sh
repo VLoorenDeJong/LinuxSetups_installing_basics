@@ -481,6 +481,33 @@ if ! rsync -a --delete "${RSYNC_EXCLUDES[@]}" "$SOURCE_DIR"/ "$TARGET_DIR"/; the
 fi
 print_success "Files in place."
 
+# The code stays the deploy account's and is read by the app's group only, so
+# the app cannot rewrite it and no other account reads the secrets in
+# appsettings.json. Only its data folders go to the account it runs as.
+SERVICE_USER="$(conf_get APP_SERVICE_USER '')"
+[ "$SERVICE_USER" = "-" ] && SERVICE_USER=""
+if [ -n "$SERVICE_USER" ] && id "$SERVICE_USER" >/dev/null 2>&1; then
+    prune=()
+    for data_dir in "${DATA_DIR_LIST[@]}"; do
+        prune+=(-path "$TARGET_DIR/$data_dir" -o)
+    done
+    if ! find "$TARGET_DIR" \( "${prune[@]}" -false \) -prune -o ! -type l \
+            -exec chgrp "$SERVICE_USER" {} + -exec chmod g+rX,g-w,o-rwx {} +; then
+        print_error "Could not give $SERVICE_USER read access to $TARGET_DIR, so the app could not start."
+        rollback
+        exit 1
+    fi
+    for data_dir in "${DATA_DIR_LIST[@]}"; do
+        if ! install -d -m 2775 -o "$SERVICE_USER" -g "$SERVICE_USER" "$TARGET_DIR/$data_dir" \
+           || ! find "$TARGET_DIR/$data_dir" ! -user "$SERVICE_USER" -exec chown "$SERVICE_USER:$SERVICE_USER" {} +; then
+            print_error "Could not hand $TARGET_DIR/$data_dir to $SERVICE_USER, so the app could not write its data."
+            rollback
+            exit 1
+        fi
+    done
+    print_status "Data folders belong to $SERVICE_USER: ${DATA_DIR_LIST[*]}"
+fi
+
 # -----------------------------------------------------------------------------
 # The build arrives with the developer's own appsettings.json, which points at
 # Windows paths. Rewrite it before the unit starts, or the app either crashes or

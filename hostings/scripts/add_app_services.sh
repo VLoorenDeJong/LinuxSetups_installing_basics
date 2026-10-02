@@ -192,6 +192,30 @@ if ! id "$RUN_USER" >/dev/null 2>&1; then
     exit 1
 fi
 
+# THE ACCOUNT THE APPS RUN AS, separate from the one that deploys them. Audit
+# 2026-10-02, C3: the deploy account holds root sudo grants, and an app sharing
+# its uid could reach them. Empty keeps the old behaviour: units run as RUN_USER.
+SERVICE_USER="$(conf_get APP_SERVICE_USER '')"
+[ "$SERVICE_USER" = "-" ] && SERVICE_USER=""
+if [ -z "$SERVICE_USER" ]; then
+    SERVICE_USER="$RUN_USER"
+else
+    case "$SERVICE_USER" in
+        root|*[!a-z0-9_-]*)
+            print_error "APP_SERVICE_USER '$SERVICE_USER' is not a usable account name."
+            print_action "Name an unprivileged account in $SITES_CONF, lowercase, for example: apps"
+            exit 1 ;;
+    esac
+fi
+if ! id "$SERVICE_USER" >/dev/null 2>&1; then
+    useradd --system --user-group --no-create-home --home-dir /nonexistent \
+        --shell /usr/sbin/nologin "$SERVICE_USER" || {
+        print_error "Could not create the account '$SERVICE_USER' for the apps to run as."
+        exit 1
+    }
+    print_status "Made the account '$SERVICE_USER' for the apps to run as: no login, no home, no sudo."
+fi
+
 # Environments this machine runs. Every app row is generated once per
 # environment, so one row becomes one unit per env.
 IFS=',' read -r -a ENV_LIST <<< "$(conf_get ENVS live)"
@@ -273,7 +297,8 @@ row_selected() {
 
 print_header "App services"
 print_status "Config:       $SITES_CONF"
-print_status "Run user:     $RUN_USER"
+print_status "Deploy user:  $RUN_USER"
+print_status "Apps run as:  $SERVICE_USER"
 print_status "dotnet:       $DOTNET_BIN"
 print_status "Environments: ${ENV_LIST[*]}"
 if [ -n "$ONLY_ROWS" ]; then
@@ -470,12 +495,12 @@ else
     fi
 fi
 
-# THE SANDBOX FOR AN APP THAT RUNS AS THE RUN USER. Audit 2026-10-02, C3.
-# The run user is jenkins, which holds root sudo grants, so a broken app must
-# not reach sudo (NoNewPrivileges) nor Jenkins' own files and keys. Every app
-# shares that uid, so APP_ROOT and BACKUP_ROOT are emptied and only the app's
-# own folders are bound back: a sibling's dll and secrets are not there to
-# touch. Its state folder is its HOME: ASP.NET keeps its sign-in keys there.
+# THE SANDBOX, the second lock after SERVICE_USER. Audit 2026-10-02, C3. A
+# broken app must not reach sudo (NoNewPrivileges) nor Jenkins' files and keys.
+# Every app shares one uid, so APP_ROOT, BACKUP_ROOT and /home are emptied and
+# only the app's own folders are bound back: a sibling's dll and secrets are
+# not there to touch. Its state folder is its HOME: ASP.NET keeps its sign-in
+# keys there.
 app_sandbox() {  # <app_root> <unit base name> <own dir> <backup dir> [data dir]
     local hide="" e r
     for e in "${ENV_LIST[@]}"; do
@@ -490,7 +515,7 @@ RestrictSUIDSGID=yes
 CapabilityBoundingSet=
 PrivateTmp=yes
 ProtectSystem=strict
-ProtectHome=read-only
+ProtectHome=tmpfs
 TemporaryFileSystem=$1:ro${BACKUP_ROOT:+ $BACKUP_ROOT:ro}
 BindPaths=-$3${BACKUP_ROOT:+ -$4}${5:+ -$5}
 InaccessiblePaths=-/var/lib/jenkins -/var/lib/hosting-manager -/etc/github-app -/etc/letsencrypt -/etc/app-secrets -/etc/apache2/session-crypto.key${hide}
@@ -512,19 +537,39 @@ ensure_backup_dirs() {
     for sub in databases project_photos; do
         dir="${BACKUP_ROOT%/}/${app}/${env}/${sub}"
         [ -d "$dir" ] && continue
-        if ! install -d -m 2775 -o "$RUN_USER" -g "$RUN_USER" "$dir"; then
+        if ! install -d -m 2775 -o "$SERVICE_USER" -g "$SERVICE_USER" "$dir"; then
             print_error "Cannot create the backup folder $dir for '$app' in '$env'."
             return 1
         fi
         print_status "Made $dir for $app ($env)."
     done
 
-    if ! sudo -u "$RUN_USER" test -w "${BACKUP_ROOT%/}/${app}/${env}/databases" 2>/dev/null; then
-        print_error "$RUN_USER cannot write the backup folder for '$app' in '$env'."
-        print_action "Check what owns ${BACKUP_ROOT} and whether $RUN_USER can enter every folder above it."
-        return 1
+    # Owner, not `sudo -u test -w`: the app reaches it through its sandbox's
+    # bind mount, so the folders above it need not be enterable by the account.
+    dir="${BACKUP_ROOT%/}/${app}/${env}"
+    if [ "$(stat -c '%U' "$dir/databases")" != "$SERVICE_USER" ]; then
+        chown -R "$SERVICE_USER:$SERVICE_USER" "$dir" || {
+            print_error "Cannot hand $dir to $SERVICE_USER for '$app' in '$env'."
+            return 1
+        }
+        print_status "Handed $dir to $SERVICE_USER."
     fi
     return 0
+}
+
+# An app deployed before SERVICE_USER existed: the same handover deploy_app.sh
+# makes after every deploy. Code readable by the group only, data its own.
+IFS=',' read -r -a DATA_DIR_LIST <<< "$(conf_get DATA_DIRS "wwwroot/databases, wwwroot/project_photos")"
+for i in "${!DATA_DIR_LIST[@]}"; do DATA_DIR_LIST[$i]="$(echo "${DATA_DIR_LIST[$i]}" | xargs)"; done
+hand_to_service() {  # <app dir>
+    local dir="$1" d prune=()
+    for d in "${DATA_DIR_LIST[@]}"; do prune+=(-path "$dir/$d" -o); done
+    find "$dir" \( "${prune[@]}" -false \) -prune -o ! -type l \
+        -exec chgrp "$SERVICE_USER" {} + -exec chmod g+rX,g-w,o-rwx {} + || return 1
+    for d in "${DATA_DIR_LIST[@]}"; do
+        install -d -m 2775 -o "$SERVICE_USER" -g "$SERVICE_USER" "$dir/$d" || return 1
+        find "$dir/$d" ! -user "$SERVICE_USER" -exec chown "$SERVICE_USER:$SERVICE_USER" {} + || return 1
+    done
 }
 
 UNIT_DIR="/etc/systemd/system"
@@ -628,7 +673,7 @@ while IFS='|' read -r type name port path subdomain datasource options auth repo
 
         # The row says what it is written in, and that decides what the unit
         # executes. Adding a language is one arm here, not a new row type.
-        unit_user="$RUN_USER"
+        unit_user="$SERVICE_USER"
         unit_extra=""
         # The data folder, resolved as apply_app_settings.sh does: =<path> as
         # written, another row's name as that row's wwwroot, else inside work_dir.
@@ -774,6 +819,12 @@ ExecStop=/usr/bin/docker stop ${cname}"
                 continue
                 ;;
         esac
+
+        if [ "$unit_user" = "$SERVICE_USER" ] && [ "$SERVICE_USER" != "$RUN_USER" ] \
+           && [ -d "$work_dir" ] && ! hand_to_service "$work_dir"; then
+            FAILED+=("$name/$env (could not give $SERVICE_USER its folder)")
+            continue
+        fi
 
         new_unit="$(cat <<EOF
 # Generated by add_app_services.sh from /etc/hostings/hostings.conf
