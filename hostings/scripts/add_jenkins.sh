@@ -755,9 +755,9 @@ fi
 # Removed here rather than only on the machine, so a box that has it is repaired
 # by a run rather than by somebody remembering.
 if [ -f "$JENKINS_HOME/.gitconfig" ] \
-   && sudo -u jenkins git config --global --get-regexp insteadOf >/dev/null 2>&1; then
+   && sudo -u jenkins git -C / config --global --get-regexp insteadOf >/dev/null 2>&1; then
     cp -a "$JENKINS_HOME/.gitconfig" "$JENKINS_HOME/.gitconfig.bak-$(date +%F)"
-    sudo -u jenkins git config --global --remove-section url."git@github.com:" 2>/dev/null || true
+    sudo -u jenkins git -C / config --global --remove-section url."git@github.com:" 2>/dev/null || true
     print_success "Removed the git insteadOf rewrite that forced HTTPS back onto SSH."
 fi
 
@@ -785,8 +785,8 @@ fi
 #
 # So the fetch that cannot succeed is the one being switched off, and the fetch
 # that matters is unaffected.
-if [ "$(sudo -u jenkins git config --global --get fetch.recurseSubmodules 2>/dev/null)" != "no" ]; then
-    sudo -u jenkins git config --global fetch.recurseSubmodules no
+if [ "$(sudo -u jenkins git -C / config --global --get fetch.recurseSubmodules 2>/dev/null)" != "no" ]; then
+    sudo -u jenkins git -C / config --global fetch.recurseSubmodules no
     print_success "Jenkins' git no longer recurses into submodules on fetch."
     print_info "  A moved submodule pin used to abort every checkout: it cannot mint a token for another owner."
 fi
