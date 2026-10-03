@@ -41,6 +41,8 @@ mkdir -p "$OUT_DIR" || { echo "cannot create $OUT_DIR" >&2; exit 1; }
 # Control characters are stripped rather than escaped: one stray byte in a
 # discovered name would otherwise cost the page the whole file, not one row.
 json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/[[:cntrl:]]//g'; }
+# Printable ASCII, tabs and newlines only: one stray byte makes the whole file invalid JSON.
+ascii_only() { LC_ALL=C tr -cd '\11\12\40-\176'; }
 
 # A collector that could not run publishes null, never an empty list: the page
 # must be able to tell "nothing is running" from "nobody could look".
@@ -271,7 +273,7 @@ collect_support() {
                 prev="$product"; body=""
             fi
             body="$body,\"$(json_escape "$cycle")\":{\"eol\":\"$(json_escape "$eol")\",\"isEol\":$([ "$iseol" = yes ] && echo true || echo false),\"source\":\"$(json_escape "$src")\"}"
-        done < "$SUPPORT_DIR/support.tsv"
+        done < <(ascii_only < "$SUPPORT_DIR/support.tsv")
         [ -n "$prev" ] && all="$all,\"$(json_escape "$prev")\":{${body#,}}"
         SUPPORT_JSON="{${all#,}}"
     fi
@@ -282,16 +284,19 @@ collect_support() {
         while IFS=$'\t' read -r name ver comp eol; do
             [ -n "$name" ] || continue
             list="$list,{\"name\":\"$(json_escape "$name")\",\"version\":\"$(json_escape "$ver")\",\"component\":\"$(json_escape "$comp")\",\"eol\":\"$(json_escape "$eol")\"}"
-        done < "$SUPPORT_DIR/host-packages.tsv"
+        done < <(ascii_only < "$SUPPORT_DIR/host-packages.tsv")
         HOSTPKG_JSON="[${list#,}]"
     fi
 
     local f key line out=""
+    # jenkins writes these and runs site code, so: no symlink, one known shape.
     for f in "$DEPLOYED_DIR"/*.framework; do
-        [ -s "$f" ] || continue
+        [ -f "$f" ] && [ ! -L "$f" ] || continue
         key="$(basename "$f" .framework)"
-        line="$(head -1 "$f")"
-        out="$out,\"$(json_escape "$key")\":\"$(json_escape "$line")\""
+        [[ "$key" =~ ^[A-Za-z0-9_.-]{1,80}$ ]] || continue
+        line="$(head -c 64 "$f" | head -1)"
+        [[ "$line" =~ ^[a-z]+\ [0-9][0-9A-Za-z.+-]{0,30}$ ]] || continue
+        out="$out,\"$key\":\"$line\""
     done
     FRAMEWORKS_JSON="{${out#,}}"
 }

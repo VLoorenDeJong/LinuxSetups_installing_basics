@@ -67,7 +67,7 @@ fi
 
 print_header "Support dates"
 mkdir -p "$OUT_DIR"
-NEW="$(mktemp)"; HOSTNEW="$(mktemp)"
+NEW="$(mktemp -p "$OUT_DIR")"; HOSTNEW="$(mktemp -p "$OUT_DIR")"
 trap 'rm -f "$NEW" "$HOSTNEW"' EXIT
 FAILED=()
 
@@ -79,20 +79,30 @@ keep_old() {
     FAILED+=("$1")
 }
 
+# One source: fetch, turn into lines, keep last run's lines when either fails.
+# A 200 holding HTML or a changed shape is a failure too, not a crash.
+take() {
+    local product="$1" url="$2" prog="$3" json out
+    shift 3
+    if json="$(fetch "$url")" && out="$(printf '%s' "$json" | jq -r "$@" "$prog" 2>/dev/null)" \
+       && [ -n "$out" ]; then
+        printf '%s\n' "$out" >> "$NEW"
+    else
+        keep_old "$product"
+    fi
+}
+
+TODAY="$(date +%F)"
+
 # --- .NET: Microsoft ----------------------------------------------------------
-if json="$(fetch "$MS_URL")" && [ -n "$json" ]; then
-    printf '%s' "$json" | jq -r --arg src "Microsoft" '
-        ."releases-index"[]
-        | select(."eol-date" != null)
-        | ["dotnet", (."channel-version" | split(".")[0]), ."eol-date",
-           (if ."support-phase" == "eol" then "yes" else "no" end), $src] | @tsv' >> "$NEW"
-else
-    keep_old dotnet
-fi
+take dotnet "$MS_URL" '
+    ."releases-index"[]
+    | select(."eol-date" != null)
+    | ["dotnet", (."channel-version" | split(".")[0]), ."eol-date",
+       (if ."support-phase" == "eol" then "yes" else "no" end), "Microsoft"] | @tsv'
 
 # --- Ubuntu: Canonical, read from this machine --------------------------------
 # Columns: version,codename,series,created,release,eol,eol-server,eol-esm,...
-TODAY="$(date +%F)"
 awk -F, -v t="$TODAY" -v OFS="\t" 'NR > 1 && $6 != "" {
         v = $1; sub(/ LTS$/, "", v)
         print "ubuntu", v, $6, ($6 <= t ? "yes" : "no"), "Canonical"
@@ -101,26 +111,20 @@ awk -F, -v t="$TODAY" -v OFS="\t" 'NR > 1 && $6 != "" {
 UBUNTU_EOL="$(awk -F, -v v="$VERSION_ID" '{x = $1; sub(/ LTS$/, "", x)} x == v {print $6}' "$UBUNTU_CSV")"
 
 # --- Node.js: its release schedule --------------------------------------------
-if json="$(fetch "$NODE_URL")" && [ -n "$json" ]; then
-    printf '%s' "$json" | jq -r --arg t "$TODAY" '
-        to_entries[]
-        | select(.key | test("^v[0-9]+$"))
-        | ["nodejs", (.key | ltrimstr("v")), .value.end,
-           (if .value.end <= $t then "yes" else "no" end), "Node.js"] | @tsv' >> "$NEW"
-else
-    keep_old nodejs
-fi
+take nodejs "$NODE_URL" '
+    to_entries[]
+    | select(.key | test("^v[0-9]+$"))
+    | ["nodejs", (.key | ltrimstr("v")), (.value.end // "-"),
+       (if (.value.end // "9999") <= $t then "yes" else "no" end), "Node.js"] | @tsv' \
+    --arg t "$TODAY"
 
 # --- Frameworks: endoflife.date, the only source a machine can read -----------
 for p in angular vue react svelte; do
-    if json="$(fetch "$EOLD_URL/$p")" && [ -n "$json" ]; then
-        printf '%s' "$json" | jq -r --arg p "$p" '
-            .result.releases[]
-            | [$p, .name, (.eolFrom // "-"),
-               (if .isEol then "yes" else "no" end), "endoflife.date"] | @tsv' >> "$NEW"
-    else
-        keep_old "$p"
-    fi
+    take "$p" "$EOLD_URL/$p" '
+        .result.releases[]
+        | [$p, .name, (.eolFrom // "-"),
+           (if .isEol then "yes" else "no" end), "endoflife.date"] | @tsv' \
+        --arg p "$p"
 done
 
 # --- Host packages: which archive each came from ------------------------------
@@ -133,7 +137,13 @@ for spec in "php:php[0-9.]*" "python:python3.[0-9]*" "java:openjdk-[0-9]*-jre-he
         | sort -V | tail -1)"
     [ -n "$pkg" ] || continue
     ver="$(dpkg-query -W -f='${Version}' "$pkg" 2>/dev/null)"
-    comp="$(apt-cache policy "$pkg" 2>/dev/null | awk '/\*\*\*/ {getline; print $3; exit}' | awk -F/ '{print $NF}')"
+    # Only Ubuntu's own archive counts: a PPA or vendor repo also calls itself main.
+    comp="$(apt-cache policy "$pkg" 2>/dev/null | awk '/\*\*\*/ {
+        getline
+        if ($2 ~ /^https?:\/\/([a-z0-9.-]+\.)?(archive|ports|security)\.ubuntu\.com\//) {
+            n = split($3, a, "/"); print a[n]
+        } else print "other"
+        exit }')"
     eol="-"; [ "$comp" = "main" ] && eol="${UBUNTU_EOL:--}"
     printf '%s\t%s\t%s\t%s\n' "$name" "${ver%%[-+~]*}" "${comp:-unknown}" "$eol" >> "$HOSTNEW"
 done

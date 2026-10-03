@@ -61,7 +61,15 @@ apt-get install -y \
     lsb-release
 
 # Add Docker's official GPG key
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --batch --yes --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+# Downloaded first, so a failed download can never overwrite a good keyring.
+DOCKER_KEY_TMP="$(mktemp)"
+if ! curl -fsSL -o "$DOCKER_KEY_TMP" https://download.docker.com/linux/ubuntu/gpg \
+   || ! gpg --batch --yes --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg "$DOCKER_KEY_TMP"; then
+    rm -f "$DOCKER_KEY_TMP"
+    echo -e "\e[31m❌ Could not fetch Docker's signing key. Check the network, then run this again.\e[0m"
+    exit 1
+fi
+rm -f "$DOCKER_KEY_TMP"
 
 # Set up stable repository
 echo \

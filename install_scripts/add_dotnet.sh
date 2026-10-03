@@ -394,7 +394,7 @@ choose_dotnet_versions() {
     # Enter takes the newest LTS, so an STS is only ever chosen on purpose.
     local default def_pos="$last"
     default="$(get_latest_dotnet_lts)"
-    [ -n "$default" ] || default="${available[-1]}"
+    printf '%s\n' "${available[@]}" | grep -qx "$default" || default="${available[-1]}"
     {
         echo ""
         echo -e "\e[36m=== .NET version ===\e[0m"

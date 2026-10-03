@@ -22,8 +22,11 @@ for spec in "angular:@angular/core" "vue:vue" "svelte:svelte" "react:react"; do
         ver="$(grep -oE "\"$pkg\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" "$SRC/package.json" \
             | head -1 | sed -E 's/.*:[[:space:]]*"[^0-9]*([0-9][^"]*)"/\1/')"
     fi
-    if [ -n "$ver" ]; then
+    # "latest", "workspace:*" and "^18 || ^19" name no version, so nothing is said.
+    ver="${ver%% *}"
+    if [[ "$ver" =~ ^[0-9]+(\.[0-9]+)*([-+][0-9A-Za-z.]+)?$ ]]; then
         printf '%s %s\n' "$product" "$ver"
         exit 0
     fi
+    [ -n "$ver" ] && exit 0
 done
