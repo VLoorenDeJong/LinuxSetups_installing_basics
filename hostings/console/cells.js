@@ -246,13 +246,24 @@ function entries(kind) {
 // never made its row sweep: a Blazor app is "activating" for about a second,
 // and the page was reading a snapshot minutes old. readStatus() re-derives all
 // of it, and boot.js calls it every few seconds with a fresh file.
-let RUNTIME_OF, DOTNET_HAVE, UNITS, STATUS_AGE, STATUS_FRESH,
+let RUNTIME_OF, DOTNET_HAVE, DOTNET_SUPPORT, UNITS, STATUS_AGE, STATUS_FRESH,
     SVC, CFG, FW, VHOSTS, LISTEN, CERTS;
 
 // A published file older than this is not trusted. The writer runs every 5
 // seconds, so a minute means it stopped, and the page must say unknown rather
 // than show a minute-old answer as current.
 const STATUS_MAX_AGE = 60;
+
+// Amber from six months before Microsoft's end date, red after it.
+const SUPPORT_WARN_DAYS = 183;
+function supportOf(major) {
+  const s = DOTNET_SUPPORT && DOTNET_SUPPORT[major];
+  if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(String(s.eol || ''))) {
+    return { level: s && s.phase === 'eol' ? 'bad' : 'ok', eol: '' };
+  }
+  const days = (Date.parse(s.eol + 'T00:00:00Z') - Date.now()) / 86400000;
+  return { level: days <= 0 ? 'bad' : days <= SUPPORT_WARN_DAYS ? 'warn' : 'ok', eol: s.eol };
+}
 
 function readStatus() {
   // What each deployed build targets, keyed by unit name. Read out of the
@@ -262,6 +273,8 @@ function readStatus() {
     ? STATUS.runtimes : {};
   DOTNET_HAVE = (STATUS && Array.isArray(STATUS.dotnetInstalled))
     ? STATUS.dotnetInstalled : null;
+  DOTNET_SUPPORT = (STATUS && STATUS.dotnetSupport && typeof STATUS.dotnetSupport === 'object')
+    ? STATUS.dotnetSupport : {};
 
   // null means nobody could look: either no file, or a collector that failed.
   // An empty Map means it looked and found nothing.
@@ -1438,10 +1451,15 @@ function render() {
     // tooltip along with whether this machine can actually run it.
     const major = String(ver).split('.')[0];
     const ok = !DOTNET_HAVE || DOTNET_HAVE.some(h => String(h).split('.')[0] === major);
+    const life = supportOf(major);
     const tip = t.rtNeeds.replace('%v', ver)
-      + (DOTNET_HAVE ? '\n' + t.rtHave.replace('%l', DOTNET_HAVE.join(', ')) : '');
-    return `<td class="runtime"><span class="pill lv-${ok ? 'ok' : 'bad'}"
-      title="${esc(tip)}">.NET ${esc(major)}</span></td>`;
+      + (DOTNET_HAVE ? '\n' + t.rtHave.replace('%l', DOTNET_HAVE.join(', ')) : '')
+      + (life.eol ? '\n' + (life.level === 'bad' ? t.rtEolSince : t.rtEolOn).replace('%d', life.eol) : '');
+    const level = !ok ? 'bad' : life.level;
+    const note = life.level === 'bad' ? `, ${t.rtEolShort}`
+      : life.level === 'warn' ? `, ${t.rtEolSoonShort}` : '';
+    return `<td class="runtime"><span class="pill lv-${level}"
+      title="${esc(tip)}">.NET ${esc(major)}${esc(note)}</span></td>`;
   };
 
   // Two views of the same rows. Serving answers "is it up", Pipeline answers

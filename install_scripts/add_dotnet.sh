@@ -258,20 +258,35 @@ load_dotnet_lts_list() {
 # "<major> <lts|sts> <eol-date>". Previews and release candidates are left out.
 DOTNET_SUPPORTED=""
 
+DOTNET_CHANNELS=""   # every channel: "<major> <type> <phase> <eol-date>"
+
 load_dotnet_supported() {
     [ -n "$DOTNET_SUPPORTED" ] && return 0
     command -v curl >/dev/null 2>&1 || return 1
-    local ch major type eol
-    DOTNET_SUPPORTED="$(curl -fsSL --max-time 10 "$DOTNET_RELEASES_URL" 2>/dev/null \
+    local ch major type phase eol
+    DOTNET_CHANNELS="$(curl -fsSL --max-time 10 "$DOTNET_RELEASES_URL" 2>/dev/null \
         | tr -d ' \n\r\t' | tr '{' '\n' \
-        | grep -E '"support-phase":"(active|maintenance)"' \
+        | grep '"channel-version"' \
         | while read -r ch; do
             major="$(echo "$ch" | grep -oE '"channel-version":"[0-9]+' | grep -oE '[0-9]+$')"
             type="$(echo "$ch" | grep -oE '"release-type":"[a-z]+' | sed 's/.*"//')"
+            phase="$(echo "$ch" | grep -oE '"support-phase":"[a-z-]+' | sed 's/.*"//')"
             eol="$(echo "$ch" | grep -oE '"eol-date":"[0-9-]+' | sed 's/.*"//')"
-            [ -n "$major" ] && echo "$major ${type:-?} ${eol:-?}"
+            [ -n "$major" ] && echo "$major ${type:-?} ${phase:-?} ${eol:-?}"
         done)"
+    DOTNET_SUPPORTED="$(printf '%s\n' "$DOTNET_CHANNELS" \
+        | awk '$3 == "active" || $3 == "maintenance" {print $1, $2, $4}')"
     [ -n "$DOTNET_SUPPORTED" ]
+}
+
+# The console's Runs on column reads this to mark a build out of support.
+DOTNET_SUPPORT_FILE="/var/lib/linuxbasics/dotnet-support"
+save_dotnet_support() {
+    load_dotnet_supported || return 0
+    mkdir -p "$(dirname "$DOTNET_SUPPORT_FILE")" \
+        && printf '%s\n' "$DOTNET_CHANNELS" > "$DOTNET_SUPPORT_FILE.new" \
+        && chmod 0644 "$DOTNET_SUPPORT_FILE.new" \
+        && mv -f "$DOTNET_SUPPORT_FILE.new" "$DOTNET_SUPPORT_FILE"
 }
 
 # Offline, only the LTS formula is known, so only LTS majors are offered.
@@ -617,6 +632,7 @@ if [ ${#STILL_MISSING[@]} -gt 0 ]; then
     exit 1
 fi
 
+save_dotnet_support || print_warning "Could not save the .NET support dates, so the console shows none."
 print_success ".NET installation and configuration complete"
 echo -e "\e[34m📊 SDK/Runtime: \e[0m$(dotnet --version 2>/dev/null || echo 'runtime-only install (no SDK)')"
 echo -e "\e[34m🌐 ASP.NET Core: \e[0m"

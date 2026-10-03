@@ -210,6 +210,8 @@ collect_units() {
 # to show its version now. It costs a `systemctl show` plus a file read per unit.
 RUNTIME_JSON='{}'
 INSTALLED_JSON='null'
+SUPPORT_JSON='null'
+DOTNET_SUPPORT_FILE="/var/lib/linuxbasics/dotnet-support"
 collect_runtimes() {
     local out="" unit dll cfg ver name raw
 
@@ -250,6 +252,17 @@ collect_runtimes() {
         INSTALLED_JSON="[${list#,}]"
     else
         INSTALLED_JSON='null'
+    fi
+
+    # Microsoft's end dates per major, saved by add_dotnet.sh. Absent means unknown.
+    SUPPORT_JSON='null'
+    if [ -r "$DOTNET_SUPPORT_FILE" ]; then
+        local major type phase eol sup=""
+        while read -r major type phase eol; do
+            [[ "$major" =~ ^[0-9]+$ ]] || continue
+            sup="$sup,\"$major\":{\"type\":\"$(json_escape "$type")\",\"phase\":\"$(json_escape "$phase")\",\"eol\":\"$(json_escape "$eol")\"}"
+        done < "$DOTNET_SUPPORT_FILE"
+        SUPPORT_JSON="{${sup#,}}"
     fi
 }
 
@@ -331,6 +344,7 @@ write_status() {
   "firewall": $FIREWALL_JSON,
   "runtimes": $RUNTIME_JSON,
   "dotnetInstalled": $INSTALLED_JSON,
+  "dotnetSupport": $SUPPORT_JSON,
   "errors": [${ERRORS#,}]
 }
 JSON

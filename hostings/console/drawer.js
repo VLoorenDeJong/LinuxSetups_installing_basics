@@ -1395,7 +1395,12 @@ function renderDrawerFields() {
         }
         const cur = (v === '' ? 'dotnet' : v).toLowerCase();
         const known = RUNTIMES.some(([r]) => r === cur);
-        input = `<select data-i="${i}" data-runtime>${RUNTIMES.map(([r, label, why]) => `
+        // An out-of-support .NET is never offered, only kept on a row already using it.
+        const offered = RUNTIMES.filter(([r]) => {
+          const m = r.match(/^dotnet(\d+)$/);
+          return r === cur || !m || supportOf(m[1]).level !== 'bad';
+        });
+        input = `<select data-i="${i}" data-runtime>${offered.map(([r, label, why]) => `
             <option value="${r}" ${r === cur ? 'selected' : ''}
                     title="${esc((t.runtimes && t.runtimes[r]) || why)}">${esc(label)}</option>`).join('')}
           ${known ? '' : `<option value="${esc(v)}" selected>${esc(v)}</option>`}
