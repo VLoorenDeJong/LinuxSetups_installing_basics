@@ -31,7 +31,7 @@ unset _a _dbg_args
 #
 # WHERE THE PASSWORD COMES FROM, first match wins:
 #   1. a secret store, when a secret_ask.sh is found (SECRET_ASK_SH, or the
-#      parent project's install_scripts/scripts/): the login entry "Portainer
+#      hostings/scripts/ beside this folder): the login entry "Portainer
 #      admin", or a new generated one stored there before Portainer sees it.
 #      PORTAINER_URL sets the entry's link; the loopback address otherwise
 #   2. the keyboard, when there is no store
@@ -165,7 +165,7 @@ INITIALISED=0
 
 # Optional. Without it this script asks at the keyboard, as it always did.
 STORE=0
-for cand in "${SECRET_ASK_SH:-}" "$SCRIPT_DIR/../../install_scripts/scripts/secret_ask.sh"; do
+for cand in "${SECRET_ASK_SH:-}" "$SCRIPT_DIR/../hostings/scripts/secret_ask.sh"; do
     [ -n "$cand" ] && [ -f "$cand" ] || continue
     # shellcheck source=/dev/null
     . "$cand" 2>/dev/null || true
