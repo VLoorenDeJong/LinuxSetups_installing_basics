@@ -28,31 +28,59 @@ print_header()  { printf "\n\033[36m=== %s ===\033[0m\n" "$1"; }
 print_info()    { printf "\033[36mℹ️ %s\033[0m\n" "$1"; }
 print_status()  { printf "\033[34m🔧 %s\033[0m\n" "$1"; }
 print_success() { printf "\033[32m✅ %s\033[0m\n" "$1"; }
-print_warning() { printf "\033[33m⚠️  %s\033[0m\n" "$1"; }
 print_action()  { printf "\033[33m👉 %s\033[0m\n" "$1"; }
 print_error()   { printf "\033[31m❌ %s\033[0m\n" "$1"; }
+
+# The busy indicator. Kill-safe work only.
+SPIN_FRAMES=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+_SPIN_PID=""
+spinner_start() {
+    [ "${DEBUG_MODE:-0}" = "1" ] && return 0
+    local message="$1"
+    (
+        local i=0
+        while true; do
+            printf '\r\033[K\033[34m%s %s\033[0m' "${SPIN_FRAMES[i % 10]}" "$message"
+            i=$((i + 1))
+            sleep 0.2
+        done
+    ) &
+    _SPIN_PID=$!
+}
+spinner_stop() {
+    [ -n "$_SPIN_PID" ] || return 0
+    kill "$_SPIN_PID" 2>/dev/null || true
+    wait "$_SPIN_PID" 2>/dev/null || true
+    _SPIN_PID=""
+    printf '\r\033[K'
+}
+trap spinner_stop EXIT
 
 [ "$EUID" -eq 0 ] || { print_error "This needs root: it writes systemd units."; print_action "sudo bash $0"; exit 2; }
 
 PIPELINE_ROOT="/usr/local/lib/linuxbasics"
+OUT_DIR="/var/lib/linuxbasics"
 COLLECT="$PIPELINE_ROOT/hostings/scripts/collect_support_dates.sh"
 [ -f "$COLLECT" ] || { print_error "No $COLLECT yet."; print_action "sudo bash $(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/add_pipeline_scripts.sh"; exit 1; }
 
 print_header "Daily end-of-support dates"
 
+LOG="$(mktemp)"
 NEED=()
-command -v jq >/dev/null 2>&1 || NEED+=(jq)
+command -v curl >/dev/null 2>&1 || NEED+=(curl)
+command -v jq   >/dev/null 2>&1 || NEED+=(jq)
 [ -r /usr/share/distro-info/ubuntu.csv ] || NEED+=(distro-info-data)
 if [ ${#NEED[@]} -gt 0 ]; then
-    LOG="$(mktemp)"
-    print_status "Installing ${NEED[*]}..."
+    spinner_start "Installing ${NEED[*]}"
     if ! DEBIAN_FRONTEND=noninteractive apt-get install -y "${NEED[@]}" >"$LOG" 2>&1; then
+        spinner_stop
         print_error "Could not install ${NEED[*]}, output:"
         tail -20 "$LOG"
         print_info "Full log: $LOG"
         exit 1
     fi
-    rm -f "$LOG"
+    spinner_stop
+    print_success "Installed ${NEED[*]}"
 fi
 
 cat > /etc/systemd/system/support-dates.service <<EOF
@@ -65,6 +93,12 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/bin/bash ${COLLECT}
+# It downloads from the internet, so it may write its own folder and nothing else.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=${OUT_DIR}
 EOF
 
 cat > /etc/systemd/system/support-dates.timer <<'EOF'
@@ -81,15 +115,25 @@ Persistent=true
 WantedBy=timers.target
 EOF
 
+mkdir -p "$OUT_DIR"
 systemctl daemon-reload
-systemctl enable --now support-dates.timer >/dev/null 2>&1 \
-    || { print_error "Could not enable support-dates.timer."; print_action "systemctl status support-dates.timer"; exit 1; }
+if ! systemctl enable --now support-dates.timer >"$LOG" 2>&1; then
+    print_error "Could not enable support-dates.timer, output:"
+    tail -5 "$LOG"
+    print_action "systemctl status support-dates.timer"
+    exit 1
+fi
 print_status "Wrote support-dates.service and .timer: daily around 05:30"
 
 # Now as well, so the console has dates before tomorrow morning.
-if systemctl start support-dates.service; then
-    print_success "First run done: $(wc -l < /var/lib/linuxbasics/support.tsv) dates collected."
+spinner_start "Collecting the dates (up to a minute)"
+if systemctl start support-dates.service >"$LOG" 2>&1; then
+    spinner_stop
+    print_success "First run done: $(wc -l < "$OUT_DIR/support.tsv") dates collected."
 else
-    print_warning "The first run could not reach every source; the timer tries again tomorrow."
-    print_info "Why: journalctl -u support-dates.service -n 20"
+    spinner_stop
+    print_error "The first run did not finish cleanly. Its own words:"
+    journalctl -u support-dates.service -n 10 --no-pager 2>/dev/null | sed 's/^/   /' || true
+    print_info "The timer runs it again tomorrow. Run it now: sudo systemctl start support-dates.service"
 fi
+rm -f "$LOG"

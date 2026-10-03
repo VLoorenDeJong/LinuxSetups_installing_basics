@@ -39,7 +39,6 @@ print_header()  { printf "\n\033[36m=== %s ===\033[0m\n" "$1"; }
 print_info()    { printf "\033[36mℹ️ %s\033[0m\n" "$1"; }
 print_status()  { printf "\033[34m🔧 %s\033[0m\n" "$1"; }
 print_success() { printf "\033[32m✅ %s\033[0m\n" "$1"; }
-print_warning() { printf "\033[33m⚠️  %s\033[0m\n" "$1"; }
 print_action()  { printf "\033[33m👉 %s\033[0m\n" "$1"; }
 print_error()   { printf "\033[31m❌ %s\033[0m\n" "$1"; }
 
@@ -71,7 +70,16 @@ NEW="$(mktemp -p "$OUT_DIR")"; HOSTNEW="$(mktemp -p "$OUT_DIR")"
 trap 'rm -f "$NEW" "$HOSTNEW"' EXIT
 FAILED=()
 
-fetch() { curl -fsSL --max-time 15 "$1" 2>/dev/null; }
+# curl's own reason goes to the journal, so a failed source says why.
+fetch() {
+    local err rc=0 out
+    err="$(mktemp -p "$OUT_DIR")"
+    out="$(curl -fsSL --max-time 15 "$1" 2>"$err")" || rc=$?
+    [ "$rc" -eq 0 ] || print_error "$1: $(tr '\n' ' ' < "$err")" >&2
+    rm -f "$err"
+    printf '%s' "$out"
+    return "$rc"
+}
 
 # Lines for one product from the last good file, when its source is down now.
 keep_old() {
@@ -156,6 +164,6 @@ trap - EXIT
 print_success "$(wc -l < "$SUPPORT") support lines in $SUPPORT"
 print_success "$(wc -l < "$HOSTPKG") host packages in $HOSTPKG"
 if [ ${#FAILED[@]} -gt 0 ]; then
-    print_warning "Not reachable, last run's dates kept: ${FAILED[*]}"
+    print_error "Not reachable, last run's dates kept: ${FAILED[*]}"
     exit 1
 fi

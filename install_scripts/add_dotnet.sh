@@ -238,6 +238,7 @@ DOTNET_LTS_LIST=""
 
 load_dotnet_lts_list() {
     [ -n "$DOTNET_LTS_LIST" ] && return 0
+    [ "${DOTNET_LTS_FAILED:-0}" = 1 ] && return 1
     command -v curl >/dev/null 2>&1 || return 1
 
     # Each channel is an object holding channel-version, release-type and
@@ -251,7 +252,7 @@ load_dotnet_lts_list() {
         | grep -oE '"channel-version":"[0-9]+' \
         | grep -oE '[0-9]+$')"
 
-    [ -n "$DOTNET_LTS_LIST" ]
+    [ -n "$DOTNET_LTS_LIST" ] || { DOTNET_LTS_FAILED=1; return 1; }
 }
 
 # Every major Microsoft still patches, LTS or STS, one line each:
@@ -262,6 +263,7 @@ DOTNET_CHANNELS=""   # every channel: "<major> <type> <phase> <eol-date>"
 
 load_dotnet_supported() {
     [ -n "$DOTNET_SUPPORTED" ] && return 0
+    [ "${DOTNET_SUPPORTED_FAILED:-0}" = 1 ] && return 1
     command -v curl >/dev/null 2>&1 || return 1
     local ch major type phase eol
     DOTNET_CHANNELS="$(curl -fsSL --max-time 10 "$DOTNET_RELEASES_URL" 2>/dev/null \
@@ -276,7 +278,7 @@ load_dotnet_supported() {
         done)"
     DOTNET_SUPPORTED="$(printf '%s\n' "$DOTNET_CHANNELS" \
         | awk '$3 == "active" || $3 == "maintenance" {print $1, $2, $4}')"
-    [ -n "$DOTNET_SUPPORTED" ]
+    [ -n "$DOTNET_SUPPORTED" ] || { DOTNET_SUPPORTED_FAILED=1; return 1; }
 }
 
 
@@ -289,15 +291,17 @@ is_supported_version() {
     fi
 }
 
+# $2 is the default: the one version called recommended.
 dotnet_support_label() {
-    local type eol
+    local type eol rec=""
+    [ "$1" = "${2:-}" ] && rec=", recommended"
     read -r _ type eol < <(printf '%s\n' "$DOTNET_SUPPORTED" | grep "^$1 " | head -1)
     if [ "$type" = "lts" ]; then
-        printf 'LTS, supported to %s, recommended' "$eol"
+        printf 'LTS, supported to %s%s' "$eol" "$rec"
     elif [ -n "$type" ]; then
-        printf '%s, supported to %s' "$(echo "$type" | tr '[:lower:]' '[:upper:]')" "$eol"
+        printf '%s, supported to %s%s' "$(echo "$type" | tr '[:lower:]' '[:upper:]')" "$eol" "$rec"
     else
-        printf 'LTS, recommended'
+        printf 'LTS%s' "$rec"
     fi
 }
 
@@ -371,6 +375,10 @@ get_installed_aspnet_major() {
 # -----------------------------------------------------------------------------
 choose_dotnet_versions() {
     local available=() v answer
+    # Once, before the list: up to 10 s each, and offline it is not retried.
+    print_status "Asking Microsoft which .NET versions are supported..." >&2
+    load_dotnet_supported || true
+    load_dotnet_lts_list || true
     while read -r v; do
         [ -n "$v" ] || continue
         is_supported_version "$v" && [ "$v" -ge "$REQUIRED_DOTNET_VERSION" ] 2>/dev/null && available+=("$v")
@@ -403,7 +411,7 @@ choose_dotnet_versions() {
         echo ""
         local i=1
         for v in "${available[@]}"; do
-            printf "   %d) .NET %s  (%s)\n" "$i" "$v" "$(dotnet_support_label "$v")"
+            printf "   %d) .NET %s  (%s)\n" "$i" "$v" "$(dotnet_support_label "$v" "$default")"
             [ "$v" = "$default" ] && def_pos="$i"
             i=$(( i + 1 ))
         done
