@@ -21,6 +21,7 @@ unset _a _dbg_args
 #
 #   sudo bash add_1password.sh              install, ask both tokens, test them
 #   sudo bash add_1password.sh --test-only  test what is already installed
+#   sudo bash add_1password.sh --replace    ask even when the stored tokens work
 #
 # The service account is made on the 1Password website, with access to the
 # OP_VAULT vault only. Its token is shown once; keep it in your own vault.
@@ -96,7 +97,11 @@ read_secret() {
 masked() { printf '%s…%s' "${1:0:8}" "${1: -4}"; }
 
 TEST_ONLY=0
-[ "${1:-}" = "--test-only" ] && TEST_ONLY=1
+REPLACE=0
+case "${1:-}" in
+    --test-only) TEST_ONLY=1 ;;
+    --replace)   REPLACE=1 ;;
+esac
 
 if [ "$EUID" -ne 0 ]; then
     print_error "This installs a package and a root-only token, so it needs root."
@@ -264,7 +269,27 @@ setup_token() {
     current=""
     [ -f "$token_file" ] && current="$(token_file_read "$token_file" op-token)"
 
-    if [ "$TEST_ONLY" = "0" ]; then
+    # A token already in place that opens every vault is kept without asking,
+    # so an install with the tokens pushed beforehand runs unattended. A token
+    # that fails, or --replace, still reaches the question.
+    local kept=0
+    if [ "$TEST_ONLY" = "0" ] && [ "$REPLACE" = "0" ] && [ -n "$current" ]; then
+        kept=1
+        for v in "$vault" ${conn_vault:+"$conn_vault"}; do
+            spinner_start "Trying the stored $label token on vault $v..."
+            vault_opens "$current" "$v" || kept=0
+            spinner_stop
+        done
+        if [ "$kept" = "1" ]; then
+            print_success "The stored $label token opens its vaults, so it was kept without asking."
+        else
+            print_info "The stored $label token does not open its vaults, so it is asked for."
+        fi
+    fi
+
+    if [ "$kept" = "1" ]; then
+        new="$current"
+    elif [ "$TEST_ONLY" = "0" ]; then
         print_action "NEEDED: $label token → Vault: ${OR}${item_vault:-?}${YL} → Item: ${OR}${item:-? (set OP_TOKEN_ITEM in $(basename "$conf"))}${YL}"
         if [ -n "$current" ]; then
             read_secret "   Credential [now $(masked "$current"), Enter keeps it]: "
@@ -294,7 +319,7 @@ setup_token() {
         fi
     fi
 
-    for v in "$vault" ${conn_vault:+"$conn_vault"}; do
+    [ "$kept" = "1" ] || for v in "$vault" ${conn_vault:+"$conn_vault"}; do
         spinner_start "Opening vault $v..."
         if ! vault_opens "$new" "$v"; then
             spinner_stop
