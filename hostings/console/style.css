@@ -336,6 +336,7 @@
   .env.lv-bad,     .pill.lv-bad     { background: rgba(180,35,24,.16); color: var(--bad);  border-color: transparent; }
   /* Unknown must not look like any answer: dashed, and it says so on hover. */
   .env.lv-unknown, .pill.lv-unknown { background: transparent; color: var(--muted); border-style: dashed; }
+  td.runtime .pill { white-space: nowrap; }
 
   .dash { color: var(--muted); }
   td.port, td.name { font-family: ui-monospace, "Cascadia Code", monospace; }
