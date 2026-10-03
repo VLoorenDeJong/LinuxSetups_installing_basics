@@ -33,6 +33,23 @@ print_error() {
     printf "\e[31m❌ %s\e[0m\n" "$1"
 }
 
+print_info()    { printf "\033[36mℹ️ %s\033[0m\n" "$1"; }
+print_action()  { printf "\033[33m👉 %s\033[0m\n" "$1"; }
+
+# The directly connected subnets, as add_smb.sh finds them. SSH_ALLOW_FROM
+# (space separated) overrides, for a machine reached through a VPN.
+ssh_sources() {
+    if [ -n "${SSH_ALLOW_FROM:-}" ]; then
+        printf '%s\n' $SSH_ALLOW_FROM
+        return 0
+    fi
+    { ip -o -4 route show; ip -o -6 route show; } 2>/dev/null \
+        | awk '$1 == "default" || / via / || $1 !~ /\// { next }
+               { d = ""; for (i = 1; i < NF; i++) if ($i == "dev") d = $(i + 1) }
+               d !~ /^(lo|docker|br-|veth|wg)/ { print $1 }' \
+        | sort -u
+}
+
 if [ "$EUID" -ne 0 ]; then
     echo -e "\e[31mThis script requires sudo privileges to run properly.\e[0m"
     echo -e "\e[33mPlease run with: sudo $0\e[0m"
@@ -83,14 +100,47 @@ if ! systemctl is-active --quiet ssh && ! systemctl is-active --quiet ssh.socket
 fi
 
 if command -v ufw &> /dev/null && sudo ufw status | grep -q "Status: active"; then
-    # Anchor on "22/tcp" so ports like 220 or 2222 don't false-match
-    if ! sudo ufw status numbered | grep -E "ALLOW" | grep -qE "\b22/tcp\b|\b22\b(/| |$)"; then
-        if ! echo "y" | sudo ufw allow 22/tcp >"$SSH_LOG" 2>&1; then
-            print_error "Failed to open port 22 in UFW — output:"
-            tail -5 "$SSH_LOG" 2>/dev/null || true
-            exit 1
+    # PORT 22 FROM THE LAN ONLY. Audit 2026-10-02, H3.
+    mapfile -t SSH_FROM < <(ssh_sources)
+    if [ ${#SSH_FROM[@]} -eq 0 ]; then
+        print_error "No local subnet found, so port 22 was left as it is."
+        print_action "Name it: sudo env SSH_ALLOW_FROM='192.168.1.0/24' bash $0"
+    else
+        for src in "${SSH_FROM[@]}"; do
+            if ! ufw allow from "$src" to any port 22 proto tcp >"$SSH_LOG" 2>&1; then
+                print_error "Failed to allow SSH from $src in UFW, output:"
+                tail -5 "$SSH_LOG" 2>/dev/null || true
+                exit 1
+            fi
+        done
+        print_status "SSH allowed from: ${SSH_FROM[*]}"
+
+        # An open-to-everyone rule is reported, never deleted here: under sudo
+        # this script cannot tell which session the delete would cut off.
+        if ufw status | grep -qE "^(22(/tcp)?|OpenSSH)( \(v6\))? +(ALLOW|LIMIT) +Anywhere"; then
+            print_info "Port 22 is still open to everyone by an older rule."
+            print_action "From the LAN or the keyboard: sudo ufw delete allow 22/tcp (or OpenSSH)"
         fi
     fi
+fi
+
+# Passwords stay on: port 22 is LAN-only above, and the owner logs in with one.
+HARDEN="/etc/ssh/sshd_config.d/10-linuxbasics-hardening.conf"
+{
+    echo "# Written by add_ssh.sh. Audit 2026-10-02, H3."
+    echo "PermitRootLogin no"
+} > "$HARDEN.new"
+[ -f "$HARDEN" ] && cp -p "$HARDEN" "$HARDEN.old"
+mv "$HARDEN.new" "$HARDEN"
+if sshd -t 2>"$SSH_LOG"; then
+    rm -f "$HARDEN.old"
+    systemctl reload ssh 2>/dev/null || true
+    print_success "SSH: no root login, passwords and keys from the LAN."
+else
+    if [ -f "$HARDEN.old" ]; then mv "$HARDEN.old" "$HARDEN"; else rm -f "$HARDEN"; fi
+    print_error "sshd rejected the hardening, so the previous file was put back and SSH is unchanged. Output:"
+    tail -5 "$SSH_LOG" 2>/dev/null || true
+    exit 1
 fi
 
 echo -e "\e[32m✅ SSH installation and configuration complete\e[0m"
