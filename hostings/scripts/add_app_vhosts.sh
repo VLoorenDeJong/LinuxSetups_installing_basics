@@ -857,6 +857,9 @@ auth_form_block() {
     # front of a proxied backend. The marker line is how the console knows
     # which names it may hand a token to.
     if [ -n "$gate_host" ]; then
+        # Escaped here: inside the heredoc the replacement loses its backslash.
+        local dot='\.' login_re
+        login_re="${login_page//./$dot}"
         gate_top="$(cat <<EOF
 # hm-gate: ${gate_host}
     RewriteMap hmgate txt:${GATE_MAP}
@@ -868,7 +871,7 @@ EOF
         RequestHeader edit* Cookie "(^|;\\s*)hm_gate=[^;]*" ""
         RewriteEngine On
         # The <Location>s below inherit these rules, and the login must not be gated.
-        RewriteCond %{REQUEST_URI} ^/(${login_page//./\\.}|do-login|logout|auth-assets(/.*)?)\$
+        RewriteCond %{REQUEST_URI} ^/(${login_re}|do-login|logout|auth-assets(/.*)?)\$
         RewriteRule ^ - [L]
         RewriteCond %{REQUEST_URI} =/.hm-gate
         RewriteCond %{QUERY_STRING} ^t=([0-9a-f]{64})\$
@@ -1359,7 +1362,7 @@ build_rows() {
                         =*) gate_admin="admin.${sub#=}" ;;
                         *)  gate_admin="admin.${BASE_DOMAIN}" ;;
                     esac
-                    ensure_gate_map
+                    [ "$RENDER_ONLY" = "1" ] || ensure_gate_map
                 fi
                 case "$type" in
                     app|proxy) auth_443="$(auth_form_block yes "$users_here" "$login_page" tls "$gate_host" "$gate_admin")" ;;

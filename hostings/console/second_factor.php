@@ -482,6 +482,18 @@ function gate_handoff(string $user): void {
         tfa_page('Not a gated name', '<h1>Not a gated name</h1><p class="muted">'
             . htmlspecialchars((string) ($_GET['tfa-for'] ?? '')) . ' is not served behind this sign-in.</p>', 400);
     }
+    // Back here within seconds means the tool refused the last pass: most often
+    // signed in there as another account. Say so rather than loop for ever.
+    $seen = GATE_DIR . '/.last-' . hash('sha256', $user . '|' . $host);
+    if (time() - (int) @filemtime($seen) < 10) {
+        @unlink($seen);
+        tfa_page('Pass not accepted', '<h1>Pass not accepted</h1><p class="muted">'
+            . htmlspecialchars($host) . ' sent you straight back. It only accepts the pass for the same '
+            . 'account: sign out there and sign in as <strong>' . htmlspecialchars($user) . '</strong>, '
+            . 'or ask whoever runs the machine to check that ' . htmlspecialchars(GATE_MAP) . ' is readable by Apache.</p>', 403);
+    }
+    @touch($seen);
+
     $until = tfa_cookie_until($user) ?: time() + TFA_PASS_SECS;
     $tok = bin2hex(random_bytes(32));
     $now = gate_stamp(time());

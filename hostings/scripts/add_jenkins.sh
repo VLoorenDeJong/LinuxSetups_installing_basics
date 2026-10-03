@@ -1375,7 +1375,9 @@ EOF
     # rule behind with nothing answering on it.
     PREV_LAN_PORT="$([ -f "$LAN_VHOST" ] && awk '/^Listen /{print $2; exit}' "$LAN_VHOST" || true)"
 
-    if [ -f "$LAN_VHOST" ] && [ "$(cat "$LAN_VHOST")" = "$NEW_LAN_VHOST" ]; then
+    # Same content is not enough: a failed configtest leaves the file but disables the site.
+    if [ -f "$LAN_VHOST" ] && [ "$(cat "$LAN_VHOST")" = "$NEW_LAN_VHOST" ] \
+       && [ -e "/etc/apache2/sites-enabled/${LAN_VHOST_NAME}.conf" ]; then
         print_success "LAN proxy vhost already correct on port $JENKINS_LAN_PORT."
     else
         printf '%s\n' "$NEW_LAN_VHOST" > "$LAN_VHOST"
