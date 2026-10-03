@@ -1474,7 +1474,8 @@ function render() {
 
   // What the deployed build targets. Empty until something is deployed, which
   // is honest: the answer lives in the build, so before a deploy there is none.
-  const cRuntime = e => {
+  // compact: colour only, the words stay in the tooltip. Serving has no room.
+  const cRuntime = (e, compact) => {
     // `!= null`, not a truthiness test: row 0 is a valid index and the first
     // application would otherwise lose its type.
     const declared = (e.row != null && rows[e.row] ? rows[e.row].f[13] : '') || 'dotnet';
@@ -1492,7 +1493,7 @@ function render() {
       const label = product === 'nodejs' ? 'Node' : '.NET';
       return `<td class="runtime"><span class="pill lv-${life.level}"
         title="${esc(`${label} ${version} ${t.rtInContainer}` + (sup.tip ? '\n' + sup.tip : ''))}"
-        >${esc(label)} ${esc(major)}${esc(sup.note)}</span></td>`;
+        >${esc(label)} ${esc(major)}${compact ? '' : esc(sup.note)}</span></td>`;
     }
     const ver = RUNTIME_OF[unitName];
     if (!ver) return `<td class="runtime"><span class="dash">&mdash;</span></td>`;
@@ -1510,7 +1511,7 @@ function render() {
       + (sup.tip ? '\n' + sup.tip : '');
     const level = !ok ? 'bad' : life.level;
     return `<td class="runtime"><span class="pill lv-${level}"
-      title="${esc(tip)}">.NET ${esc(major)}${esc(sup.note)}</span></td>`;
+      title="${esc(tip)}">.NET ${esc(major)}${compact ? '' : esc(sup.note)}</span></td>`;
   };
 
   // What a website's deployed build was made with, recorded at deploy.
@@ -1534,7 +1535,7 @@ function render() {
   // The repository icon stays in BOTH views. It is one glyph wide and it is the
   // way to open a row's code from the table; taking it out of Serving cost more
   // than the column was worth. The owner, 2026-09-10.
-  paint('apps',     'app', [cCert, cState, cPort, cEnv, cPreview, cName, cRepo, cRuntime, cLogin, cAddr, cUnit],
+  paint('apps',     'app', [cCert, cState, cPort, cEnv, cPreview, cName, cRepo, e => cRuntime(e, true), cLogin, cAddr, cUnit],
         svcButtons);
   paint('apps-pipeline', 'app',
     [cState, cEnv, cName, cRepo, cRuntime, cPipe, e => cRecent(e, t),
