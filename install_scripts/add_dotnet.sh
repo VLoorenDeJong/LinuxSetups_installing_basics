@@ -254,6 +254,47 @@ load_dotnet_lts_list() {
     [ -n "$DOTNET_LTS_LIST" ]
 }
 
+# Every major Microsoft still patches, LTS or STS, one line each:
+# "<major> <lts|sts> <eol-date>". Previews and release candidates are left out.
+DOTNET_SUPPORTED=""
+
+load_dotnet_supported() {
+    [ -n "$DOTNET_SUPPORTED" ] && return 0
+    command -v curl >/dev/null 2>&1 || return 1
+    local ch major type eol
+    DOTNET_SUPPORTED="$(curl -fsSL --max-time 10 "$DOTNET_RELEASES_URL" 2>/dev/null \
+        | tr -d ' \n\r\t' | tr '{' '\n' \
+        | grep -E '"support-phase":"(active|maintenance)"' \
+        | while read -r ch; do
+            major="$(echo "$ch" | grep -oE '"channel-version":"[0-9]+' | grep -oE '[0-9]+$')"
+            type="$(echo "$ch" | grep -oE '"release-type":"[a-z]+' | sed 's/.*"//')"
+            eol="$(echo "$ch" | grep -oE '"eol-date":"[0-9-]+' | sed 's/.*"//')"
+            [ -n "$major" ] && echo "$major ${type:-?} ${eol:-?}"
+        done)"
+    [ -n "$DOTNET_SUPPORTED" ]
+}
+
+# Offline, only the LTS formula is known, so only LTS majors are offered.
+is_supported_version() {
+    if load_dotnet_supported; then
+        printf '%s\n' "$DOTNET_SUPPORTED" | grep -q "^$1 "
+    else
+        is_lts_version "$1"
+    fi
+}
+
+dotnet_support_label() {
+    local type eol
+    read -r _ type eol < <(printf '%s\n' "$DOTNET_SUPPORTED" | grep "^$1 " | head -1)
+    if [ "$type" = "lts" ]; then
+        printf 'LTS, supported to %s, recommended' "$eol"
+    elif [ -n "$type" ]; then
+        printf '%s, supported to %s' "$(echo "$type" | tr '[:lower:]' '[:upper:]')" "$eol"
+    else
+        printf 'LTS, recommended'
+    fi
+}
+
 is_lts_version() {
     local v="$1"
     if load_dotnet_lts_list; then
@@ -326,7 +367,7 @@ choose_dotnet_versions() {
     local available=() v answer
     while read -r v; do
         [ -n "$v" ] || continue
-        is_lts_version "$v" && [ "$v" -ge "$REQUIRED_DOTNET_VERSION" ] 2>/dev/null && available+=("$v")
+        is_supported_version "$v" && [ "$v" -ge "$REQUIRED_DOTNET_VERSION" ] 2>/dev/null && available+=("$v")
     done < <(apt-cache pkgnames aspnetcore-runtime- 2>/dev/null \
         | grep -E '^aspnetcore-runtime-[0-9]+\.[0-9]+$' \
         | sed -E 's/^aspnetcore-runtime-([0-9]+)\..*$/\1/' | sort -un)
@@ -344,6 +385,10 @@ choose_dotnet_versions() {
     fi
 
     local last=$(( ${#available[@]} ))
+    # Enter takes the newest LTS, so an STS is only ever chosen on purpose.
+    local default def_pos="$last"
+    default="$(get_latest_dotnet_lts)"
+    [ -n "$default" ] || default="${available[-1]}"
     {
         echo ""
         echo -e "\e[36m=== .NET version ===\e[0m"
@@ -352,17 +397,18 @@ choose_dotnet_versions() {
         echo ""
         local i=1
         for v in "${available[@]}"; do
-            printf "   %d) .NET %s  (LTS)\n" "$i" "$v"
+            printf "   %d) .NET %s  (%s)\n" "$i" "$v" "$(dotnet_support_label "$v")"
+            [ "$v" = "$default" ] && def_pos="$i"
             i=$(( i + 1 ))
         done
         echo ""
         printf "\e[34mWhich do you need? Numbers, comma separated. Enter for %d (.NET %s): \e[0m" \
-            "$last" "${available[-1]}"
+            "$def_pos" "$default"
     } >&2
 
     read -r answer < /dev/tty || answer=""
     answer="$(echo "$answer" | xargs)"
-    [ -z "$answer" ] && answer="$last"
+    [ -z "$answer" ] && answer="$def_pos"
 
     # Numbers are what the list offers, so numbers are what is read. A value
     # that is not a valid position but IS one of the versions on offer is taken
@@ -394,6 +440,13 @@ fi
 
 if [ -n "${DOTNET_VERSIONS:-}" ]; then
     read -r -a WANTED <<< "$(echo "$DOTNET_VERSIONS" | tr ',' ' ' | xargs)"
+    # Named on purpose, so installed anyway: an old application may still need it.
+    if load_dotnet_supported; then
+        for v in "${WANTED[@]}"; do
+            is_supported_version "$v" \
+                || print_warning ".NET $v is out of support: no security patches. Installed because DOTNET_VERSIONS names it."
+        done
+    fi
 else
     read -r -a WANTED <<< "$(choose_dotnet_versions)"
 fi
