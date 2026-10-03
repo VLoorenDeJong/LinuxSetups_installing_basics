@@ -210,7 +210,12 @@ if [ -n "$TARGET" ]; then
 fi
 
 SCOPE_BODY=""
-[ -n "$SCOPE_REPO" ] && SCOPE_BODY="{\"repositories\":[\"${SCOPE_REPO}\"]}"
+SCOPE_PARTS=()
+[ -n "$SCOPE_REPO" ] && SCOPE_PARTS+=("\"repositories\":[\"${SCOPE_REPO}\"]")
+# Read-only on request: git_credential_github_app.sh asks for it when Jenkins
+# wants a repository that root pulls and runs. Audit M2.
+[ "${GITHUB_TOKEN_READ_ONLY:-0}" = "1" ] && SCOPE_PARTS+=("\"permissions\":{\"contents\":\"read\",\"metadata\":\"read\"}")
+[ ${#SCOPE_PARTS[@]} -gt 0 ] && SCOPE_BODY="{$(IFS=,; echo "${SCOPE_PARTS[*]}")}"
 RESPONSE="$(curl -fsS -X POST \
     -H "Authorization: Bearer ${JWT}" \
     -H "Accept: application/vnd.github+json" \

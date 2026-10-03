@@ -417,23 +417,28 @@ if [ "$MODE" != "check" ]; then
     VAULT_STATE=""
     vault_usable() {
         if [ -z "$VAULT_STATE" ]; then
+            local probe_log
+            probe_log="$(mktemp)"
             VAULT_STATE=no
             spinner_start "Checking the secret store for saved DKIM keys"
             [ -f "$SCRIPT_DIR/restore_logins.sh" ] \
-                && SITES_CONF="$SITES_CONF" bash "$SCRIPT_DIR/secret_store.sh" --check >/dev/null 2>&1 \
+                && SITES_CONF="$SITES_CONF" bash "$SCRIPT_DIR/secret_store.sh" --check >"$probe_log" 2>&1 \
                 && VAULT_STATE=yes
             spinner_stop
+            if [ "$VAULT_STATE" = yes ]; then
+                print_status "Secret store reachable: missing DKIM keys are restored from it."
+            else
+                print_info "No usable secret store, so a missing DKIM key is made new, not restored. Why:"
+                grep -v '^[[:space:]]*$' "$probe_log" | tail -5 | sed 's/^/   /' || true
+            fi
+            rm -f "$probe_log"
         fi
         [ "$VAULT_STATE" = yes ]
     }
 
     for dom in "${MAIL_DOMAINS[@]}"; do
-        if [ ! -f "$(key_path "$dom")" ]; then
-            if vault_usable; then
-                bash "$SCRIPT_DIR/restore_logins.sh" --only "dkim-$dom" || true
-            else
-                print_info "No usable secret store, so $dom gets a new DKIM key instead of a saved one."
-            fi
+        if [ ! -f "$(key_path "$dom")" ] && vault_usable; then
+            bash "$SCRIPT_DIR/restore_logins.sh" --only "dkim-$dom" || true
         fi
         if [ -f "$(key_path "$dom")" ]; then
             if [ ! -f "$(pub_path "$dom")" ] && ! openssl rsa -in "$(key_path "$dom")" -pubout \

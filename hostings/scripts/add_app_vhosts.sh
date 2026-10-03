@@ -1409,9 +1409,19 @@ build_rows() {
                     else
                         env_port=$((port + offset))
                     fi
+                    # Jenkins and Portainer put encoded slashes in their paths
+                    # (job names, image names). Without both, Apache answers 404
+                    # itself and the tool never sees the request. Measured on
+                    # Portainer 2026-10-03; the LAN panel already had both.
+                    local encoded="" nocanon=""
+                    if [ "$type" = "proxy" ]; then
+                        encoded="    AllowEncodedSlashes NoDecode"
+                        nocanon=" nocanon"
+                    fi
                     body="$(cat <<EOF
     ProxyPreserveHost On
-    ProxyPass / http://127.0.0.1:${env_port}/
+${encoded}
+    ProxyPass / http://127.0.0.1:${env_port}/${nocanon}
     ProxyPassReverse / http://127.0.0.1:${env_port}/
 
     # Kestrel needs to know the request arrived over HTTPS, otherwise every URL

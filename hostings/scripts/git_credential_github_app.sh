@@ -185,6 +185,27 @@ case "$REPO" in
 esac
 [ "$PATH_IN" = "$OWNER" ] && REPO=""
 
+# JENKINS NEVER GETS TO PUSH WHAT ROOT RUNS. The machine pulls its config clone
+# and LinuxBasics as root and runs them, so a token that can push there is root.
+# Measured 2026-10-03 (audit M2): `sudo ... get` as jenkins handed out one.
+# Jenkins still reads them, and keeps write on the site repositories it seeds.
+root_pulls() {
+    local want top url
+    want="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+    top="$(git -C "$(dirname "$(readlink -f "$SITES_CONF")")" rev-parse --show-toplevel 2>/dev/null)" || return 1
+    while IFS= read -r url; do
+        url="$(printf '%s' "$url" | tr '[:upper:]' '[:lower:]' | sed -E 's#^(git@github\.com:|https://github\.com/)##; s#\.git$##')"
+        [ "$url" = "$want" ] && return 0
+    done < <(git -C "$top" remote get-url origin 2>/dev/null
+             git -C "$top" config -f .gitmodules --get-regexp 'submodule\..*\.url' 2>/dev/null | awk '{print $2}')
+    return 1
+}
+# No repository named means an owner-wide token, which covers those too.
+if [ "${SUDO_USER:-}" = "jenkins" ] \
+   && { [ -z "$REPO" ] || root_pulls "$OWNER/$REPO"; }; then
+    export GITHUB_TOKEN_READ_ONLY=1
+fi
+
 TOKEN="$(token_for_owner "${OWNER}${OWNER:+${REPO:+/$REPO}}")"
 
 # No token is not an error. A public repository clones anonymously, and saying
