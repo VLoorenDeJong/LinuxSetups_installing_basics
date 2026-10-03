@@ -402,6 +402,8 @@
   th.unit-col, td.unit-col { width: 1%; white-space: nowrap; }
   th.cert-col,  td.cert-col  { width: 1%; white-space: nowrap; }
   table.no-cert-col .cert-col { display: none; }
+  /* Badge above its button: the row has no room for both side by side. */
+  td.cert-col .row-actions.cert-stack { flex-direction: column; align-items: flex-start; gap: .25rem; }
   /* Icon only, so the column is as wide as the mark and no wider. */
   th.repo-col,  td.repo-col  { width: 1%; white-space: nowrap; text-align: center; }
   td.repo-col a { color: inherit; opacity: .65; }

@@ -1186,7 +1186,7 @@ function certCell(e, t) {
   // person confirmed the site worked before an issuance could be spent. The
   // confirm dialog is now the only thing between a stray click and a real
   // certificate.
-  return `<td class="cert-col"><span class="row-actions">
+  return `<td class="cert-col"><span class="row-actions cert-stack">
     <span class="chip removed" title="${esc(t.chipTestHint)}">${esc(t.chipTest)}</span>
     <button class="icon-btn text-btn danger" type="button" data-promote="${esc(e.addr)}"
             title="${esc(t.aGoLive)}" aria-label="${esc(t.aGoLive)}">${esc(t.bRealCert)}</button>
