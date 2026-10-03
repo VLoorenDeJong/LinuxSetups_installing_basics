@@ -1032,7 +1032,10 @@ EOF
     # rule behind with nothing answering on it.
     PREV_PORT="$([ -f "$VHOST" ] && awk '/^Listen /{print $2; exit}' "$VHOST" || true)"
 
-    if [ -f "$VHOST" ] && [ "$(cat "$VHOST")" = "$NEW_VHOST" ]; then
+    # Same content is not enough: a failed configtest leaves the file but disables
+    # the site, and the console would stay off on every later run.
+    if [ -f "$VHOST" ] && [ "$(cat "$VHOST")" = "$NEW_VHOST" ] \
+       && [ -e "/etc/apache2/sites-enabled/${VHOST_NAME}.conf" ]; then
         print_success "LAN vhost already correct on port $LAN_PORT."
     else
         printf '%s\n' "$NEW_VHOST" > "$VHOST"

@@ -99,6 +99,12 @@ run_in() {
     # lets any local account plant a package the next build trusts. Audit M5.
     local cache="$NUGET_CACHE/${owner%%:*}"
     install -d -m 0755 -o root -g root "$NUGET_CACHE"
+    # Left over from the old 0777 cache, a link here would make root chown its target.
+    if [ -L "$cache" ] || { [ -e "$cache" ] && [ ! -d "$cache" ]; }; then
+        print_error "$cache is not a plain directory; refusing to build."
+        print_action "Look at it, then: sudo rm -rf $cache"
+        return 1
+    fi
     install -d -m 0700 -o "${owner%%:*}" -g "${owner##*:}" "$cache"
     timeout "$BUILD_TIMEOUT" docker run --rm \
         --user "$owner" \

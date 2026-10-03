@@ -450,11 +450,20 @@ install_key() {
     fi
 }
 
+KEY_WORKS=0
+if [ "$TEST_ONLY" -ne 1 ] && [ -z "$KEY_SOURCE" ] && [ -s "$KEY_FILE" ] && [ "${WRITE_BACK:-0}" != "1" ]; then
+    # stdout is the token itself, so it is discarded rather than logged.
+    spinner_start "Asking GitHub whether the installed key still works..."
+    SITES_CONF="$SITES_CONF" bash "$SCRIPT_DIR/github_app_token.sh" ${TEST_TARGET:+"$TEST_TARGET"} >/dev/null 2>&1 \
+        && KEY_WORKS=1
+    spinner_stop
+    [ "$KEY_WORKS" -eq 1 ] || print_info "GitHub issued no token for the installed key, so it is asked about below."
+fi
+
 if [ "$TEST_ONLY" -ne 1 ]; then
     if [ -n "$KEY_SOURCE" ]; then
         install_key
-    elif [ -s "$KEY_FILE" ] && [ "${WRITE_BACK:-0}" != "1" ] \
-         && SITES_CONF="$SITES_CONF" bash "$SCRIPT_DIR/github_app_token.sh" ${TEST_TARGET:+"$TEST_TARGET"} >/dev/null 2>&1; then
+    elif [ "$KEY_WORKS" -eq 1 ]; then
         # A key GitHub accepts is kept without asking. A broken one, or new IDs,
         # still reach the question below. To swap a working key: --key-file.
         print_success "The installed key at $KEY_FILE works (GitHub issued a token), so it was kept."

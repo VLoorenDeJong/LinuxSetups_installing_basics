@@ -66,6 +66,30 @@ print_header() {
     printf "\n\033[36m=== %s ===\033[0m\n" "$1"
 }
 
+# The busy indicator. Kill-safe work only: see the timeout regimes above.
+SPIN_FRAMES=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+_SPIN_PID=""
+spinner_start() {
+    [ "${DEBUG_MODE:-0}" = "1" ] && return 0
+    local message="$1"
+    (
+        local i=0
+        while true; do
+            printf '\r\033[K\033[34m%s %s\033[0m' "${SPIN_FRAMES[i % 10]}" "$message"
+            i=$((i + 1))
+            sleep 0.2
+        done
+    ) &
+    _SPIN_PID=$!
+}
+spinner_stop() {
+    [ -n "$_SPIN_PID" ] || return 0
+    kill "$_SPIN_PID" 2>/dev/null || true
+    wait "$_SPIN_PID" 2>/dev/null || true
+    _SPIN_PID=""
+    printf '\r\033[K'
+}
+
 usage() {
     echo "Usage: $0 [--test-only | --replace]" >&2
     echo "" >&2
@@ -194,8 +218,9 @@ WANT_LOGIN=1
 PAIR_OK=0
 PAIR_TEST=""
 if [ "$TEST_ONLY" -eq 0 ] && [ "$REPLACE" -eq 0 ] && [ -f "$CRED_FILE" ] && [ -f "$LOGIN_FILE" ]; then
-    print_status "Testing the stored key and username with TransIP..."
+    spinner_start "Testing the stored key and username with TransIP..."
     PAIR_TEST="$(bash "${BASH_SOURCE[0]}" --test-only < /dev/null 2>&1)" && PAIR_OK=1
+    spinner_stop
 fi
 if [ "$TEST_ONLY" -eq 1 ]; then
     WANT_KEY=0

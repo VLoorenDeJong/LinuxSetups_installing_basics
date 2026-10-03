@@ -412,9 +412,28 @@ if [ "$MODE" != "check" ]; then
     mkdir -p "$DKIM_DIR"
     chmod 0700 "$DKIM_DIR"
 
+    # Asked once, and only when a key is missing: a machine installed without
+    # the secret store gets new keys, which is not an error.
+    VAULT_STATE=""
+    vault_usable() {
+        if [ -z "$VAULT_STATE" ]; then
+            VAULT_STATE=no
+            spinner_start "Checking the secret store for saved DKIM keys"
+            [ -f "$SCRIPT_DIR/restore_logins.sh" ] \
+                && SITES_CONF="$SITES_CONF" bash "$SCRIPT_DIR/secret_store.sh" --check >/dev/null 2>&1 \
+                && VAULT_STATE=yes
+            spinner_stop
+        fi
+        [ "$VAULT_STATE" = yes ]
+    }
+
     for dom in "${MAIL_DOMAINS[@]}"; do
-        if [ ! -f "$(key_path "$dom")" ] && [ -f "$SCRIPT_DIR/restore_logins.sh" ]; then
-            bash "$SCRIPT_DIR/restore_logins.sh" --only "dkim-$dom" || true
+        if [ ! -f "$(key_path "$dom")" ]; then
+            if vault_usable; then
+                bash "$SCRIPT_DIR/restore_logins.sh" --only "dkim-$dom" || true
+            else
+                print_info "No usable secret store, so $dom gets a new DKIM key instead of a saved one."
+            fi
         fi
         if [ -f "$(key_path "$dom")" ]; then
             if [ ! -f "$(pub_path "$dom")" ] && ! openssl rsa -in "$(key_path "$dom")" -pubout \
