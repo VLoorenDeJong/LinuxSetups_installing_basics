@@ -751,13 +751,12 @@ fi
 # Verify shares
 if command -v smbclient &> /dev/null && [ ${#SHARE_INFO[@]} -gt 0 ]; then
     print_status "Verifying configured shares..."
+    smb_err="$(mktemp)"
     for share_data in "${SHARE_INFO[@]}"; do
         share_name="${share_data%%:*}"
         share_path="${share_data##*:}"
 
-        smbclient "//localhost/$share_name" -N -c "ls" > /dev/null 2>/tmp/smbclient_error.log || true
-        # Only show error info if share is not accessible
-        if [ ${PIPESTATUS[0]} -ne 0 ]; then
+        if ! smbclient "//localhost/$share_name" -N -c "ls" > /dev/null 2>"$smb_err"; then
             print_warning "Share '$share_name' may not be accessible"
             if [ ! -d "$share_path" ]; then
                 print_error "   Directory missing: $share_path"
@@ -765,7 +764,7 @@ if command -v smbclient &> /dev/null && [ ${#SHARE_INFO[@]} -gt 0 ]; then
                 print_error "   Directory not readable: $share_path ($(stat -c '%a' "$share_path"))"
             fi
             echo "   🔍 smbclient error:"
-            cat /tmp/smbclient_error.log | grep -vE 'blocks of size|blocks available|^\s*\.|^\s*\.\.'
+            grep -vE 'blocks of size|blocks available|^\s*\.|^\s*\.\.' "$smb_err" || true
         fi
     done
 fi
@@ -786,4 +785,4 @@ fi
 print_success "Samba installation and configuration completed successfully!"
 
 # Clean up temporary files
-rm -f /tmp/smbclient_error.log
+rm -f "${smb_err:-}"
