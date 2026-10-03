@@ -124,31 +124,18 @@ if command -v ufw &> /dev/null && sudo ufw status | grep -q "Status: active"; th
     fi
 fi
 
-# KEY-ONLY LOGIN, but only once a key is in place: on a fresh drive the PC's key
-# is not there yet, and turning passwords off then would lock the owner out.
-REAL_USER="${SUDO_USER:-}"
-REAL_HOME="$(getent passwd "${REAL_USER:-root}" | cut -d: -f6)"
+# Passwords stay on: port 22 is LAN-only above, and the owner logs in with one.
 HARDEN="/etc/ssh/sshd_config.d/10-linuxbasics-hardening.conf"
 {
     echo "# Written by add_ssh.sh. Audit 2026-10-02, H3."
     echo "PermitRootLogin no"
-    if [ -n "$REAL_USER" ] && [ -s "$REAL_HOME/.ssh/authorized_keys" ] \
-       && journalctl -u ssh --no-pager 2>/dev/null | grep -q "Accepted publickey for $REAL_USER "; then
-        echo "PasswordAuthentication no"
-        echo "KbdInteractiveAuthentication no"
-    fi
 } > "$HARDEN.new"
 [ -f "$HARDEN" ] && cp -p "$HARDEN" "$HARDEN.old"
 mv "$HARDEN.new" "$HARDEN"
 if sshd -t 2>"$SSH_LOG"; then
     rm -f "$HARDEN.old"
     systemctl reload ssh 2>/dev/null || true
-    if grep -q "^PasswordAuthentication no" "$HARDEN"; then
-        print_success "SSH: keys only, no root login."
-    else
-        print_info "SSH: no root login. Passwords still work: $REAL_USER has no authorized key yet."
-        print_action "From your PC: ssh-copy-id ${REAL_USER:-<user>}@$(hostname -I | awk '{print $1}'), then run this again."
-    fi
+    print_success "SSH: no root login, passwords and keys from the LAN."
 else
     if [ -f "$HARDEN.old" ]; then mv "$HARDEN.old" "$HARDEN"; else rm -f "$HARDEN"; fi
     print_error "sshd rejected the hardening, so the previous file was put back and SSH is unchanged. Output:"
