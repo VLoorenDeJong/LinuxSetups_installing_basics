@@ -98,6 +98,13 @@ run_in() {
     # One cache per build account, not one 0777 cache: a shared writable cache
     # lets any local account plant a package the next build trusts. Audit M5.
     local cache="$NUGET_CACHE/${owner%%:*}"
+    # Still 0777 means the old shared cache: anything in it may be planted, so
+    # it is emptied once. A cache costs a re-download, nothing more.
+    if [ -d "$NUGET_CACHE" ] && [ ! -L "$NUGET_CACHE" ] \
+       && [ -n "$(find "$NUGET_CACHE" -maxdepth 0 -perm -0002)" ]; then
+        find "$NUGET_CACHE" -mindepth 1 -delete
+        print_info "Emptied the old shared NuGet cache $NUGET_CACHE, which any account could write to."
+    fi
     install -d -m 0755 -o root -g root "$NUGET_CACHE"
     # Left over from the old 0777 cache, a link here would make root chown its target.
     if [ -L "$cache" ] || { [ -e "$cache" ] && [ ! -d "$cache" ]; }; then
