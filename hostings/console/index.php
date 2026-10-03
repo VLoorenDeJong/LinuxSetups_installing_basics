@@ -1286,6 +1286,10 @@ function statusFor(?array $status, string $role, string $who): ?array {
         $status['runtimes'] = array_filter($status['runtimes'],
             fn($k) => preg_match($unitRe, (string) $k), ARRAY_FILTER_USE_KEY);
     }
+    if (is_array($status['containerRuntimes'] ?? null)) {
+        $status['containerRuntimes'] = array_filter($status['containerRuntimes'],
+            fn($k) => preg_match($unitRe, (string) $k), ARRAY_FILTER_USE_KEY);
+    }
     if (is_array($status['frameworks'] ?? null)) {
         $status['frameworks'] = array_filter($status['frameworks'],
             fn($k) => preg_match($vhostRe, (string) $k), ARRAY_FILTER_USE_KEY);

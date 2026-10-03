@@ -217,8 +217,24 @@ HOSTPKG_JSON='null'
 FRAMEWORKS_JSON='{}'
 SUPPORT_DIR="${SUPPORT_DIR:-/var/lib/linuxbasics}"
 DEPLOYED_DIR="${DEPLOYED_DIR:-/var/lib/jenkins/last-deployed}"
+# A container brings its own runtime. The official base images name it in
+# their environment, so "<product> <version>", or nothing for a static image.
+container_runtime() {
+    command -v docker >/dev/null 2>&1 || return 0
+    local env
+    env="$(docker inspect "$1" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null)" || return 0
+    if [[ "$env" =~ (^|$'\n')ASPNET_VERSION=([0-9][0-9A-Za-z.+-]*) ]]; then
+        echo "dotnet ${BASH_REMATCH[2]}"
+    elif [[ "$env" =~ (^|$'\n')DOTNET_VERSION=([0-9][0-9A-Za-z.+-]*) ]]; then
+        echo "dotnet ${BASH_REMATCH[2]}"
+    elif [[ "$env" =~ (^|$'\n')NODE_VERSION=([0-9][0-9A-Za-z.+-]*) ]]; then
+        echo "nodejs ${BASH_REMATCH[2]}"
+    fi
+}
+
+CONTAINER_RT_JSON='{}'
 collect_runtimes() {
-    local out="" unit dll cfg ver name raw
+    local out="" cout="" unit dll cfg ver name raw
 
     raw=$(systemctl list-units "$UNIT_GLOB" --all --no-legend --plain 2>/dev/null) || { RUNTIME_JSON='null'; return; }
 
@@ -227,7 +243,11 @@ collect_runtimes() {
         # The dll the unit was told to run. Taken from the unit rather than from
         # the config, so this reports what is RUNNING, not what was intended.
         dll=$(systemctl show -p ExecStart --value "$unit" 2>/dev/null | grep -o '[^ ";]*\.dll' | head -1)
-        [ -n "$dll" ] || continue
+        if [ -z "$dll" ]; then
+            ver="$(container_runtime "${unit%.service}")"
+            [ -n "$ver" ] && cout="$cout,\"$(json_escape "$unit")\":\"$(json_escape "$ver")\""
+            continue
+        fi
         cfg="${dll%.dll}.runtimeconfig.json"
         [ -r "$cfg" ] || continue
 
@@ -245,6 +265,7 @@ collect_runtimes() {
     done < <(printf '%s\n' "$raw" | awk '{print $1}')
 
     RUNTIME_JSON="{${out#,}}"
+    CONTAINER_RT_JSON="{${cout#,}}"
 
     # What this machine could run, so the page can say "needs 9, you have 8 and
     # 10" rather than only naming what the app wants.
@@ -378,6 +399,7 @@ write_status() {
   "vhosts": $VHOSTS_JSON,
   "firewall": $FIREWALL_JSON,
   "runtimes": $RUNTIME_JSON,
+  "containerRuntimes": $CONTAINER_RT_JSON,
   "dotnetInstalled": $INSTALLED_JSON,
   "support": $SUPPORT_JSON,
   "hostPackages": $HOSTPKG_JSON,

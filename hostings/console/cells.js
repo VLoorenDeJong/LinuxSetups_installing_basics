@@ -1481,7 +1481,20 @@ function render() {
     if (declared.toLowerCase() === 'node') {
       return `<td class="runtime"><span class="dash">Node</span></td>`;
     }
-    const ver = RUNTIME_OF[`app-${e.name}${SUFFIX[e.env] ?? ''}.service`];
+    const unitName = `app-${e.name}${SUFFIX[e.env] ?? ''}.service`;
+    // A container carries its own runtime, so this machine's runtimes do not matter.
+    const inBox = STATUS && STATUS.containerRuntimes ? STATUS.containerRuntimes[unitName] : '';
+    if (inBox) {
+      const [product, version] = String(inBox).split(' ');
+      const major = String(version || '').split('.')[0];
+      const life = supportOf(product, version);
+      const sup = supportText(life, t);
+      const label = product === 'nodejs' ? 'Node' : '.NET';
+      return `<td class="runtime"><span class="pill lv-${life.level}"
+        title="${esc(`${label} ${version} ${t.rtInContainer}` + (sup.tip ? '\n' + sup.tip : ''))}"
+        >${esc(label)} ${esc(major)}${esc(sup.note)}</span></td>`;
+    }
+    const ver = RUNTIME_OF[unitName];
     if (!ver) return `<td class="runtime"><span class="dash">&mdash;</span></td>`;
     if (ver === 'self-contained') {
       return `<td class="runtime"><span title="${esc(t.rtSelf)}">${esc(t.rtSelfShort)}</span></td>`;
