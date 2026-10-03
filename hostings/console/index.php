@@ -4152,6 +4152,8 @@ if ($myRole !== 'full') {
             <th class="sortable" data-sort="1" aria-sort="none" data-i18n-title="sName" title="the unit and vhost name">
               <span data-i18n="cName">Name</span></th>
             <th class="repo-col" data-i18n-title="sRepo" title="where the code lives"></th>
+            <th data-i18n-title="sRuntime" title="what the deployed build targets">
+              <span data-i18n="cRuntime">Runs on</span></th>
             <th class="sortable" data-sort="7" aria-sort="none" data-i18n-title="sLogin" title="a password stands in front">
               <span data-i18n="cLogin">Login</span></th>
             <th class="sortable" data-sort="4" aria-sort="none" data-i18n-title="sAddr" title="what you type in a browser">

@@ -7,6 +7,21 @@
 // dotnet8 got a plain Path box with no project picker, the generic label, and
 // no .dll check at all. Measured 2026-09-09 on example_net.
 // uno is .NET too: Uno with Server runs its Server dll like any Blazor app.
+// Beside the Application type: how long the chosen .NET is supported.
+function runtimeSupportPill(rt, t) {
+  const m = String(rt || '').match(/^dotnet(\d+)$/);
+  if (!m) return '';
+  const life = supportOf('dotnet', m[1]);
+  if (!life.known) return '';
+  const sup = supportText(life, t);
+  return `<span class="pill lv-${life.level}" title="${esc(sup.tip)}">${esc(sup.tip)}</span>`;
+}
+document.addEventListener('change', ev => {
+  const sel = ev.target.closest && ev.target.closest('select[data-runtime]');
+  const slot = sel && sel.parentElement.querySelector('[data-runtime-support]');
+  if (slot) slot.innerHTML = runtimeSupportPill(sel.value, T[lang]);
+});
+
 function isDotnet(rt) { return /^(dotnet|uno)/.test(String(rt || 'dotnet').toLowerCase()); }
 // docker, docker_node and docker_python all take a Dockerfile path (item 141).
 function isDocker(rt) { return /^docker/.test(String(rt || '').toLowerCase()); }
@@ -1404,7 +1419,8 @@ function renderDrawerFields() {
             <option value="${r}" ${r === cur ? 'selected' : ''}
                     title="${esc((t.runtimes && t.runtimes[r]) || why)}">${esc(label)}</option>`).join('')}
           ${known ? '' : `<option value="${esc(v)}" selected>${esc(v)}</option>`}
-          </select>`;
+          </select>
+          <span data-runtime-support>${runtimeSupportPill(cur, t)}</span>`;
         break;
       }
 

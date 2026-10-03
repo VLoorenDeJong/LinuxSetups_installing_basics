@@ -1521,7 +1521,7 @@ function render() {
   // The repository icon stays in BOTH views. It is one glyph wide and it is the
   // way to open a row's code from the table; taking it out of Serving cost more
   // than the column was worth. The owner, 2026-09-10.
-  paint('apps',     'app', [cCert, cState, cPort, cEnv, cPreview, cName, cRepo, cLogin, cAddr, cUnit],
+  paint('apps',     'app', [cCert, cState, cPort, cEnv, cPreview, cName, cRepo, cRuntime, cLogin, cAddr, cUnit],
         svcButtons);
   paint('apps-pipeline', 'app',
     [cState, cEnv, cName, cRepo, cRuntime, cPipe, e => cRecent(e, t),
