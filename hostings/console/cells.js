@@ -246,7 +246,7 @@ function entries(kind) {
 // never made its row sweep: a Blazor app is "activating" for about a second,
 // and the page was reading a snapshot minutes old. readStatus() re-derives all
 // of it, and boot.js calls it every few seconds with a fresh file.
-let RUNTIME_OF, DOTNET_HAVE, DOTNET_SUPPORT, UNITS, STATUS_AGE, STATUS_FRESH,
+let RUNTIME_OF, DOTNET_HAVE, SUPPORT, UNITS, STATUS_AGE, STATUS_FRESH,
     SVC, CFG, FW, VHOSTS, LISTEN, CERTS;
 
 // A published file older than this is not trusted. The writer runs every 5
@@ -254,15 +254,54 @@ let RUNTIME_OF, DOTNET_HAVE, DOTNET_SUPPORT, UNITS, STATUS_AGE, STATUS_FRESH,
 // than show a minute-old answer as current.
 const STATUS_MAX_AGE = 60;
 
-// Amber from six months before Microsoft's end date, red after it.
+// Amber from six months before the maker's end date, red after it. A version
+// is matched on major.minor first (Vue's cycles are 3.5), then on major.
 const SUPPORT_WARN_DAYS = 183;
-function supportOf(major) {
-  const s = DOTNET_SUPPORT && DOTNET_SUPPORT[major];
-  if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(String(s.eol || ''))) {
-    return { level: s && s.phase === 'eol' ? 'bad' : 'ok', eol: '' };
-  }
-  const days = (Date.parse(s.eol + 'T00:00:00Z') - Date.now()) / 86400000;
-  return { level: days <= 0 ? 'bad' : days <= SUPPORT_WARN_DAYS ? 'warn' : 'ok', eol: s.eol };
+function supportOf(product, version) {
+  const cycles = (SUPPORT && SUPPORT[product]) || {};
+  const parts = String(version || '').split('.');
+  const s = cycles[parts.slice(0, 2).join('.')] || cycles[parts[0]];
+  if (!s) return { level: 'ok', eol: '', source: '', known: false };
+  const dated = /^\d{4}-\d{2}-\d{2}$/.test(String(s.eol || ''));
+  const days = dated ? (Date.parse(s.eol + 'T00:00:00Z') - Date.now()) / 86400000 : Infinity;
+  const level = s.isEol || days <= 0 ? 'bad' : days <= SUPPORT_WARN_DAYS ? 'warn' : 'ok';
+  return { level, eol: dated ? s.eol : '', source: s.source || '', known: true };
+}
+
+// The machine's own software: Ubuntu, and the runtimes apt installed. Shown
+// only when one of them is amber, red, or has no patch promise at all.
+const HOST_LABEL = { ubuntu: 'Ubuntu', php: 'PHP', python: 'Python', java: 'Java' };
+function renderSupportCard(t) {
+  const card = document.getElementById('support-card');
+  if (!card) return;
+  const pkgs = STATUS && Array.isArray(STATUS.hostPackages) ? STATUS.hostPackages : [];
+  const lines = pkgs.map(p => {
+    const name = `${HOST_LABEL[p.name] || p.name} ${p.version}`;
+    if (p.component !== 'main') {
+      return { level: 'warn', text: t.supNoPromise.replace('%n', name).replace('%c', p.component) };
+    }
+    const dated = /^\d{4}-\d{2}-\d{2}$/.test(String(p.eol || ''));
+    const days = dated ? (Date.parse(p.eol + 'T00:00:00Z') - Date.now()) / 86400000 : Infinity;
+    const level = days <= 0 ? 'bad' : days <= SUPPORT_WARN_DAYS ? 'warn' : 'ok';
+    return { level, text: (level === 'bad' ? t.supEnded : t.supUntil).replace('%n', name).replace('%d', p.eol) };
+  }).filter(l => l.level !== 'ok');
+  card.hidden = lines.length === 0;
+  if (card.hidden) return;
+  card.innerHTML = `<h2 style="font-size:1.02rem;margin:.1rem 0 .55rem">${esc(t.supCardH)}</h2>`
+    + lines.map(l => `<p style="margin:.2rem 0"><span class="pill lv-${l.level}">${esc(l.text)}</span></p>`).join('')
+    + `<p class="note" style="margin:.4rem 0 0">${esc(t.supCardNote)}</p>`;
+}
+
+// The tooltip line and the short note a support level adds to a pill.
+function supportText(life, t) {
+  if (!life.known) return { tip: '', note: '' };
+  const tip = (life.eol
+    ? (life.level === 'bad' ? t.rtEolSince : t.rtEolOn).replace('%d', life.eol)
+    : (life.level === 'bad' ? t.rtEolShort : t.rtNoEnd))
+    + (life.source ? ` (${t.rtSource.replace('%s', life.source)})` : '');
+  const note = life.level === 'bad' ? `, ${t.rtEolShort}`
+    : life.level === 'warn' ? `, ${t.rtEolSoonShort}` : '';
+  return { tip, note };
 }
 
 function readStatus() {
@@ -273,8 +312,8 @@ function readStatus() {
     ? STATUS.runtimes : {};
   DOTNET_HAVE = (STATUS && Array.isArray(STATUS.dotnetInstalled))
     ? STATUS.dotnetInstalled : null;
-  DOTNET_SUPPORT = (STATUS && STATUS.dotnetSupport && typeof STATUS.dotnetSupport === 'object')
-    ? STATUS.dotnetSupport : {};
+  SUPPORT = (STATUS && STATUS.support && typeof STATUS.support === 'object')
+    ? STATUS.support : {};
 
   // null means nobody could look: either no file, or a collector that failed.
   // An empty Map means it looked and found nothing.
@@ -1451,15 +1490,28 @@ function render() {
     // tooltip along with whether this machine can actually run it.
     const major = String(ver).split('.')[0];
     const ok = !DOTNET_HAVE || DOTNET_HAVE.some(h => String(h).split('.')[0] === major);
-    const life = supportOf(major);
+    const life = supportOf('dotnet', major);
+    const sup = supportText(life, t);
     const tip = t.rtNeeds.replace('%v', ver)
       + (DOTNET_HAVE ? '\n' + t.rtHave.replace('%l', DOTNET_HAVE.join(', ')) : '')
-      + (life.eol ? '\n' + (life.level === 'bad' ? t.rtEolSince : t.rtEolOn).replace('%d', life.eol) : '');
+      + (sup.tip ? '\n' + sup.tip : '');
     const level = !ok ? 'bad' : life.level;
-    const note = life.level === 'bad' ? `, ${t.rtEolShort}`
-      : life.level === 'warn' ? `, ${t.rtEolSoonShort}` : '';
     return `<td class="runtime"><span class="pill lv-${level}"
-      title="${esc(tip)}">.NET ${esc(major)}${esc(note)}</span></td>`;
+      title="${esc(tip)}">.NET ${esc(major)}${esc(sup.note)}</span></td>`;
+  };
+
+  // What a website's deployed build was made with, recorded at deploy.
+  const FW_LABEL = { angular: 'Angular', vue: 'Vue', react: 'React', svelte: 'Svelte' };
+  const cBuilt = e => {
+    const fw = STATUS && STATUS.frameworks ? STATUS.frameworks[`${e.name}-${e.env}`] : '';
+    if (!fw) return `<td class="runtime"><span class="dash">&mdash;</span></td>`;
+    const [product, version] = String(fw).split(' ');
+    const life = supportOf(product, version);
+    const sup = supportText(life, t);
+    const major = String(version || '').split('.')[0];
+    return `<td class="runtime"><span class="pill lv-${life.level}"
+      title="${esc(`${FW_LABEL[product] || product} ${version || ''}` + (sup.tip ? '\n' + sup.tip : ''))}"
+      >${esc(FW_LABEL[product] || product)} ${esc(major)}${esc(sup.note)}</span></td>`;
   };
 
   // Two views of the same rows. Serving answers "is it up", Pipeline answers
@@ -1479,7 +1531,7 @@ function render() {
     e => `<td class="store">${e.path ? esc(e.path) : '<span class="dash">&mdash;</span>'}</td>`,
     cRepo, cLogin, cAddr]);
   paint('websites-pipeline', 'website',
-    [cState, cEnv, cName, cRepo, cPipe, e => cRecent(e, t),
+    [cState, cEnv, cName, cRepo, cBuilt, cPipe, e => cRecent(e, t),
      e => cDeployed(e, t), e => cBehind(e, t)]);
 
   paint('proxies',  'proxy',   [cCert, cState, cPort, cNameState, cLogin, cAddr]);
@@ -1487,6 +1539,8 @@ function render() {
   // Only once the Pipeline view is actually on screen: each ask is a sudo call
   // and a git ls-remote against GitHub.
   askDeployedForVisible();
+
+  renderSupportCard(t);
 
   // Says where the colours came from and when. A page that colours pills
   // without saying how old the answer is invites trusting a dead writer.

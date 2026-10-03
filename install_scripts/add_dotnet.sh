@@ -279,15 +279,6 @@ load_dotnet_supported() {
     [ -n "$DOTNET_SUPPORTED" ]
 }
 
-# The console's Runs on column reads this to mark a build out of support.
-DOTNET_SUPPORT_FILE="/var/lib/linuxbasics/dotnet-support"
-save_dotnet_support() {
-    load_dotnet_supported || return 0
-    mkdir -p "$(dirname "$DOTNET_SUPPORT_FILE")" \
-        && printf '%s\n' "$DOTNET_CHANNELS" > "$DOTNET_SUPPORT_FILE.new" \
-        && chmod 0644 "$DOTNET_SUPPORT_FILE.new" \
-        && mv -f "$DOTNET_SUPPORT_FILE.new" "$DOTNET_SUPPORT_FILE"
-}
 
 # Offline, only the LTS formula is known, so only LTS majors are offered.
 is_supported_version() {
@@ -632,7 +623,6 @@ if [ ${#STILL_MISSING[@]} -gt 0 ]; then
     exit 1
 fi
 
-save_dotnet_support || print_warning "Could not save the .NET support dates, so the console shows none."
 print_success ".NET installation and configuration complete"
 echo -e "\e[34m📊 SDK/Runtime: \e[0m$(dotnet --version 2>/dev/null || echo 'runtime-only install (no SDK)')"
 echo -e "\e[34m🌐 ASP.NET Core: \e[0m"

@@ -211,7 +211,10 @@ collect_units() {
 RUNTIME_JSON='{}'
 INSTALLED_JSON='null'
 SUPPORT_JSON='null'
-DOTNET_SUPPORT_FILE="/var/lib/linuxbasics/dotnet-support"
+HOSTPKG_JSON='null'
+FRAMEWORKS_JSON='{}'
+SUPPORT_DIR="${SUPPORT_DIR:-/var/lib/linuxbasics}"
+DEPLOYED_DIR="${DEPLOYED_DIR:-/var/lib/jenkins/last-deployed}"
 collect_runtimes() {
     local out="" unit dll cfg ver name raw
 
@@ -253,17 +256,44 @@ collect_runtimes() {
     else
         INSTALLED_JSON='null'
     fi
+}
 
-    # Microsoft's end dates per major, saved by add_dotnet.sh. Absent means unknown.
+# End-of-support dates (collect_support_dates.sh), the host's own runtimes, and
+# what each website was built with (written at deploy). null means not collected.
+collect_support() {
+    local product cycle eol iseol src prev="" body="" all=""
     SUPPORT_JSON='null'
-    if [ -r "$DOTNET_SUPPORT_FILE" ]; then
-        local major type phase eol sup=""
-        while read -r major type phase eol; do
-            [[ "$major" =~ ^[0-9]+$ ]] || continue
-            sup="$sup,\"$major\":{\"type\":\"$(json_escape "$type")\",\"phase\":\"$(json_escape "$phase")\",\"eol\":\"$(json_escape "$eol")\"}"
-        done < "$DOTNET_SUPPORT_FILE"
-        SUPPORT_JSON="{${sup#,}}"
+    if [ -r "$SUPPORT_DIR/support.tsv" ]; then
+        while IFS=$'\t' read -r product cycle eol iseol src; do
+            [ -n "$product" ] || continue
+            if [ "$product" != "$prev" ]; then
+                [ -n "$prev" ] && all="$all,\"$(json_escape "$prev")\":{${body#,}}"
+                prev="$product"; body=""
+            fi
+            body="$body,\"$(json_escape "$cycle")\":{\"eol\":\"$(json_escape "$eol")\",\"isEol\":$([ "$iseol" = yes ] && echo true || echo false),\"source\":\"$(json_escape "$src")\"}"
+        done < "$SUPPORT_DIR/support.tsv"
+        [ -n "$prev" ] && all="$all,\"$(json_escape "$prev")\":{${body#,}}"
+        SUPPORT_JSON="{${all#,}}"
     fi
+
+    local name ver comp list=""
+    HOSTPKG_JSON='null'
+    if [ -r "$SUPPORT_DIR/host-packages.tsv" ]; then
+        while IFS=$'\t' read -r name ver comp eol; do
+            [ -n "$name" ] || continue
+            list="$list,{\"name\":\"$(json_escape "$name")\",\"version\":\"$(json_escape "$ver")\",\"component\":\"$(json_escape "$comp")\",\"eol\":\"$(json_escape "$eol")\"}"
+        done < "$SUPPORT_DIR/host-packages.tsv"
+        HOSTPKG_JSON="[${list#,}]"
+    fi
+
+    local f key line out=""
+    for f in "$DEPLOYED_DIR"/*.framework; do
+        [ -s "$f" ] || continue
+        key="$(basename "$f" .framework)"
+        line="$(head -1 "$f")"
+        out="$out,\"$(json_escape "$key")\":\"$(json_escape "$line")\""
+    done
+    FRAMEWORKS_JSON="{${out#,}}"
 }
 
 collect_ports() {
@@ -344,7 +374,9 @@ write_status() {
   "firewall": $FIREWALL_JSON,
   "runtimes": $RUNTIME_JSON,
   "dotnetInstalled": $INSTALLED_JSON,
-  "dotnetSupport": $SUPPORT_JSON,
+  "support": $SUPPORT_JSON,
+  "hostPackages": $HOSTPKG_JSON,
+  "frameworks": $FRAMEWORKS_JSON,
   "errors": [${ERRORS#,}]
 }
 JSON
@@ -379,6 +411,7 @@ while :; do
         collect_vhosts
         collect_firewall
         collect_runtimes
+        collect_support
         CONFIG_CHECKED=$now
     fi
     write_status || true

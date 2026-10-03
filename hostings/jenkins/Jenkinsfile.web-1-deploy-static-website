@@ -265,6 +265,9 @@ pipeline {
                         // Written only after a successful copy, so a failed
                         // deploy is retried rather than remembered as done.
                         sh "printf '%s' '${env.SITE_SHA}' > ${env.DEPLOY_MARKER}"
+                        // What it was built with, so the console can show its support end.
+                        sh 'bash hostings/scripts/site_framework.sh "$WORKSPACE/site" > "' +
+                           env.DEPLOY_MARKER.replaceAll(/\.sha$/, '.framework') + '" || true'
                     }
                 }
             }

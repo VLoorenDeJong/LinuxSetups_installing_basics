@@ -1286,6 +1286,11 @@ function statusFor(?array $status, string $role, string $who): ?array {
         $status['runtimes'] = array_filter($status['runtimes'],
             fn($k) => preg_match($unitRe, (string) $k), ARRAY_FILTER_USE_KEY);
     }
+    if (is_array($status['frameworks'] ?? null)) {
+        $status['frameworks'] = array_filter($status['frameworks'],
+            fn($k) => preg_match($vhostRe, (string) $k), ARRAY_FILTER_USE_KEY);
+    }
+    unset($status['hostPackages']);
     if (is_array($status['vhosts'] ?? null)) {
         $status['vhosts'] = array_values(array_filter($status['vhosts'],
             fn($v) => preg_match($vhostRe, (string) $v)));
@@ -3897,6 +3902,11 @@ if ($myRole !== 'full') {
        page load. -->
   <?php /* Updating the machine is not a customer's to press either. */ ?>
   <?php if ($myRole === 'full'): ?>
+  <!-- Filled by cells.js only when this machine's own software is near or past
+       its end of support, or has no patch guarantee. -->
+  <div class="card" id="support-card" hidden></div>
+  <?php endif; ?>
+  <?php if ($myRole === 'full'): ?>
   <div class="card" id="update-card" style="display:none">
     <div class="row-actions">
       <form method="post" style="margin:0" data-busy="update">
@@ -4262,6 +4272,8 @@ if ($myRole !== 'full') {
             <th class="sortable" data-sort="1" aria-sort="ascending" data-i18n-title="sName" title="the vhost name">
               <span data-i18n="cName">Name</span></th>
             <th class="repo-col" data-i18n-title="sRepo" title="where the code lives"></th>
+            <th data-i18n-title="sBuiltWith" title="the framework the deployed build was made with">
+              <span data-i18n="cBuiltWith">Built with</span></th>
             <th class="pipe-col" data-i18n-title="sPipeline" title="the last deploy of this environment">
               <span data-i18n="cPipeline">Pipeline</span></th>
             <th class="dots-col" data-i18n-title="sRecent" title="the last five builds, newest first">
