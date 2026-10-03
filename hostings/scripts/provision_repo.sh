@@ -1615,3 +1615,10 @@ if [ "$CREATED" -gt 0 ]; then
     print_action "hostings.conf changed. Commit and push it, or the next run creates them again:"
     print_action "  cd $REPO_ROOT && git add /etc/hostings/hostings.conf && git commit && git push"
 fi
+
+# A row still saying "new" was skipped (name taken, GitHub unreadable). The
+# console reads the exit code, so this must not end as a success.
+if [ "$CREATED" -lt "${#WANTED[@]}" ]; then
+    print_error "$(( ${#WANTED[@]} - CREATED )) of ${#WANTED[@]} repository(ies) were NOT created: the lines above say why."
+    exit 1
+fi
