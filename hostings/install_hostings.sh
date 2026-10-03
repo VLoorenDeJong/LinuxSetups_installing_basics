@@ -81,6 +81,13 @@ conf_value() {
     sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" "$CONF_FILE" | head -1 \
         | sed 's/[[:space:]]*#.*//; s/[[:space:]]*$//; s/\r$//'
 }
+
+# add_dotnet.sh asks only when neither the caller nor the config answers.
+if [ -z "${DOTNET_VERSIONS:-}" ]; then
+    DOTNET_VERSIONS="$(conf_value DOTNET_VERSIONS)"
+    [ "$DOTNET_VERSIONS" = "-" ] && DOTNET_VERSIONS=""
+    [ -n "$DOTNET_VERSIONS" ] && export DOTNET_VERSIONS
+fi
 MISSING=()
 for k in BASE_DOMAIN CERT_EMAIL; do
     v="$(conf_value "$k")"
