@@ -484,6 +484,19 @@ AUTH_USER_FILE="$(conf_get AUTH_USER_FILE /etc/apache2/.htpasswd-progress)"
 AUTH_SESSION_KEY_FILE="$(conf_get AUTH_SESSION_KEY_FILE /etc/apache2/session-crypto.key)"
 AUTH_WEB_ROOT="$(conf_get AUTH_WEB_ROOT /var/www/auth)"
 
+# The second factor's token map, written by the console (add_hosting_manager.sh
+# makes the same directory). Apache refuses to start on a RewriteMap whose file
+# is missing, so a gated vhost is never written without it.
+GATE_DIR="/var/lib/hosting-manager/gate"
+GATE_MAP="${GATE_DIR}/gate.map"
+ensure_gate_map() {
+    [ -f "$GATE_MAP" ] && return 0
+    local owner="root"
+    id hosting-manager >/dev/null 2>&1 && owner="hosting-manager"
+    install -d -o "$owner" -g www-data -m 2750 "$GATE_DIR"
+    install -m 0640 -o "$owner" -g www-data /dev/null "$GATE_MAP"
+}
+
 # The account that may enter every protected site. It is named in every vhost's
 # Require, which is all a master password needs to be: there is no second
 # mechanism, no override flag, and nothing to switch off by accident.
@@ -832,8 +845,44 @@ EOF
 # -----------------------------------------------------------------------------
 auth_form_block() {
     local proxied="$1" users="$2" login_page="${3:-login.html}" transport="${4:-tls}"
-    local exclusions="" require_line cookie
+    local gate_host="${5:-}" gate_admin="${6:-}"
+    local exclusions="" require_line cookie gate_top="" gate_rules=""
     require_line="$(require_users "$users")"
+
+    # THE GATE: the console's second factor in front of a proxied tool. The
+    # console writes token:user lines into GATE_MAP once its own factor has
+    # passed (second_factor.php, gate_handoff), and sends the browser to
+    # /.hm-gate?t=<token>, which becomes a cookie here. Rewrite in <Location>
+    # because REMOTE_USER only exists after the login; proved on 2.4.58 in
+    # front of a proxied backend. The marker line is how the console knows
+    # which names it may hand a token to.
+    if [ -n "$gate_host" ]; then
+        gate_top="$(cat <<EOF
+# hm-gate: ${gate_host}
+    RewriteMap hmgate txt:${GATE_MAP}
+EOF
+)"
+        [ "$proxied" = "yes" ] && exclusions="    ProxyPass /.hm-gate     !"
+        gate_rules="$(cat <<EOF
+        # Second factor from https://${gate_admin}/. The tool never sees the cookie.
+        RequestHeader edit* Cookie "(^|;\\s*)hm_gate=[^;]*" ""
+        RewriteEngine On
+        # The <Location>s below inherit these rules, and the login must not be gated.
+        RewriteCond %{REQUEST_URI} ^/(${login_page//./\\.}|do-login|logout|auth-assets(/.*)?)\$
+        RewriteRule ^ - [L]
+        RewriteCond %{REQUEST_URI} =/.hm-gate
+        RewriteCond %{QUERY_STRING} ^t=([0-9a-f]{64})\$
+        RewriteRule ^ https://${gate_host}/ [R=303,L,QSD,CO=hm_gate:%1:${gate_host}:0:/:secure:httponly:lax]
+        RewriteCond %{HTTP_COOKIE} (?:^|;\\s*)hm_gate=([0-9a-f]{64})
+        RewriteCond \${hmgate:%1:%{REMOTE_USER}|0} ^([0-9]{14})\$
+        RewriteRule ^ - [E=HM_GATE_UNTIL:%1]
+        RewriteCond expr "-n %{ENV:HM_GATE_UNTIL} && %{ENV:HM_GATE_UNTIL} -gt %{TIME}"
+        RewriteRule ^ - [E=HM_GATE_OK:1]
+        RewriteCond %{ENV:HM_GATE_OK} !=1
+        RewriteRule ^ https://${gate_admin}/?tfa-for=${gate_host} [R=303,L]
+EOF
+)"
+    fi
 
     # A `secure` cookie is never sent back over plain HTTP, so a plain-HTTP door
     # needs its own name as well: cookies ignore the port, and reusing `session`
@@ -855,12 +904,14 @@ auth_form_block() {
     ProxyPass /do-login     !
     ProxyPass /logout       !
     ProxyPass /auth-assets  !
+${exclusions}
 EOF
 )"
     fi
 
     cat <<EOF
 
+${gate_top}
     # --- Login -------------------------------------------------------------
     # ORDER IS LOAD BEARING: <Location> blocks merge in file order and the LAST
     # match wins, so the general <Location /> must come FIRST and the exceptions
@@ -884,6 +935,7 @@ ${exclusions}
         ${cookie}
         SessionCryptoPassphraseFile ${AUTH_SESSION_KEY_FILE}
         ${require_line}
+${gate_rules}
     </Location>
 
     <Location /${login_page}>
@@ -1295,12 +1347,26 @@ build_rows() {
 
                 users_here="$(users_in_env "$authusers" "$env")"
 
+                # A proxy row is one of the machine's own tools (Jenkins,
+                # Portainer), so behind its login it also needs the console's
+                # second factor, handed out by admin.<its domain>. On :80 the
+                # secure cookie never arrives, so a name with no certificate
+                # cannot be entered at all, which is the intended failure.
+                gate_host="" gate_admin=""
+                if [ "$type" = "proxy" ]; then
+                    gate_host="$host"
+                    case "$sub" in
+                        =*) gate_admin="admin.${sub#=}" ;;
+                        *)  gate_admin="admin.${BASE_DOMAIN}" ;;
+                    esac
+                    ensure_gate_map
+                fi
                 case "$type" in
-                    app|proxy) auth_443="$(auth_form_block yes "$users_here" "$login_page")" ;;
+                    app|proxy) auth_443="$(auth_form_block yes "$users_here" "$login_page" tls "$gate_host" "$gate_admin")" ;;
                     *)             auth_443="$(auth_form_block no  "$users_here" "$login_page")" ;;
                 esac
                 case "$type" in
-                    app|proxy) auth_80="$(auth_form_block yes "$users_here" "$login_page" plain)" ;;
+                    app|proxy) auth_80="$(auth_form_block yes "$users_here" "$login_page" plain "$gate_host" "$gate_admin")" ;;
                     *)             auth_80="$(auth_form_block no  "$users_here" "$login_page" plain)" ;;
                 esac
                 AUTH_ROWS+=("$name/$env")

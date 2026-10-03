@@ -388,6 +388,12 @@ if [ "$LAN_PORT" = "MISSING" ]; then
     LAN_PORT=""
 fi
 
+# PANELS_OFF closes this door as it does every other page's. The live config
+# sets it at Go live, so the console is then only admin.<domain>, behind 2FA.
+case ",$(conf_get PANELS_OFF '' | tr -d ' ')," in
+    *,console,*) LAN_PORT="" ;;
+esac
+
 # Every page against every other, and against the rows. Two panels wanting one
 # port used to surface as an Apache dump at apply time instead of a sentence
 # here, and the console can now change these ports from a browser.
@@ -557,6 +563,12 @@ chown -R "$PAGE_USER:$PAGE_USER" "${MANAGER_HOME}/work"
 # first use; chown -R again because the root:root sweep above takes it back.
 install -d -o "$PAGE_USER" -g "$PAGE_USER" -m 0700 "${MANAGER_HOME}/2fa"
 chown -R "$PAGE_USER:$PAGE_USER" "${MANAGER_HOME}/2fa"
+
+# The gate's token map: the page writes it, Apache (www-data) reads it. setgid,
+# so every file the page writes here is readable by www-data and nobody else.
+install -d -o "$PAGE_USER" -g www-data -m 2750 "${MANAGER_HOME}/gate"
+[ -f "${MANAGER_HOME}/gate/gate.map" ] || install -m 0640 -o "$PAGE_USER" -g www-data /dev/null "${MANAGER_HOME}/gate/gate.map"
+chown -R "$PAGE_USER:www-data" "${MANAGER_HOME}/gate"
 
 # The forgot-password links, one per account, and the hourly send count.
 install -d -o "$PAGE_USER" -g "$PAGE_USER" -m 0700 "${MANAGER_HOME}/reset"

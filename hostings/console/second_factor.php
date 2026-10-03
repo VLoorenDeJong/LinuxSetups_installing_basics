@@ -68,6 +68,12 @@ function tfa_cookie_ok(string $user): bool {
     return hash_equals(tfa_mac($u . '.' . $until), $mac);
 }
 
+// When the pass in the cookie runs out, so a gate pass never outlives it.
+function tfa_cookie_until(string $user): int {
+    if (!tfa_cookie_ok($user)) return 0;
+    return (int) explode('.', (string) $_COOKIE[TFA_COOKIE])[1];
+}
+
 function tfa_cookie_set(string $user): void {
     $u = bin2hex($user);
     $until = (string) (time() + TFA_PASS_SECS);
@@ -376,7 +382,7 @@ function tfa_code_page(string $user, string $note, bool $noteBad): void {
         . '<p class="muted">A 6-digit code was sent to the e-mail address of '
         . '<strong>' . htmlspecialchars($user) . '</strong>. Two recovery codes work instead.</p>'
         . ($note !== '' ? '<p class="' . ($noteBad ? 'bad' : 'muted') . '">' . htmlspecialchars($note) . '</p>' : '')
-        . '<form method="POST" action="./"><input type="hidden" name="action" value="2fa-check">'
+        . '<form method="POST" action="' . htmlspecialchars(tfa_here()) . '"><input type="hidden" name="action" value="2fa-check">'
         . '<label for="c">Code</label>'
         . '<input id="c" name="code" autocomplete="one-time-code" inputmode="text" autofocus required>'
         // Recovery takes TWO different codes, the owner 2026-09-20. Left empty for
@@ -386,7 +392,7 @@ function tfa_code_page(string $user, string $note, bool $noteBad): void {
         . '<p class="muted">Leave the second box empty for the e-mailed code. '
         . 'Recovery codes are used two at a time, and both are spent.</p>'
         . '<button type="submit">Continue</button></form>'
-        . '<form method="POST" action="./"><input type="hidden" name="action" value="2fa-send">'
+        . '<form method="POST" action="' . htmlspecialchars(tfa_here()) . '"><input type="hidden" name="action" value="2fa-send">'
         . '<button type="submit" class="plain">Send a new code</button></form>'
         . tfa_lockout_help($user));
 }
@@ -434,6 +440,83 @@ function tfa_recovery_page(string $user): void {
         . '<p><a href="./">Back to the console</a></p>');
 }
 
+// =============================================================================
+// THE GATE: this second factor in front of the proxied tools (Jenkins,
+// Portainer). Their vhosts, from add_app_vhosts.sh, send a browser without a
+// pass here as ?tfa-for=<their name>. Once this page's own factor has passed,
+// gate_handoff() writes a one-off token into a map Apache reads and sends the
+// browser back to /.hm-gate on that name, where Apache turns it into a cookie.
+//
+// A token is only good together with the same account's password login on
+// that name: the map key is token:user, and Apache looks it up with its own
+// REMOTE_USER.
+// =============================================================================
+const GATE_DIR = '/var/lib/hosting-manager/gate';
+const GATE_MAP = GATE_DIR . '/gate.map';
+
+// A name is a gate target only if an enabled vhost says so. Read from what
+// Apache serves, so a removed row stops being a target with its vhost.
+function gate_target(): string {
+    $h = strtolower((string) ($_GET['tfa-for'] ?? ''));
+    if (!preg_match('/^[a-z0-9][a-z0-9.-]{0,252}$/', $h)) return '';
+    foreach (glob('/etc/apache2/sites-enabled/*.conf') ?: [] as $f) {
+        if (preg_match('/^# hm-gate: ' . preg_quote($h, '/') . '$/m', (string) @file_get_contents($f))) return $h;
+    }
+    return '';
+}
+
+// Apache compares against %{TIME}, which is local time, so the stamp is too.
+function gate_stamp(int $t): string {
+    $name = '';
+    $link = @readlink('/etc/localtime');
+    if (is_string($link) && ($p = strpos($link, 'zoneinfo/')) !== false) $name = substr($link, $p + 9);
+    if ($name === '') $name = trim((string) @file_get_contents('/etc/timezone'));
+    try { $tz = new DateTimeZone($name !== '' ? $name : 'UTC'); }
+    catch (Exception $e) { $tz = new DateTimeZone('UTC'); }
+    return (new DateTime('@' . $t))->setTimezone($tz)->format('YmdHis');
+}
+
+function gate_handoff(string $user): void {
+    $host = gate_target();
+    if ($host === '') {
+        tfa_page('Not a gated name', '<h1>Not a gated name</h1><p class="muted">'
+            . htmlspecialchars((string) ($_GET['tfa-for'] ?? '')) . ' is not served behind this sign-in.</p>', 400);
+    }
+    $until = tfa_cookie_until($user) ?: time() + TFA_PASS_SECS;
+    $tok = bin2hex(random_bytes(32));
+    $now = gate_stamp(time());
+
+    $lock = @fopen(GATE_DIR . '/.lock', 'c');
+    if ($lock === false) {
+        tfa_page('Gate unavailable', '<h1>Gate unavailable</h1><p class="bad">' . GATE_DIR
+            . ' is not writable for this page. Re-run add_hosting_manager.sh.</p>', 500);
+    }
+    flock($lock, LOCK_EX);
+    $keep = [];
+    foreach (file(GATE_MAP, FILE_IGNORE_NEW_LINES) ?: [] as $line) {
+        if (preg_match('/^[0-9a-f]{64}:[A-Za-z0-9._-]+ ([0-9]{14})$/', $line, $m) && $m[1] > $now) $keep[] = $line;
+    }
+    $keep[] = $tok . ':' . $user . ' ' . gate_stamp($until);
+    $tmp = GATE_MAP . '.' . getmypid();
+    $ok = @file_put_contents($tmp, implode("\n", $keep) . "\n") !== false && @chmod($tmp, 0640) && @rename($tmp, GATE_MAP);
+    flock($lock, LOCK_UN);
+    fclose($lock);
+    if (!$ok) {
+        @unlink($tmp);
+        tfa_page('Gate unavailable', '<h1>Gate unavailable</h1><p class="bad">' . GATE_MAP
+            . ' could not be written. Re-run add_hosting_manager.sh.</p>', 500);
+    }
+    header('Cache-Control: no-store');
+    header('Location: https://' . $host . '/.hm-gate?t=' . $tok, true, 303);
+    exit;
+}
+
+// Kept through the code page, so passing it still ends up back at the tool.
+function tfa_here(): string {
+    $h = (string) ($_GET['tfa-for'] ?? '');
+    return './' . (preg_match('/^[A-Za-z0-9.-]{1,253}$/', $h) ? '?tfa-for=' . rawurlencode($h) : '');
+}
+
 // Everything below answers a request. A CLI caller wants the functions above
 // and nothing else: without this it would fall through to the code page and
 // send somebody a sign-in code from a cron job.
@@ -460,7 +543,7 @@ if ($tfaAction === '2fa-check') {
     $why = tfa_check($me, (string) ($_POST['code'] ?? ''), (string) ($_POST['code2'] ?? ''));
     if ($why === '') {
         tfa_cookie_set($me);
-        header('Location: ./', true, 303);
+        header('Location: ' . tfa_here(), true, 303);
         exit;
     }
     tfa_code_page($me, $why, true);

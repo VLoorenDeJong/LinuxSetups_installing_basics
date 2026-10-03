@@ -337,6 +337,9 @@ if ($me !== '' && is_file($kickFile)) {
     exit;
 }
 
+// Sent here by a gated tool's vhost: the factor has passed, so hand the pass on.
+if (isset($_GET['tfa-for'])) gate_handoff($me);
+
 // Who has a page open: every page asks for ?ask=status every five seconds, so
 // a name seen in the last 90 is somebody with the console in front of them.
 function onlineUsers(): array {

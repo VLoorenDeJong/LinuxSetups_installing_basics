@@ -1189,6 +1189,12 @@ if [ "$JENKINS_LAN_PORT" = "MISSING" ]; then
     exit 1
 fi
 
+# PANELS_OFF closes this door as it does every other page's. The live config
+# sets it at Go live, so Jenkins is then only its proxy row's name, behind 2FA.
+case ",$(conf_get PANELS_OFF '' | tr -d ' ')," in
+    *,jenkins,*) JENKINS_LAN_PORT="" ;;
+esac
+
 if [ -n "$JENKINS_LAN_PORT" ]; then
     if ! [ "$JENKINS_LAN_PORT" -ge 1024 ] 2>/dev/null; then
         print_error "The jenkins panel port must be a number of 1024 or above, not '$JENKINS_LAN_PORT'."
