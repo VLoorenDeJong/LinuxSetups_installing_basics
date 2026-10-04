@@ -240,7 +240,7 @@ while IFS= read -r _cl; do
 done < "$SITES_CONF"
 
 BASE_DOMAIN="$(conf_get BASE_DOMAIN "")"
-[ -z "$BASE_DOMAIN" ] && err "No BASE_DOMAIN in $SITES_CONF"
+# Demanded after the rows are counted: only rows build hostnames from it.
 
 IFS=',' read -r -a ALL_ENVS <<< "$(conf_get ENVS live)"
 for i in "${!ALL_ENVS[@]}"; do ALL_ENVS[$i]="$(trim "${ALL_ENVS[$i]}")"; done
@@ -737,7 +737,13 @@ for ref in "${DATASOURCE_REFS[@]:-}"; do
     [ -z "${SEEN_NAME[$target]:-}" ] && err "$who: DataSource '$target' names no row in the config"
 done
 
-[ "$ROW_COUNT" -eq 0 ] && err "No rows in $SITES_CONF"
+# Rows are not compulsory: a LAN-only machine may serve machine pages and
+# nothing else. A config with neither has nothing to apply.
+PANEL_COUNT="$(grep -cE '^[[:space:]]*PANEL[[:space:]]*=' "$SITES_CONF" 2>/dev/null || true)"
+if [ "$ROW_COUNT" -eq 0 ] && [ "${PANEL_COUNT:-0}" -eq 0 ]; then
+    err "No rows and no machine pages in $SITES_CONF"
+fi
+[ "$ROW_COUNT" -gt 0 ] && [ -z "$BASE_DOMAIN" ] && err "No BASE_DOMAIN in $SITES_CONF, which the rows need for their hostnames"
 
 # =============================================================================
 # 2. Can this machine actually do the work
@@ -762,7 +768,9 @@ if [ "$NEEDS_AUTH" -eq 1 ]; then
     [ -f "$AUTH_SESSION_KEY_FILE" ] || err "A row requires a login but $AUTH_SESSION_KEY_FILE does not exist. Create it: openssl rand -base64 32 | sudo tee $AUTH_SESSION_KEY_FILE"
 fi
 
-for e in "${ALL_ENVS[@]}"; do
+# Environments place rows; with no rows there is nothing to place.
+[ "$ROW_COUNT" -gt 0 ] || ALL_ENVS=()
+for e in ${ALL_ENVS+"${ALL_ENVS[@]}"}; do
     eu="${e^^}"
 
     _conf_get root "APP_ROOT_${eu}" ""
@@ -785,7 +793,7 @@ for e in "${ALL_ENVS[@]}"; do
 done
 
 BACKUP_ROOT="$(conf_get BACKUP_ROOT "")"
-[ -z "$BACKUP_ROOT" ] && warn "No BACKUP_ROOT set, so applications have nowhere agreed to write backups"
+[ "$ROW_COUNT" -gt 0 ] && [ -z "$BACKUP_ROOT" ] && warn "No BACKUP_ROOT set, so applications have nowhere agreed to write backups"
 
 # What the config needs, written down rather than worked out twice.
 if [ -n "$FLAGS_OUT" ]; then
