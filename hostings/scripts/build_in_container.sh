@@ -117,13 +117,22 @@ run_in() {
         return 1
     fi
     install -d -m 0700 -o "${owner%%:*}" -g "${owner##*:}" "$cache"
+    # Named, because timeout only kills the docker client; the container
+    # itself keeps building until it is stopped by name.
+    local name="build-$$-$RANDOM" rc=0
     timeout "$BUILD_TIMEOUT" docker run --rm \
+        --name "$name" \
         --user "$owner" \
         -e HOME=/tmp \
         -v "$dir":/src \
         -v "$cache":/nuget \
         -w /src \
-        "$IMAGE" "$@" >&2
+        "$IMAGE" "$@" >&2 || rc=$?
+    if [ "$rc" -eq 124 ]; then
+        docker stop -t 10 "$name" >/dev/null 2>&1 || true
+        print_error "The build ran longer than $BUILD_TIMEOUT; container $name stopped."
+    fi
+    return "$rc"
 }
 
 MODE="${1:-}"

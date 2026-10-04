@@ -391,7 +391,10 @@ UNDO_DIR="$(mktemp -d)"
 trap 'rm -rf "$UNDO_DIR"' EXIT
 NEW_FILES=()
 keep_for_undo() {  # <vhost file>, before it is overwritten or removed
-    [ -f "$1" ] && cp -p "$1" "$UNDO_DIR/"
+    [ -f "$1" ] || return 0
+    cp -p "$1" "$UNDO_DIR/"
+    # Remembered so the undo puts back a disabled vhost disabled.
+    [ -e "${ENABLED_DIR}/$(basename "$1")" ] && : > "$UNDO_DIR/$(basename "$1").enabled"
     return 0
 }
 undo_run() {
@@ -403,7 +406,11 @@ undo_run() {
         [ -e "$f" ] || continue
         base="$(basename "$f")"
         cp -p "$f" "${AVAILABLE_DIR}/${base}"
-        ln -sf "${AVAILABLE_DIR}/${base}" "${ENABLED_DIR}/${base}"
+        if [ -e "$UNDO_DIR/${base}.enabled" ]; then
+            ln -sf "${AVAILABLE_DIR}/${base}" "${ENABLED_DIR}/${base}"
+        else
+            rm -f "${ENABLED_DIR}/${base}"
+        fi
     done
 }
 

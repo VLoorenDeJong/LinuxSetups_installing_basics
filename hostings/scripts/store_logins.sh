@@ -33,6 +33,31 @@ print_success() { printf "\033[32m✅ %s\033[0m\n" "$1"; }
 print_action()  { printf "\033[33m👉 %s\033[0m\n" "$1"; }
 print_error()   { printf "\033[31m❌ %s\033[0m\n" "$1"; }
 
+# The busy indicator. Only on a terminal: the path unit writes to the journal.
+SPIN_FRAMES=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+_SPIN_PID=""
+spinner_start() {
+    [ "${DEBUG_MODE:-0}" = "1" ] && return 0
+    [ -t 1 ] || return 0
+    local message="$1"
+    (
+        local i=0
+        while true; do
+            printf '\r\033[K\033[34m%s %s\033[0m' "${SPIN_FRAMES[i % 10]}" "$message"
+            i=$((i + 1))
+            sleep 0.2
+        done
+    ) &
+    _SPIN_PID=$!
+}
+spinner_stop() {
+    [ -n "$_SPIN_PID" ] || return 0
+    kill "$_SPIN_PID" 2>/dev/null || true
+    wait "$_SPIN_PID" 2>/dev/null || true
+    _SPIN_PID=""
+    printf '\r\033[K'
+}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 . "$SCRIPT_DIR/config.sh" 2>/dev/null \
@@ -100,7 +125,7 @@ flock -n 9 || { print_info "Already running."; exit 0; }
 # The snapshot below is a plaintext copy of whatever is being stored, and one
 # of those is now a private key. A Ctrl-C between the copy and line 161 would
 # leave it on disk with nothing to clean it.
-trap 'rm -f "$STATE_DIR/.snapshot"' EXIT
+trap 'spinner_stop; rm -f "$STATE_DIR/.snapshot"' EXIT
 
 record_status() {
     printf '%s %s%s\n' "$1" "$(date -Is)" "${2:+ $2}" > "$STATE_DIR/status"
@@ -142,8 +167,10 @@ for entry in "${LOGIN_FILES[@]}"; do
 
     # Look before writing, every time: the vault copy must be the one last
     # stored or restored here, or somebody else changed it since.
+    spinner_start "$name: reading the vault copy..."
     vault_sha="$(secret_file_get "$name" | sha256sum | cut -d' ' -f1)"
     rc=$?
+    spinner_stop
     if [ "$rc" = 0 ]; then
         if [ "$vault_sha" = "$here" ]; then
             echo "$here" > "$rec"
@@ -163,7 +190,10 @@ for entry in "${LOGIN_FILES[@]}"; do
         continue
     fi
 
-    if secret_file_put "$name" < "$snap"; then
+    spinner_start "$name: storing..."
+    put_rc=0; secret_file_put "$name" < "$snap" || put_rc=$?
+    spinner_stop
+    if [ "$put_rc" = 0 ]; then
         echo "$here" > "$rec"
         print_success "$name: stored."
     else
