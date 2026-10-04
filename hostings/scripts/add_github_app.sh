@@ -599,7 +599,9 @@ print_success "GitHub App installed and proven."
 # on its own, for a machine where Jenkins arrives later.
 # -----------------------------------------------------------------------------
 JENKINS_SETUP="$SCRIPT_DIR/add_jenkins_github_credentials.sh"
-if [ "$ADMIN" -eq 0 ] && { [ -x "$JENKINS_SETUP" ] || [ -f "$JENKINS_SETUP" ]; }; then
+# The admin App too: Jenkins holds its own copy of that key for the admin's
+# owners, and a replaced key left it failing with "Couldn't authenticate".
+if [ -x "$JENKINS_SETUP" ] || [ -f "$JENKINS_SETUP" ]; then
     if systemctl is-active --quiet jenkins 2>/dev/null; then
         echo ""
         print_status "Jenkins is running here, so it gets the App too."
