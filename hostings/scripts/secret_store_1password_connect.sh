@@ -57,6 +57,15 @@ _cx_item() {
     _cx_vault "$(_op_vault_for "$1")" || return 2
     _cx GET "/v1/vaults/$_CX_VAULT_ID/items" -G --data-urlencode "filter=title eq \"$1\""
     [ "$_CX_CODE" = 200 ] || { _ss_error "Connect refused the lookup of '$1' (HTTP $_CX_CODE)."; return 2; }
+    # Two items with one title come back in a random order, so .[0] read the
+    # key on some calls and an empty item on others. `op item get` refuses
+    # the same case; so does this.
+    local count
+    count="$(printf '%s' "$_CX_BODY" | jq 'length')"
+    if [ "${count:-0}" -gt 1 ]; then
+        _ss_error "$count items in vault '$(_op_vault_for "$1")' are titled '$1'. Archive all but one, then run this again."
+        return 2
+    fi
     id="$(printf '%s' "$_CX_BODY" | jq -r '.[0].id // empty')"
     [ -n "$id" ] || return 1
     _cx GET "/v1/vaults/$_CX_VAULT_ID/items/$id"
