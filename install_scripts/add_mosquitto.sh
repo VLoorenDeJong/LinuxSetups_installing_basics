@@ -320,7 +320,7 @@ if [ "$CONF_CHANGED" -eq 1 ]; then
     docker restart mosquitto >/dev/null || { print_error "Could not restart Mosquitto for its new settings."; exit 1; }
     print_status "Restarted Mosquitto for the new settings."
 elif [ "$ACCOUNTS_CHANGED" -eq 1 ]; then
-    docker kill -s HUP mosquitto >/dev/null || { print_error "Could not tell Mosquitto to re-read its accounts."; exit 1; }
+    docker exec mosquitto kill -HUP 1 >/dev/null || { print_error "Could not tell Mosquitto to re-read its accounts."; exit 1; }
     print_status "Mosquitto re-read its accounts."
 fi
 

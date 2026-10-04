@@ -264,7 +264,7 @@ else
     chmod 0600 "$TMP"
     chown "$BROKER_UID:$BROKER_UID" "$TMP"
     mv "$TMP" "$PASSWD_FILE"
-    docker kill -s HUP mosquitto >/dev/null || { print_error "Could not tell Mosquitto to re-read its accounts."; exit 1; }
+    docker exec mosquitto kill -HUP 1 >/dev/null || { print_error "Could not tell Mosquitto to re-read its accounts."; exit 1; }
     print_success "Broker account ${MQTT_USER} set; Mosquitto re-read its accounts."
 fi
 unset LINE
