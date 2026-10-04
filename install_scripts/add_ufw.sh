@@ -48,7 +48,31 @@ fi
 # Allow SSH BEFORE enabling the firewall — this ordering is what keeps a
 # remote session alive when ufw comes up. Never reorder these two steps.
 # (Assumes SSH on port 22; a non-standard port would need its own allow rule.)
-sudo ufw allow ssh > /dev/null
+# From the LAN and from whoever is connected right now, never from everyone:
+# an Anywhere rule made here outlived add_ssh.sh's LAN-only rule (2026-10-04).
+ssh_sources() {
+    if [ -n "${SSH_ALLOW_FROM:-}" ]; then
+        printf '%s\n' $SSH_ALLOW_FROM
+        return 0
+    fi
+    { ip -o -4 route show; ip -o -6 route show; } 2>/dev/null \
+        | awk '$1 == "default" || / via / || $1 !~ /\// { next }
+               { d = ""; for (i = 1; i < NF; i++) if ($i == "dev") d = $(i + 1) }
+               d !~ /^(lo|docker|br-|veth|wg)/ { print $1 }' \
+        | sort -u
+}
+mapfile -t SSH_FROM < <(ssh_sources)
+if [ ${#SSH_FROM[@]} -eq 0 ]; then
+    echo -e "\e[33m⚠️ No local subnet found, so SSH is allowed from anywhere. add_ssh.sh narrows it.\e[0m"
+    sudo ufw allow ssh > /dev/null
+else
+    mapfile -t SSH_PEERS < <(ss -tnH state established '( sport = :22 )' 2>/dev/null \
+        | awk '{ p = $NF; sub(/:[0-9]+$/, "", p); gsub(/[][]/, "", p); sub(/^::ffff:/, "", p); print p }' | sort -u)
+    for src in "${SSH_FROM[@]}" "${SSH_PEERS[@]}"; do
+        sudo ufw allow from "$src" to any port 22 proto tcp > /dev/null
+    done
+    echo -e "\e[34m🔧 SSH allowed from: ${SSH_FROM[*]} ${SSH_PEERS[*]}\e[0m"
+fi
 
 # Enable UFW without requiring user confirmation
 echo "y" | sudo ufw enable > /dev/null
