@@ -1052,7 +1052,11 @@ EOF
     else
         printf '%s\n' "$NEW_VHOST" > "$VHOST"
         chmod 644 "$VHOST"
-        a2ensite "$VHOST_NAME" >/dev/null 2>&1
+        if ! A2_OUT="$(a2ensite "$VHOST_NAME" 2>&1)"; then
+            print_error "a2ensite refused $VHOST_NAME:"
+            printf '%s\n' "$A2_OUT" | tail -5
+            exit 1
+        fi
         if apache2ctl configtest >/dev/null 2>&1; then
             systemctl reload apache2
             print_success "Serving on port $LAN_PORT, sign-in page in front."
@@ -1080,7 +1084,11 @@ EOF
             if ufw_allows "$LAN_PORT" "$LAN_CIDR"; then
                 print_success "Port $LAN_PORT already open to $LAN_CIDR."
             else
-                ufw allow from "$LAN_CIDR" to any port "$LAN_PORT" proto tcp >/dev/null 2>&1
+                if ! UFW_OUT="$(ufw allow from "$LAN_CIDR" to any port "$LAN_PORT" proto tcp 2>&1)"; then
+                    print_error "UFW refused to open $LAN_PORT to $LAN_CIDR:"
+                    printf '%s\n' "$UFW_OUT" | tail -5
+                    exit 1
+                fi
                 print_success "Opened $LAN_PORT to $LAN_CIDR only."
             fi
         fi
@@ -1110,13 +1118,18 @@ echo ""
 # A dead publish path is a failed install, not a note at the bottom of a green
 # one. Items 29 and 59 are both "printed a red line and exited 0".
 EXIT_RC=0
+SAVE_HOOK="$(conf_get CONFIG_SAVE_HOOK "-")"
+if [ "$SAVE_HOOK" != "-" ] && [ ! -f "$SAVE_HOOK" ]; then
+    print_error "CONFIG_SAVE_HOOK names $SAVE_HOOK, which does not exist: every save will fail at the push."
+    EXIT_RC=3
+fi
 
 if id -u jenkins >/dev/null 2>&1 && [ ! -f "${MANAGER_HOME}/jenkins-token" ]; then
     print_action "1. A Jenkins token, so Apply and Update can start their jobs:"
     print_action "   In Jenkins: your user -> Security -> API token -> Add new token"
     print_action "   Then, replacing the parts in angle brackets:"
     print_action "     sudo install -m 600 -o root -g root /dev/null ${MANAGER_HOME}/jenkins-token"
-    print_action "     echo '<jenkins-user>:<token>' | sudo tee ${MANAGER_HOME}/jenkins-token"
+    print_action "     read -rsp 'jenkins-user:token: ' t; printf '%s\\n' \"\$t\" | sudo tee ${MANAGER_HOME}/jenkins-token >/dev/null; unset t"
     print_info "   Save and Re-check work without it. Apply and Update do not:"
     print_info "   press Build on the job in Jenkins instead."
 fi

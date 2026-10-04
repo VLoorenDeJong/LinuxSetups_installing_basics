@@ -130,7 +130,7 @@ if [ ! -f "$TOKEN_FILE" ]; then
     print_error "No Jenkins token at $TOKEN_FILE, so no job was started."
     print_action "Create one: in Jenkins, your user -> Security -> API token -> Add new token"
     print_action "Then, replacing the parts in angle brackets:"
-    print_action "  echo '<jenkins-user>:<token>' | sudo tee $TOKEN_FILE"
+    print_action "  read -rsp 'jenkins-user:token: ' t; printf '%s\\n' \"\$t\" | sudo tee $TOKEN_FILE >/dev/null; unset t"
     print_action "  sudo chmod 600 $TOKEN_FILE && sudo chown root:root $TOKEN_FILE"
     print_action "Until then, press Build on the '$JENKINS_JOB' job yourself."
     exit 1
