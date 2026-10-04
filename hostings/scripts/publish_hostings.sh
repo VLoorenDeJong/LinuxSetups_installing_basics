@@ -157,9 +157,11 @@ validate() {  # <candidate> <target>
     print_success "Config is valid."
 }
 
+# Waits rather than refuses: the apply job's --refresh holds this lock for a
+# second or two, and a save landing then was turned away (2026-10-04, twice).
 exec 9>"$LOCK"
-if ! flock -n 9; then
-    print_error "Another save is already running. Try again in a moment."
+if ! flock -w 60 9; then
+    print_error "Another save or refresh has held the config for over a minute. Try again shortly."
     exit 1
 fi
 
