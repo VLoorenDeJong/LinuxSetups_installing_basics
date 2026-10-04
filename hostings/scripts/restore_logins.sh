@@ -19,11 +19,6 @@ set -o pipefail
 # A file whose owner or group does not exist yet is skipped: dovecot-users
 # waits for Dovecot, and add_dovecot.sh calls this with --only dovecot-users
 # once it is installed.
-#
-# git-push-key is the one entry not owned by root. It is the key for the FIRST
-# clone, so on a fresh drive it is fetched BEFORE this script can run, by
-# LinuxBasics/install_scripts/add_first_clone_key.sh. Here it is the repair
-# path and the proof that the vault's copy and the drive's agree.
 # =============================================================================
 
 print_header()  { printf "\n\033[36m=== %s ===\033[0m\n" "$1"; }
@@ -108,14 +103,6 @@ LOGIN_FILES=(
     "docker-backup-password|$(conf_get DOCKER_BACKUP_PASSWORD_FILE /root/.docker_backup_password)|root:root|0600"
     "mail-backup-password|$(conf_get MAIL_BACKUP_PASSWORD_FILE /root/.mail_backup_password)|root:root|0600"
 )
-
-# The ONLY entry not owned by root: git reads it as the account that clones.
-# It is here so a fresh drive can fetch it before that clone, with
-# add_first_clone_key.sh in LinuxBasics. No GIT_PUSH_USER, no entry.
-GIT_PUSH_USER="$(conf_get GIT_PUSH_USER "")"
-if [ -n "$GIT_PUSH_USER" ]; then
-    LOGIN_FILES+=("git-push-key|$(conf_get GIT_PUSH_KEY "/home/$GIT_PUSH_USER/.ssh/id_ed25519")|$GIT_PUSH_USER:$GIT_PUSH_USER|0600")
-fi
 
 # DKIM signing keys, one per domain: a reflash restores the key whose public
 # half DNS already publishes, instead of making a new one.
@@ -225,14 +212,6 @@ for entry in "${LOGIN_FILES[@]}"; do
         FAILED=1; continue
     fi
     tmp=""
-    # A restored private key leaves a stale .pub beside it, and a mismatched
-    # pair fails as "the server refused the key" rather than as what it is.
-    if [ "$name" = "git-push-key" ] && pub="$(ssh-keygen -y -f "$path" 2>/dev/null)"; then
-        printf '%s\n' "$pub" > "$path.pub"
-        chown "$owner:$group" "$path.pub"
-        chmod 0644 "$path.pub"
-        print_status "$name: rewrote $path.pub to match"
-    fi
     sha "$path" > "$STATE_DIR/$name.sha256"
     print_success "$name: restored to $path ($(wc -l < "$path") lines, $owner:$group $mode)."
 done

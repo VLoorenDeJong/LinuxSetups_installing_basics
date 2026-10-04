@@ -78,14 +78,6 @@ LOGIN_FILES=(
     "mail-backup-password|$(conf_get MAIL_BACKUP_PASSWORD_FILE /root/.mail_backup_password)|root:root|0600"
 )
 
-# The ONLY entry not owned by root: git reads it as the account that clones.
-# It is here so a fresh drive can fetch it before that clone, with
-# add_first_clone_key.sh in LinuxBasics. No GIT_PUSH_USER, no entry.
-GIT_PUSH_USER="$(conf_get GIT_PUSH_USER "")"
-if [ -n "$GIT_PUSH_USER" ]; then
-    LOGIN_FILES+=("git-push-key|$(conf_get GIT_PUSH_KEY "/home/$GIT_PUSH_USER/.ssh/id_ed25519")|$GIT_PUSH_USER:$GIT_PUSH_USER|0600")
-fi
-
 # DKIM signing keys, one per domain: a reflash restores the key whose public
 # half DNS already publishes, instead of making a new one.
 DKIM_DIR="$(conf_get MAIL_DKIM_DIR /var/lib/rspamd/dkim)"

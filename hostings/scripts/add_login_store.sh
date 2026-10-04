@@ -119,7 +119,6 @@ PathChanged=/etc/dovecot/users
 PathChanged=$(conf_get AUTH_SESSION_KEY_FILE /etc/apache2/session-crypto.key)
 PathChanged=$(conf_get DOCKER_BACKUP_PASSWORD_FILE /root/.docker_backup_password)
 PathChanged=$(conf_get MAIL_BACKUP_PASSWORD_FILE /root/.mail_backup_password)
-PathChanged=$(conf_get GIT_PUSH_KEY "/home/$(conf_get GIT_PUSH_USER nobody)/.ssh/id_ed25519")
 Unit=login-store.service
 
 [Install]
