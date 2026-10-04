@@ -360,8 +360,10 @@ install_key() {
     # a copy that grabbed the body and missed a line, or picked up the page
     # around it. openssl's own complaint about that is unreadable.
     local begin_line end_line
-    begin_line="$(grep -m1 -- '-----BEGIN .*PRIVATE KEY-----' "$tmp" || true)"
-    end_line="$(grep -m1 -- '-----END .*PRIVATE KEY-----' "$tmp" || true)"
+    # The marker only, never its whole line: on a one-line key that line is
+    # the key, and both are printed back below as the "masked" display.
+    begin_line="$(grep -o -m1 -- '-----BEGIN [A-Z ]*PRIVATE KEY-----' "$tmp" | head -1 || true)"
+    end_line="$(grep -o -m1 -- '-----END [A-Z ]*PRIVATE KEY-----' "$tmp" | head -1 || true)"
 
     if [ -z "$begin_line" ] || [ -z "$end_line" ]; then
         print_error "That does not look like a key file."
