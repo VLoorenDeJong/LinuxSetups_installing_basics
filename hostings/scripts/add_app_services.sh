@@ -781,7 +781,8 @@ ExecStop=/usr/bin/docker stop ${image}
                     for w in $(recipe_all "$recipe" WRITABLE | head -n1); do exec_start+=" --tmpfs $w"; done
                 fi
                 [ "$(recipe_all "$recipe" EGRESS | head -n1)" = "yes" ] || exec_start+=" --network upstream-net"
-                # Not root inside the box: a break-out then lands as a nobody.
+                # Not root inside the box. Pick a uid no host account has, or a break-out
+                # lands as that account.
                 run_as="$(recipe_all "$recipe" USER | head -n1)"
                 [ -z "$run_as" ] || exec_start+=" --user $run_as"
                 while IFS= read -r m; do
