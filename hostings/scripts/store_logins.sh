@@ -129,12 +129,6 @@ fi
 
 sha() { sha256sum "$1" | cut -d' ' -f1; }
 
-# GitHub greets a key it knows with "Hi <name>!" and exits 1 even then.
-github_accepts() {
-    timeout 20 ssh -i "$1" -o IdentitiesOnly=yes -o BatchMode=yes \
-        -o StrictHostKeyChecking=accept-new -T git@github.com 2>&1 | grep -q '^Hi '
-}
-
 FAILED=""
 for entry in "${LOGIN_FILES[@]}"; do
     IFS="|" read -r name path _owner_group _mode <<< "$entry"
@@ -164,19 +158,7 @@ for entry in "${LOGIN_FILES[@]}"; do
             print_success "$name: the vault already holds this copy."
             continue
         fi
-        # The first-clone key is made fresh on every flash and the old one
-        # removed from GitHub, so GitHub is the judge of which copy is current.
-        keep_this=$KEEP_LOCAL
-        if [ "$keep_this" = 0 ] && [ "$name" = "git-push-key" ] && github_accepts "$snap"; then
-            vault_key="$STATE_DIR/.vault-key"
-            ( umask 077; secret_file_get "$name" > "$vault_key" 2>/dev/null; echo >> "$vault_key" )
-            if ! github_accepts "$vault_key"; then
-                print_info "$name: GitHub accepts this drive's key and refuses the vault's, so this one is stored."
-                keep_this=1
-            fi
-            rm -f "$vault_key"
-        fi
-        if [ "$keep_this" = 0 ] && [ "$vault_sha" != "$(cat "$rec" 2>/dev/null)" ]; then
+        if [ "$KEEP_LOCAL" = 0 ] && [ "$vault_sha" != "$(cat "$rec" 2>/dev/null)" ]; then
             print_error "$name: the vault holds a copy this machine never stored or restored. Not overwritten."
             print_action "  You made or changed it on this drive on purpose? Keep it: sudo bash $0 --keep-local"
             print_action "  Otherwise, take the vault's:                              sudo bash $SCRIPT_DIR/restore_logins.sh --only $name --overwrite"
