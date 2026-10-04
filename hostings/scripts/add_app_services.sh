@@ -781,6 +781,9 @@ ExecStop=/usr/bin/docker stop ${image}
                     for w in $(recipe_all "$recipe" WRITABLE | head -n1); do exec_start+=" --tmpfs $w"; done
                 fi
                 [ "$(recipe_all "$recipe" EGRESS | head -n1)" = "yes" ] || exec_start+=" --network upstream-net"
+                # Not root inside the box: a break-out then lands as a nobody.
+                run_as="$(recipe_all "$recipe" USER | head -n1)"
+                [ -z "$run_as" ] || exec_start+=" --user $run_as"
                 while IFS= read -r m; do
                     [ -n "$m" ] || continue
                     install -d -m 750 "${data_root}/${m%%:*}"
@@ -788,6 +791,8 @@ ExecStop=/usr/bin/docker stop ${image}
                 done < <(recipe_all "$recipe" MOUNT)
                 # Folders inside the mounts the app expects but does not make.
                 for d in $(recipe_all "$recipe" MKDIR | head -n1); do install -d -m 755 "${data_root}/${d}"; done
+                # Anything already there was written by root, before USER existed.
+                [ -z "$run_as" ] || chown -R "$run_as" "$data_root"
                 while IFS= read -r e; do
                     [ -n "$e" ] || continue
                     e="${e//"$P_URL"/https://$host}"; e="${e//"$P_HOSTS"/$hosts}"; e="${e//"$P_HOST"/$host}"

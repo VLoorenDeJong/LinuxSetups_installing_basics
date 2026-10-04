@@ -110,6 +110,9 @@ recipe_value() { sed -n "s/^[[:space:]]*$2[[:space:]]*=[[:space:]]*//p" "$REPO_R
 import_into() {
     local pkg="$1" data="$2" port="$3" secrets="$4" unit="$5" bundle="$6" name="$7"
     run_adapter import "$pkg" "$data" "$port" "$secrets" "$unit" "$bundle" "$name" || return 1
+    # The adapter writes as root; an app that runs as its own user must own it.
+    local owner; owner="$(recipe_value "$pkg" USER)"
+    [ -z "$owner" ] || chown -R "$owner" "$data"
     # Some builders read their pages once, at start; the recipe says so.
     if [ "$(recipe_value "$pkg" TRANSFER_RESTART)" = "yes" ]; then
         systemctl restart "$unit"

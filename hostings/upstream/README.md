@@ -34,6 +34,7 @@ app row, Runtime upstream:<name>     → one container per row per environment
 | `CAPS` | Linux capabilities to give back. Every container starts with none |
 | `READ_ONLY` | `yes` (default): the filesystem is read-only apart from `/tmp`, the mounts and `WRITABLE`. `no` only for an app that writes into its own install folder |
 | `WRITABLE` | Space-separated paths kept in memory, emptied on restart |
+| `USER` | `uid:gid` the app runs as inside, and the owner of its data folders. Empty means root inside |
 | `MKDIR` | Space-separated folders to create inside the mounts, relative to the row's data folder, for an app that expects them |
 | `MEMORY` | Memory cap. Default `768m` |
 | `EGRESS` | `yes` lets the container open connections. Default `no`: it can only answer (`upstream_net.sh`) |
