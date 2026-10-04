@@ -14,7 +14,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
  && chmod -R u+rwX,go+rX /app
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
-COPY --from=fetch /app /app
+# Owned by the uid the recipe runs it as: Oqtane writes into its own folder.
+COPY --from=fetch --chown=10002:10002 /app /app
 # What upstream_build.sh pins this version to.
 COPY --from=fetch /artifact.sha256 /upstream-artifact.sha256
 WORKDIR /app

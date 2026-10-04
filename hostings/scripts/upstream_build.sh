@@ -205,9 +205,12 @@ if [ "$(recipe_get READ_ONLY yes)" = "yes" ]; then
     for w in $(recipe_get WRITABLE); do run_args+=(--tmpfs "$w"); done
 fi
 [ "$(recipe_get EGRESS no)" = "yes" ] || run_args+=(--network upstream-net)
+RUN_AS="$(recipe_get USER)"
+[ -z "$RUN_AS" ] || run_args+=(--user "$RUN_AS")
 while IFS= read -r m; do
     [ -n "$m" ] || continue
     mkdir -p "$WORK/data/${m%%:*}"
+    [ -z "$RUN_AS" ] || chown "$RUN_AS" "$WORK/data/${m%%:*}"
     run_args+=(-v "$WORK/data/${m%%:*}:${m#*:}")
 done < <(recipe_all MOUNT)
 P_URL="{PUBLIC_URL}" P_HOST="{PUBLIC_HOST}" P_HOSTS="{HOSTS}"
