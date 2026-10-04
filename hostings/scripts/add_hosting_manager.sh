@@ -18,43 +18,24 @@ unset _a _dbg_args
 # =============================================================================
 # The hosting manager: edit hostings.conf from a browser instead of VS Code.
 #
-# Three parts, and the split between them is the whole design:
+# The split between the parts is the whole design:
 #
 #   the page        PHP under Apache, as hosting-manager in its own PHP-FPM
-#                   pool, never as www-data. Holds no credential
-#                   and can push nothing. Writes a candidate file and calls
-#                   four fixed commands.
+#                   pool, never as www-data. Holds no credential. Writes a
+#                   candidate file and calls a few fixed commands.
 #   the publisher   publish_hostings.sh, run through sudo with NO arguments.
-#                   Validates, commits, pushes. It does NOT apply: that is
-#                   trigger_apply.sh, on its own button, by decision.
+#                   Validates and writes /etc/hostings. No git: a machine that
+#                   keeps its config in git names a CONFIG_SAVE_HOOK for that.
+#                   It does NOT apply: that is trigger_apply.sh, on its own
+#                   button, by decision.
 #   the checker     check_hostings.sh, read-only, writes the drift report.
-#   the triggers    trigger_apply.sh and trigger_update.sh, which ask Jenkins
-#                   to run a job that already exists.
-#   the clone       a checkout of this repo that only the publisher can write,
-#                   pushing with Jenkins' key, which the page cannot read.
+#   the triggers    trigger_apply.sh: a Jenkins job where Jenkins exists,
+#                   maintain_services.sh directly where not. trigger_update.sh
+#                   still needs Jenkins.
 #
-# WHY A SEPARATE CLONE
-#
-# Not the Jenkins workspace: Jenkins force-checks-out on every build and would
-# throw the commit away. Not the user's home clone either, because the page
-# would then be able to reach a directory a person edits by hand.
-#
-# WHICH KEY IT PUSHES WITH: GIT_PUSH_KEY
-#
-# It reused Jenkins' key from 2026-08-08, decided over a key of its own: a
-# separate key could be revoked without stopping Jenkins, at the cost of one
-# more key to create, add and remember.
-#
-# That reuse was implicit, and deleting the jenkins key on 2026-09-04 broke
-# every console save at once. All four publishing scripts fell through to
-# /var/lib/hosting-manager/.ssh/id_ed25519, a real file GitHub has never
-# accepted, and reported it as GitHub being unreachable.
-#
-# GIT_PUSH_KEY in hostings.conf names it now, so the choice is visible, is the
-# same in every script, and no script carries an account name.
-#
-# The page reads none of them. The publisher runs as root and the page as
-# neither.
+# So saving and applying need neither git, Jenkins nor a vault (only the
+# Update button needs Jenkins). Recovery codes go to
+# 1Password when there is one, and their failure to is reported, not fatal.
 #
 # THE GRANT IS ONE LITERAL COMMAND
 #
@@ -428,7 +409,7 @@ if [ -n "$LAN_PORT" ]; then
     fi
     if [ ! -f "$AUTH_ROOT/$LOGIN_PAGE" ] || [ ! -f "$SESSION_KEY" ]; then
         ERRORS+=("No login page at $AUTH_ROOT/$LOGIN_PAGE or no session key at $SESSION_KEY.")
-        ERRORS+=("  Run add_app_vhosts.sh first: it installs both.")
+        ERRORS+=("  Run add_login_gate.sh first: it installs both.")
     fi
 fi
 

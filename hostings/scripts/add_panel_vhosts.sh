@@ -404,7 +404,8 @@ Listen ${P_PORT}
     ProxyPass /logout       !
     ProxyPass /auth-assets  !
 
-    ProxyPass        / http://${P_TARGET}/ nocanon
+    # upgrade=websocket: pages like Zigbee2MQTT live on a websocket (Apache 2.4.47+).
+    ProxyPass        / http://${P_TARGET}/ nocanon upgrade=websocket
     ProxyPassReverse / http://${P_TARGET}/
 
 $(auth_block)

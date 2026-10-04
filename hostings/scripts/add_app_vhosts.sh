@@ -1678,80 +1678,13 @@ if [ ${#AUTH_ROWS[@]} -gt 0 ]; then
         fi
     done
 
-    # mod_auth_form needs all five. Missing any one is a configtest failure
-    # rather than a silent hole, but enabling them here means the operator never
-    # meets that error.
-    # Asked once: each apache2ctl -M parses the whole Apache config. Render mode
-    # enables nothing, so it does not ask.
-    loaded_mods=""
-    [ "$RENDER_ONLY" = "1" ] || loaded_mods="$(apache2ctl -M 2>/dev/null || true)"
-    for mod in auth_form session session_cookie session_crypto request; do
-        [ "$RENDER_ONLY" = "1" ] && break
-        if ! grep -q "${mod}_module" <<< "$loaded_mods"; then
-            a2enmod "$mod" >/dev/null 2>&1 && print_success "Enabled mod_${mod}"
-            NEEDS_RELOAD=1
+    # The pages, the modules, the session key and the admin account are the
+    # gate every login stands on, machine pages included: add_login_gate.sh.
+    if [ "$RENDER_ONLY" != "1" ]; then
+        if ! GATE_NO_RELOAD=1 SITES_CONF="$SITES_CONF" bash "$SCRIPT_DIR/add_login_gate.sh"; then
+            FAILED+=("the login gate is incomplete")
         fi
-    done
-
-    # The login pages are versioned and copied here, never edited on the machine.
-    # The path mirrors /var/www/, so /etc/hostings/apache/www/auth/ lands at
-    # /var/www/auth/.
-    #
-    # Two sources, shared first and local on top. That is the opposite of the
-    # rule for scripts, and deliberately so: a script is behaviour and two
-    # copies of it drift in silence, but a login page is a face. LinuxBasics
-    # carries a plain one that works anywhere, and a machine puts its own name
-    # and logo over it. Laying the local copy second means a machine only has to
-    # carry the files it actually changed.
-    BASICS_AUTH="$REPO_ROOT/install_scripts/assets/auth"
-    AUTH_SRC="/etc/hostings/apache/www/auth"
-
-    if [ -d "$BASICS_AUTH" ] || [ -d "$AUTH_SRC" ]; then
-        mkdir -p "$AUTH_WEB_ROOT"
-        chmod 755 "$AUTH_WEB_ROOT"
-
-        if [ -d "$BASICS_AUTH" ]; then
-            cp -r "$BASICS_AUTH/." "$AUTH_WEB_ROOT/"
-            print_success "Generic login pages deployed from LinuxBasics"
-        fi
-        if [ -d "$AUTH_SRC" ]; then
-            cp -r "$AUTH_SRC/." "$AUTH_WEB_ROOT/"
-            print_success "Local login pages laid over them from /etc/hostings/"
-        fi
-
-        find "$AUTH_WEB_ROOT" -type f -exec chmod 644 {} +
-    else
-        print_info "No login pages found in LinuxBasics or /etc/hostings/, so none were deployed."
-        print_info "Sites requiring a login will redirect to a page that does not exist."
-    fi
-
-    # These two hold secrets, so they are never generated from the repo. Say
-    # exactly what to run rather than leaving a configtest failure to decode.
-    if [ ! -f "$AUTH_USER_FILE" ]; then
-        # Not an error any more: the account loop below creates it with the
-        # first person added, using -c exactly once. Reporting a failure here
-        # and then fixing it four lines later would just be noise.
-        print_status "No user file at $AUTH_USER_FILE yet. It is created below."
-    fi
-
-    # Generated rather than demanded. It is 32 random bytes with no meaning to
-    # anyone: there is nothing to decide, nothing to remember and nothing to
-    # type, so stopping the install to make somebody paste a command was asking
-    # them to be a random number generator.
-    #
-    # Not in the repo and never printed: whoever holds it can forge a session
-    # cookie for every protected site at once.
-    if [ ! -f "$AUTH_SESSION_KEY_FILE" ]; then
-        if openssl rand -base64 32 > "$AUTH_SESSION_KEY_FILE" 2>/dev/null; then
-            chmod 600 "$AUTH_SESSION_KEY_FILE"
-            chown root:root "$AUTH_SESSION_KEY_FILE" 2>/dev/null || true
-            print_success "Generated a session key at $AUTH_SESSION_KEY_FILE"
-        else
-            print_error "Could not generate $AUTH_SESSION_KEY_FILE"
-            print_action "Create it by hand:  openssl rand -base64 32 | sudo tee $AUTH_SESSION_KEY_FILE"
-            print_action "Then:               sudo chmod 600 $AUTH_SESSION_KEY_FILE"
-            FAILED+=("missing $AUTH_SESSION_KEY_FILE")
-        fi
+        NEEDS_RELOAD=1
     fi
 
     # Which accounts this config expects. Only the admin is ASKED for: every
@@ -1759,7 +1692,6 @@ if [ ${#AUTH_ROWS[@]} -gt 0 ]; then
     # secret store (login-store-decisions.md, decision 1). A row naming an
     # account that exists nowhere is reported, because Apache refuses it
     # silently: an absent account and a wrong password look the same.
-    EXPECTED_ACCOUNTS=("$AUTH_ADMIN_USER")
     ROW_ACCOUNTS=()
     while IFS='|' read -r _t _n _p _pa _s _d _o _ap _r _b _e au _rm _rt _enabled _owner; do
         au="$(trim "$au")"
@@ -1783,40 +1715,6 @@ if [ ${#AUTH_ROWS[@]} -gt 0 ]; then
         for u in "${ROW_ACCOUNTS[@]}"; do
             grep -q "^${u}:" "$AUTH_USER_FILE" 2>/dev/null && continue
             print_action "Account '$u' is named by a row but does not exist: make it in the console's Users tab."
-        done
-    fi
-
-    # A FIRST ADMIN PASSWORD IS GENERATED INTO THE VAULT, NOT ASKED
-    # (login-store-decisions.md, decision 6). Stored first and set second: a
-    # password set here but missing from the vault is one nobody knows. When
-    # the vault cannot take it, add_auth_users.sh below asks as it always did.
-    if ! grep -q "^${AUTH_ADMIN_USER}:" "$AUTH_USER_FILE" 2>/dev/null \
-       && [ -f "$SCRIPT_DIR/person_entry.sh" ]; then
-        ADMIN_PW="$(openssl rand -base64 18)"
-        if [ -n "$ADMIN_PW" ] \
-           && printf '%s\n' "$ADMIN_PW" | SITES_CONF="$SITES_CONF" bash "$SCRIPT_DIR/person_entry.sh" --login "$AUTH_ADMIN_USER"; then
-            if printf '%s\n' "$ADMIN_PW" | SITES_CONF="$SITES_CONF" bash "$SCRIPT_DIR/manage_auth_users.sh" --add "$AUTH_ADMIN_USER"; then
-                print_success "'$AUTH_ADMIN_USER' has a generated password. It is in 1Password, not shown here."
-            fi
-        fi
-        unset ADMIN_PW
-    fi
-
-    ACCOUNT_SCRIPT="$REPO_ROOT/install_scripts/add_auth_users.sh"
-    if [ -f "$ACCOUNT_SCRIPT" ]; then
-        # Exit 1 means somebody is still without a password: either the operator
-        # chose to carry on, or there was no terminal to ask at. Either way the
-        # run is not complete, and that belongs in the summary rather than in a
-        # line already scrolled past.
-        if ! bash "$ACCOUNT_SCRIPT" --file "$AUTH_USER_FILE" "${EXPECTED_ACCOUNTS[@]}"; then
-            FAILED+=("some login accounts have no password")
-        fi
-    else
-        print_info "Cannot find $ACCOUNT_SCRIPT, so accounts were not checked."
-        print_action "Run 'git submodule update --init' and try again, or add them by hand:"
-        mapfile -t EXPECTED_ACCOUNTS < <(printf '%s\n' "${EXPECTED_ACCOUNTS[@]}" | sort -u)
-        for u in "${EXPECTED_ACCOUNTS[@]}"; do
-            print_action "  sudo htpasswd $AUTH_USER_FILE $u"
         done
     fi
 fi

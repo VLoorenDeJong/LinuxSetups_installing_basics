@@ -1,7 +1,8 @@
 # hostings.conf: the whole machine in one file.
 #
 # Written by install_hostings.sh because /etc/hostings had no config. Fill in
-# at least BASE_DOMAIN and CERT_EMAIL, then run install_hostings.sh again.
+# what the chosen modules need (the conf lines in modules.conf), then run
+# install_hostings.sh again.
 # Every other setting is optional: remove the "# " in front of one to set it,
 # and a script uses its own default for any that stay commented.
 #
@@ -17,6 +18,7 @@ MACHINE_IS_LIVE = no
 # TAB_<NAME> = on|off       force a console tab on or off
 # BASE_DOMAIN =
 # MACHINE_NAME =
+# CONSOLE_2FA =             on (default) or off: off only on a LAN-only machine
 # INSTALL_MODULES =
 # PROGRESS_REPO =
 # PROGRESS_DLL =

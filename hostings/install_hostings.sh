@@ -72,7 +72,7 @@ CONF_FILE="$(conf_active "$CONF_DIR")"
 if [ ! -f "$CONF_FILE" ]; then
     install -m 0644 "$TEMPLATE" "$CONF_DIR/hostings.conf"
     print_success "Wrote a blank config: $CONF_DIR/hostings.conf"
-    print_action "Fill in BASE_DOMAIN and CERT_EMAIL, then run this again."
+    print_action "Fill in what your modules need (modules.conf says which: conf lines), then run this again."
     exit 2
 fi
 print_success "Config in force: $CONF_FILE"
@@ -88,28 +88,19 @@ if [ -z "${DOTNET_VERSIONS:-}" ]; then
     [ "$DOTNET_VERSIONS" = "-" ] && DOTNET_VERSIONS=""
     [ -n "$DOTNET_VERSIONS" ] && export DOTNET_VERSIONS
 fi
-MISSING=()
-for k in BASE_DOMAIN CERT_EMAIL; do
-    v="$(conf_value "$k")"
-    [ -n "$v" ] && [ "$v" != "-" ] || MISSING+=("$k")
-done
-if [ ${#MISSING[@]} -gt 0 ]; then
-    print_error "$CONF_FILE has no ${MISSING[*]}."
-    print_action "Fill them in, then run this again."
-    exit 1
-fi
-
 # =============================================================================
 # Modules
 # =============================================================================
-declare -a NAME ROWS STEP_MOD STEP_CMD
+declare -a NAME ROWS STEP_MOD STEP_CMD REQUIRES NEEDS_CONF
 while IFS='|' read -r kind a b c; do
     kind="$(printf '%s' "$kind" | tr -d '[:space:]')"
     a="$(printf '%s' "$a" | tr -d '[:space:]')"
     case "$kind" in
-        module) NAME[a]="$(printf '%s' "$b" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
-                ROWS[a]="$(printf '%s' "$c" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')" ;;
-        step)   STEP_MOD+=("$a"); STEP_CMD+=("$(printf '%s' "$b" | tr -d '[:space:]')") ;;
+        module)   NAME[a]="$(printf '%s' "$b" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+                  ROWS[a]="$(printf '%s' "$c" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')" ;;
+        requires) REQUIRES[a]="$(printf '%s' "$b" | xargs)" ;;
+        conf)     NEEDS_CONF[a]="$(printf '%s' "$b" | xargs)" ;;
+        step)     STEP_MOD+=("$a"); STEP_CMD+=("$(printf '%s' "$b" | tr -d '[:space:]')") ;;
     esac
 done < <(grep -vE '^[[:space:]]*(#|$)' "$MODULES_FILE")
 IDS=("${!NAME[@]}")
@@ -190,9 +181,41 @@ else
         TICK[$m]=1
     done
 fi
+# What a chosen module stands on is installed with it, so choosing the one
+# thing a machine needs is enough.
+added=1
+while [ "$added" = 1 ]; do
+    added=0
+    for m in "${IDS[@]}"; do
+        [ "${TICK[$m]:-0}" = 1 ] || continue
+        for r in ${REQUIRES[m]:-}; do
+            [ -n "${NAME[r]:-}" ] || { print_error "modules.conf: module $m requires $r, which does not exist."; exit 1; }
+            [ "${TICK[$r]:-0}" = 1 ] && continue
+            TICK[$r]=1; added=1
+            print_info "${NAME[m]} needs ${NAME[r]}: installing it too."
+        done
+    done
+done
+
 chosen=""
 for m in "${IDS[@]}"; do [ "${TICK[$m]:-0}" = 1 ] && chosen="${chosen:+$chosen, }$m ${NAME[m]}"; done
 print_status "Modules: ${chosen:-none}"
+
+# Only the settings the chosen modules read are demanded.
+MISSING=()
+for m in "${IDS[@]}"; do
+    [ "${TICK[$m]:-0}" = 1 ] || continue
+    for k in ${NEEDS_CONF[m]:-}; do
+        v="$(conf_value "$k")"
+        [ -n "$v" ] && [ "$v" != "-" ] && continue
+        [[ " ${MISSING[*]} " == *" $k "* ]] || MISSING+=("$k")
+    done
+done
+if [ ${#MISSING[@]} -gt 0 ]; then
+    print_error "$CONF_FILE has no ${MISSING[*]}, which the chosen modules need."
+    print_action "Fill them in, then run this again."
+    exit 1
+fi
 
 # =============================================================================
 # Steps
@@ -204,9 +227,16 @@ resolve() {
     return 1
 }
 
+# A step two chosen modules both list runs once, at its first place. A module
+# repeating its own step (add_app_vhosts.sh) does so on purpose and keeps both.
 RUN=()
+declare -A QUEUED_BY=()
 for i in "${!STEP_CMD[@]}"; do
-    [ "${TICK[${STEP_MOD[i]}]:-0}" = 1 ] && RUN+=("${STEP_CMD[i]}")
+    m="${STEP_MOD[i]}"; s="${STEP_CMD[i]}"
+    [ "${TICK[$m]:-0}" = 1 ] || continue
+    if [ -n "${QUEUED_BY[$s]:-}" ] && [ "${QUEUED_BY[$s]}" != "$m" ]; then continue; fi
+    QUEUED_BY[$s]="$m"
+    RUN+=("$s")
 done
 NOT_FOUND=()
 for s in "${RUN[@]}"; do resolve "$s" >/dev/null || NOT_FOUND+=("${s%%:*}"); done

@@ -551,6 +551,12 @@ if (!preg_match('/^[ \t]*MACHINE_IS_LIVE[ \t]*=[ \t]*yes\b/mi', (string) @file_g
     return;
 }
 
+// CONSOLE_2FA = off: a LAN-only machine with one operator, where the password
+// and the failed-login throttle are the guard. The owner, 2026-10-04 (HomeRun).
+if (preg_match('/^[ \t]*CONSOLE_2FA[ \t]*=[ \t]*off\b/mi', (string) @file_get_contents(CONF))) {
+    return;
+}
+
 if ($tfaAction === '2fa-check') {
     $why = tfa_check($me, (string) ($_POST['code'] ?? ''), (string) ($_POST['code2'] ?? ''));
     if ($why === '') {
