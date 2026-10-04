@@ -24,10 +24,11 @@ unset _a _dbg_args
 # devices, so the platform can be chosen or changed later. Discovery messages
 # are published in Home Assistant's format, which other platforms can read too.
 #
-# The coordinator's address is a local fact, asked for on the terminal and kept
-# in $DATA_DIR/.env. The MQTT account `zigbee2mqtt` gets a generated password
-# nobody types: it lives in that same file, mode 600, and in the broker's
-# password file as a hash.
+# The coordinator's address is found by scanning the LAN for port 6638, asked
+# for only when that finds none or several, and kept in $DATA_DIR/.env. A kept
+# address that stops answering is looked for again on the next run. The MQTT
+# account `zigbee2mqtt` gets a generated password nobody types: it lives in that
+# same file, mode 600, and in the broker's password file as a hash.
 #
 # configuration.yaml belongs to Zigbee2MQTT once it exists (it writes the
 # network key into it), so this script creates it once and never edits it.
@@ -188,16 +189,53 @@ fi
 
 # --- The coordinator's address -----------------------------------------------
 CURRENT="$(env_get COORDINATOR)"
+
+# Assumes a /24 LAN. All probes run at once, so the sweep takes under a second.
+scan_for_coordinators() {
+    local src net i
+    src="$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p')"
+    [ -n "$src" ] || return 0
+    net="${src%.*}"
+    {
+        for i in $(seq 1 254); do
+            timeout 0.5 bash -c '</dev/tcp/$1/6638' _ "$net.$i" 2>/dev/null && echo "$net.$i" &
+        done
+        wait
+    } | sort -t. -k4 -n
+}
+
+answers() { timeout 3 bash -c '</dev/tcp/$1/$2' _ "${1%%:*}" "$( [[ "$1" == *:* ]] && echo "${1##*:}" || echo 6638 )" 2>/dev/null; }
+
+# A stored address that stopped answering means the coordinator moved, for
+# example from its cable to Wi-Fi, which gives it a new IP. So look again.
+if [ -z "$COORDINATOR" ] && [ -n "$CURRENT" ]; then
+    if answers "$CURRENT"; then
+        COORDINATOR="$CURRENT"
+    else
+        print_info "The stored coordinator ${CURRENT} no longer answers."
+        CURRENT=""
+    fi
+fi
+
+if [ -z "$COORDINATOR" ] && [ -z "$CURRENT" ]; then
+    print_status "Looking for a coordinator on this network (port 6638)..."
+    mapfile -t FOUND < <(scan_for_coordinators)
+    if [ ${#FOUND[@]} -eq 1 ]; then
+        COORDINATOR="${FOUND[0]}"
+        print_success "Found one coordinator: ${COORDINATOR}"
+    elif [ ${#FOUND[@]} -gt 1 ]; then
+        print_info "Found several, pick one below: ${FOUND[*]}"
+    else
+        print_info "Found none, so it is asked for below."
+    fi
+fi
+
 if [ -z "$COORDINATOR" ] && [ "$HAVE_TTY" -eq 1 ]; then
     print_action "NEEDED: the Zigbee coordinator's network address (its IP address)"
     print_hint "if you do not have it already:"
     print_hint "  open your router's list of connected devices and look for ${HL}SLZB${NC}"
     print_hint "  give it a fixed address there, so this never changes"
-    if [ -n "$CURRENT" ]; then
-        prompt_ask "Coordinator address" "[now $CURRENT, Enter keeps it]: "
-    else
-        prompt_ask "Coordinator address" "[e.g. 192.168.1.50]: "
-    fi
+    prompt_ask "Coordinator address" "[e.g. 192.168.1.50]: "
     read -r COORDINATOR < /dev/tty || COORDINATOR=""
 fi
 COORDINATOR="${COORDINATOR:-$CURRENT}"
@@ -252,7 +290,7 @@ if [ "$GENERATED" -eq 0 ] && grep -q "^${MQTT_USER}:" "$PASSWD_FILE"; then
     print_success "Broker account ${MQTT_USER} exists."
 else
     LINE="$(printf '%s:%s\n' "$MQTT_USER" "$MQTT_PASSWORD" | docker run --rm -i --tmpfs /tmp --entrypoint sh "$BROKER_IMAGE" \
-        -c 'cat > /tmp/p && mosquitto_passwd -U /tmp/p >/dev/null && cat /tmp/p')" || LINE=""
+        -c 'umask 077 && cat > /tmp/p && mosquitto_passwd -U /tmp/p >/dev/null && cat /tmp/p')" || LINE=""
     secret_loud
     case "$LINE" in
         "$MQTT_USER:"*) ;;

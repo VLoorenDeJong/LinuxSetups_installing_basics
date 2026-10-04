@@ -254,7 +254,7 @@ fi
 # --- Accounts ----------------------------------------------------------------
 hash_line() {
     printf '%s:%s\n' "$1" "$2" | docker run --rm -i --tmpfs /tmp --entrypoint sh "$IMAGE" \
-        -c 'cat > /tmp/p && mosquitto_passwd -U /tmp/p >/dev/null && cat /tmp/p'
+        -c 'umask 077 && cat > /tmp/p && mosquitto_passwd -U /tmp/p >/dev/null && cat /tmp/p'
 }
 
 set_account() {
