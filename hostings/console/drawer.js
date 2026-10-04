@@ -960,7 +960,9 @@ function progCommit(fields) {
   // The same assignment the approval flow uses, so two instances made minutes
   // apart cannot be handed the same number.
   f[2]  = String(nextPort('row', 'app'));
-  f[3]  = PROGRESS_DLL;
+  // A folder per instance: one shared folder meant one shared settings file,
+  // and every instance but the last ran with another's settings (2026-10-04).
+  f[3]  = f[1] + '/' + PROGRESS_DLL.split('/').pop();
   f[4]  = sub;
   // Behind a login. The owner, 2026-09-11: a customer's own progress application
   // is not a public page.

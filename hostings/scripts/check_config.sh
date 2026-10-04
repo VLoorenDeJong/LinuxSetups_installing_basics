@@ -284,6 +284,7 @@ fi
 # =============================================================================
 declare -A SEEN_NAME=()
 declare -A SEEN_PORT=()
+declare -A SEEN_PATH=()
 # One hostname, one ENABLED row. Two rows for a customer is the point: a www_
 # one serving files and an app_ one running a service, switched by ticking one
 # and unticking the other. Two of them enabled at once is not a switch, it is
@@ -528,6 +529,21 @@ while IFS='|' read -r c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c11 c12 c13 c14 c15 c16 c17
                 err "$label: $_rh ($e) is already served by ${SEEN_HOST[$_rh]}. Two enabled rows cannot answer on one hostname: switch one of them off."
             fi
             SEEN_HOST["$_rh"]="$label"
+        done
+    fi
+
+    # One folder, one app. Two rows on one Path share the published files and
+    # the settings file, so one of them runs with the other's settings.
+    # Measured 2026-10-04: ProgressApp ran with testcust2_progress's backup path.
+    # Same repository is fine; same folder is not. A Dockerfile names a file in
+    # each row's own clone, so it cannot collide.
+    if [ "$type" = "app" ] && [ -n "$path" ] && [ "$path" != "-" ] && [ "$path" != "Dockerfile" ]; then
+        for e in "${ALL_ENVS[@]}"; do
+            row_in_env "$rowenvs" "$e" || continue
+            if [ -n "${SEEN_PATH[$e:$path]:-}" ]; then
+                err "$label: Path $path ($e) is already used by ${SEEN_PATH[$e:$path]}. Another instance of the same repository is fine, but it needs its own folder, for example ${name}/$(basename "$path")."
+            fi
+            SEEN_PATH["$e:$path"]="$label"
         done
     fi
 
