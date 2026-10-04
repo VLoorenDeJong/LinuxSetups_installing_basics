@@ -260,6 +260,21 @@ if [ -z "$BASE_DOMAIN" ]; then
     print_error "No BASE_DOMAIN in $SITES_CONF"
     exit 1
 fi
+# Written unquoted into every ServerName: a space or quote breaks them all.
+if ! [[ "$BASE_DOMAIN" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]]; then
+    print_error "BASE_DOMAIN '$BASE_DOMAIN' may hold only letters, digits, dot and hyphen."
+    exit 1
+fi
+
+# THE SITE FOLDERS AS THEY WERE, put back if configtest fails. Left on disk, a
+# broken vhost does nothing until the next restart, and then Apache does not
+# start at all and every site is down (reviewer, 2026-10-02).
+VHOST_SNAPSHOT=""
+if [ "$LIST_HOSTS" != "1" ] && [ "$RENDER_ONLY" != "1" ]; then
+    VHOST_SNAPSHOT="$(mktemp)"
+    tar -C /etc/apache2 -cf "$VHOST_SNAPSHOT" sites-available sites-enabled
+    trap 'rm -f "$VHOST_SNAPSHOT"' EXIT
+fi
 
 # Websites are published by deploy_static_site.sh, which runs without sudo and
 # therefore needs the document root to already belong to the deploying account.
@@ -1881,13 +1896,21 @@ fi
 print_status "Testing Apache configuration..."
 
 CONFIGTEST_LOG="$(mktemp)"
-trap 'rm -f "$CONFIGTEST_LOG"' EXIT
+trap 'rm -f "$CONFIGTEST_LOG" "$VHOST_SNAPSHOT"' EXIT
 
 if ! apache2ctl configtest >"$CONFIGTEST_LOG" 2>&1; then
-    print_error "Apache configuration test failed, so Apache was NOT reloaded."
-    print_action "The vhosts are on disk but not live. Output:"
+    print_error "Apache configuration test failed, so Apache was NOT reloaded. Output:"
     cat "$CONFIGTEST_LOG"
-    print_action "Fix the config, then run: sudo systemctl reload apache2"
+    if [ -s "$VHOST_SNAPSHOT" ]; then
+        rm -rf /etc/apache2/sites-available /etc/apache2/sites-enabled
+        tar -C /etc/apache2 -xpf "$VHOST_SNAPSHOT"
+        if apache2ctl configtest >/dev/null 2>&1; then
+            print_status "The site folders were put back as they were, so a restart still starts Apache."
+        else
+            print_error "Put back the site folders, and configtest still fails: it was broken before this run."
+        fi
+    fi
+    print_action "Fix the config, then run this script again."
     exit 1
 fi
 
