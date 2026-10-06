@@ -2152,6 +2152,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $candidate = $_POST['config'] ?? '';
         if (trim($candidate) !== '') {
             file_put_contents(STAGING, str_replace("\r\n", "\n", $candidate));
+            // The draft keeps the base it was edited against, which Save posts back.
+            $postedBase = preg_replace('/[^0-9a-f]/i', '', (string) ($_POST['base'] ?? ''));
+            @file_put_contents(BASEHASH, $postedBase . "\n" . savedBy($me) . "\n");
         }
         exec('sudo ' . CHECK . ' 2>&1', $lines, $rc);
         $message = $rc === 0
@@ -3067,9 +3070,13 @@ if ($staged !== '' && $confReadable) {
 // zero-byte file behind.
 $stagedStale = false;
 $stagedWhen  = '';
+// What Save posts as its base. A page built from a draft posts the draft's base,
+// so the publisher refuses a stale one instead of comparing fresh to fresh.
+$postBase    = $baseHash;
 if ($staged !== '' && $baseHash !== '') {
     $knownBase = is_readable(BASEHASH) ? trim(explode("\n", (string) file_get_contents(BASEHASH))[0]) : '';
     $stagedStale = $knownBase !== '' && $knownBase !== $baseHash;
+    $postBase = $knownBase;
 }
 if ($staged !== '' && ($t = @filemtime(STAGING))) {
     $stagedWhen = date('j M H:i', $t);
@@ -4688,7 +4695,7 @@ if ($myRole !== 'full') {
          lands, and set_mail_password.sh will not touch an address the config
          does not claim. Written once, read once, never stored. -->
     <input type="hidden" name="mailpw" id="mailpw-field">
-    <input type="hidden" name="base" value="<?= htmlspecialchars($baseHash) ?>">
+    <input type="hidden" name="base" value="<?= htmlspecialchars($postBase) ?>">
 
   </form>
 
