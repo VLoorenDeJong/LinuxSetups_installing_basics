@@ -5,7 +5,11 @@ set -e
 # The network upstream packages run on: they answer, but cannot start a
 # connection of their own, to the internet or to this machine.
 #
-#   upstream_net.sh
+#   upstream_net.sh [port ...]
+#
+# Ports named are the exception: an app that calls itself back through Apache
+# (Oqtane signs in that way) may open a connection to them, on this machine
+# only. Any container on the network can then use them, not only that app.
 #
 # Idempotent, and run as ExecStartPre by every upstream unit, because a reboot
 # clears the firewall rules while the units come straight back.
@@ -31,3 +35,11 @@ docker network inspect "$NET" >/dev/null 2>&1 \
 rule=(-s "$SUBNET" -m conntrack --ctstate NEW -j DROP)
 iptables -C DOCKER-USER "${rule[@]}" 2>/dev/null || iptables -I DOCKER-USER "${rule[@]}"
 iptables -C INPUT "${rule[@]}" 2>/dev/null || iptables -I INPUT "${rule[@]}"
+
+# Re-inserted rather than checked: an ACCEPT that ends up below the DROP opens
+# nothing.
+for port in "$@"; do
+    hole=(-s "$SUBNET" -p tcp --dport "$port" -m conntrack --ctstate NEW -j ACCEPT)
+    while iptables -D INPUT "${hole[@]}" 2>/dev/null; do :; done
+    iptables -I INPUT "${hole[@]}"
+done
