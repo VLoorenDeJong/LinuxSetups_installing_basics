@@ -83,12 +83,38 @@ JENKINS_URL="http://127.0.0.1:${JENKINS_PORT:-11002}"
 # another /job/ segment.
 JOBS=("hosting-apply:machine/apply-config" "machine-update:machine/update-packages")
 
-if [ ! -s "$TOKEN_FILE" ]; then
+# No Jenkins on this machine: trigger_apply.sh runs the apply as the transient
+# unit hosting-apply, so its state comes from systemd and the journal.
+NO_JENKINS=0
+id -u jenkins >/dev/null 2>&1 || NO_JENKINS=1
+
+if [ "$NO_JENKINS" -eq 0 ] && [ ! -s "$TOKEN_FILE" ]; then
     echo '{"error":"no token"}'
     exit 1
 fi
 
-AUTH="$(head -n1 "$TOKEN_FILE")"
+AUTH="$(head -n1 "$TOKEN_FILE" 2>/dev/null || true)"
+
+# Sets running, result and number for the apply unit. The number is the start
+# of its last run in epoch seconds: it rises with every run, as a build number does.
+apply_unit_state() {
+    local journal last
+    systemctl is-active --quiet hosting-apply && running=true
+    journal="$(journalctl -u hosting-apply -o short-unix --no-pager -n 4000 2>/dev/null)"
+    n="$(printf '%s\n' "$journal" | grep -F 'Started hosting-apply' | tail -1 | cut -d. -f1)"
+    [ -n "$n" ] && number="$n"
+    [ "$running" = true ] && return
+    last="$(printf '%s\n' "$journal" | grep -E 'hosting-apply\.service: (Deactivated successfully|Failed with result)' | tail -1)"
+    case "$last" in
+        *Deactivated*) result='"SUCCESS"' ;;
+        *Failed*)      result='"FAILURE"' ;;
+    esac
+}
+
+if [ "$NO_JENKINS" -eq 1 ] && { [ "${1:-}" = "--history" ] || [ "${1:-}" = "--stages" ]; }; then
+    [ "${1}" = "--stages" ] && echo '{"stages":[]}' || echo '{"builds":[],"average":null}'
+    exit 0
+fi
 
 # -----------------------------------------------------------------------------
 # --history <row> <env>: the last 20 builds of one deploy job.
@@ -224,14 +250,21 @@ for entry in "${JOBS[@]}"; do
     _p="${entry#*:}"
     job_path="job/${_p//\//\/job\/}"
 
-    state="$(curl -fsS --max-time 5 -u "$AUTH" \
-        "${JENKINS_URL}/${job_path}/api/json?tree=inQueue,lastBuild%5Bnumber,building,result%5D" \
-        2>/dev/null || true)"
-
     running=false
     queued=false
     result=null
     number=null
+
+    if [ "$NO_JENKINS" -eq 1 ]; then
+        [ "$job" = "hosting-apply" ] && apply_unit_state
+        [ -n "$out" ] && out="${out},"
+        out="${out}\"${job}\":{\"running\":${running},\"queued\":${queued},\"result\":${result},\"number\":${number}}"
+        continue
+    fi
+
+    state="$(curl -fsS --max-time 5 -u "$AUTH" \
+        "${JENKINS_URL}/${job_path}/api/json?tree=inQueue,lastBuild%5Bnumber,building,result%5D" \
+        2>/dev/null || true)"
 
     case "$state" in
         *'"building":true'*) running=true ;;
@@ -276,7 +309,8 @@ tree='jobs[name,jobs[name,color,inQueue,lastBuild[number,building,result,timesta
 # went to /dev/null and || true swallowed the exit code, so `sites` was silently
 # {} on every call since this block was written, and the page showed no build
 # result for any row. Measured 2026-09-09.
-all="$(curl -fsS -g --max-time 8 -u "$AUTH" \
+all=""
+[ "$NO_JENKINS" -eq 0 ] && all="$(curl -fsS -g --max-time 8 -u "$AUTH" \
     "${JENKINS_URL}/api/json?tree=${tree}" 2>/dev/null || true)"
 
 if [ -n "$all" ] && command -v python3 >/dev/null 2>&1; then

@@ -78,6 +78,11 @@ LINES="${2:-120}"
 # --busy: what Jenkins is running and what is queued, as JSON. For the apply
 # dialog, which otherwise shows an empty log while its job waits for an executor.
 if [ "$JOB_KEY" = "--busy" ]; then
+    # No Jenkins: there is no queue, so nothing is ever waiting in one.
+    if ! id -u jenkins >/dev/null 2>&1; then
+        echo '{"running":[],"queued":[]}'
+        exit 0
+    fi
     [ -s "$TOKEN_FILE" ] || { echo "No Jenkins token on this machine." >&2; exit 1; }
     AUTH="$(head -n1 "$TOKEN_FILE")"
     comp="$(curl -fsS -g --max-time 8 -u "$AUTH" \
@@ -149,20 +154,35 @@ if [ -z "$JOB_PATH" ]; then
     exit 1
 fi
 
-if [ ! -s "$TOKEN_FILE" ]; then
-    echo "No Jenkins token on this machine, so the log cannot be read." >&2
-    exit 1
-fi
+# No Jenkins on this machine: trigger_apply.sh ran the apply as the transient
+# unit hosting-apply, so its last run is read from the journal instead.
+if ! id -u jenkins >/dev/null 2>&1; then
+    if [ "$JOB_KEY" != "hosting-apply" ]; then
+        echo "No Jenkins on this machine, so ${JOB_KEY} has no log." >&2
+        exit 1
+    fi
+    log="$(journalctl -u hosting-apply -o cat --no-pager -n 4000 2>/dev/null \
+        | awk '/^Started hosting-apply/ { buf = "" } { buf = buf $0 "\n" } END { printf "%s", buf }')"
+    if [ -z "$log" ]; then
+        echo "The journal holds no apply run yet." >&2
+        exit 1
+    fi
+else
+    if [ ! -s "$TOKEN_FILE" ]; then
+        echo "No Jenkins token on this machine, so the log cannot be read." >&2
+        exit 1
+    fi
 
-AUTH="$(head -n1 "$TOKEN_FILE")"
-job_url="job/${JOB_PATH//\//\/job\/}"
+    AUTH="$(head -n1 "$TOKEN_FILE")"
+    job_url="job/${JOB_PATH//\//\/job\/}"
 
-log="$(curl -fsS --max-time 10 -u "$AUTH" \
-    "${JENKINS_URL}/${job_url}/lastBuild/consoleText" 2>/dev/null || true)"
+    log="$(curl -fsS --max-time 10 -u "$AUTH" \
+        "${JENKINS_URL}/${job_url}/lastBuild/consoleText" 2>/dev/null || true)"
 
-if [ -z "$log" ]; then
-    echo "Jenkins returned no console output for ${JOB_KEY}. The job may never have run." >&2
-    exit 1
+    if [ -z "$log" ]; then
+        echo "Jenkins returned no console output for ${JOB_KEY}. The job may never have run." >&2
+        exit 1
+    fi
 fi
 
 # The escape codes are what a terminal draws colour with. In a browser they are
