@@ -38,6 +38,7 @@ app row, Runtime upstream:<name>     → one container per row per environment
 | `MKDIR` | Space-separated folders to create inside the mounts, relative to the row's data folder, for an app that expects them |
 | `MEMORY` | Memory cap. Default `768m` |
 | `EGRESS` | `yes` lets the container open connections. Default `no`: it can only answer (`upstream_net.sh`) |
+| `SELF_CALL` | `yes` for an app that calls its own address (Oqtane's sign-in): its https name points at this machine, and 443 plus its preview port open to the whole upstream network |
 
 ## Supply-chain guards
 

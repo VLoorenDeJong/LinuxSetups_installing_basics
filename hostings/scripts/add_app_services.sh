@@ -785,6 +785,14 @@ ExecStop=/usr/bin/docker stop ${image}
                 # lands as that account.
                 run_as="$(recipe_all "$recipe" USER | head -n1)"
                 [ -z "$run_as" ] || exec_start+=" --user $run_as"
+                # An app that signs in by calling its own address: the https
+                # name points here instead of out via the router, and the wall
+                # opens for 443 and its preview port only.
+                self_ports=""
+                if [ "$(recipe_all "$recipe" SELF_CALL | head -n1)" = "yes" ]; then
+                    exec_start+=" --add-host ${host}:host-gateway"
+                    self_ports="443${pv:+ ${pv##*:}}"
+                fi
                 while IFS= read -r m; do
                     [ -n "$m" ] || continue
                     install -d -m 750 "${data_root}/${m%%:*}"
@@ -816,7 +824,7 @@ ExecStop=/usr/bin/docker stop ${image}
                 done < <(recipe_all "$recipe" SECRET)
                 exec_start+=" --env-file ${secrets_file} upstream-${pkg}:${env}"
 
-                unit_extra="ExecStartPre=/bin/bash /usr/local/lib/linuxbasics/hostings/scripts/upstream_net.sh
+                unit_extra="ExecStartPre=/bin/bash /usr/local/lib/linuxbasics/hostings/scripts/upstream_net.sh${self_ports:+ $self_ports}
 ExecStartPre=-/usr/bin/docker rm -f ${cname}
 ExecStop=/usr/bin/docker stop ${cname}"
                 ;;
