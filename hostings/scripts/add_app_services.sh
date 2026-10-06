@@ -112,14 +112,11 @@ if [ ! -f "$SITES_CONF" ]; then
     exit 1
 fi
 
-if ! DOTNET_BIN="$(command -v dotnet)"; then
-    print_error "dotnet not found on PATH."
-    print_action "Run add_dotnet.sh first, then this script."
-    exit 1
-fi
-
-# Optional, unlike dotnet: no row uses it yet, so a machine without node is not
+# Optional: a machine with no .NET rows (HomeRun) has no dotnet and is not
 # broken. A row that asks for it and cannot get it fails on its own line.
+DOTNET_BIN="$(command -v dotnet 2>/dev/null || true)"
+
+# Optional for the same reason.
 NODE_BIN="$(command -v node 2>/dev/null || true)"
 
 # -----------------------------------------------------------------------------
@@ -299,7 +296,7 @@ print_header "App services"
 print_status "Config:       $SITES_CONF"
 print_status "Deploy user:  $RUN_USER"
 print_status "Apps run as:  $SERVICE_USER"
-print_status "dotnet:       $DOTNET_BIN"
+print_status "dotnet:       ${DOTNET_BIN:-not installed}"
 print_status "Environments: ${ENV_LIST[*]}"
 if [ -n "$ONLY_ROWS" ]; then
     print_status "Rows:         $ONLY_ROWS (everything else left alone)"
@@ -702,6 +699,12 @@ while IFS='|' read -r type name port path subdomain datasource options auth repo
             "${BACKUP_ROOT%/}/${name}/${env}" "$data_dir")"
         case "$row_runtime" in
             dotnet|uno)
+                if [ -z "$DOTNET_BIN" ]; then
+                    print_error "Row '$name' is a .NET application but dotnet is not installed."
+                    print_action "Run add_dotnet.sh first, then this script."
+                    FAILED+=("$name (dotnet not on PATH)")
+                    continue
+                fi
                 exec_start="${DOTNET_BIN} ${env_path} --urls \"http://localhost:${env_port}\""
                 ;;
             # Item 140. The image is built by deploy_docker_app.sh, which writes

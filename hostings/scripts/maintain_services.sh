@@ -897,6 +897,8 @@ fi
 # Only where the console is installed: admin.<domain> is the console.
 if ! id -u hosting-manager >/dev/null 2>&1; then
     apply_skipped "add_admin_vhosts.sh" "no console on this machine"
+elif [ -z "$BASE_DOMAIN" ]; then
+    apply_skipped "add_admin_vhosts.sh" "no BASE_DOMAIN, so no admin.<domain>"
 elif [ "$PRUNE" -eq 1 ]; then
     run_step add_admin_vhosts.sh --prune
 else

@@ -156,7 +156,7 @@ if [ -f "$PREVIEW_SCRIPT" ]; then
 fi
 # admin.<domain> is the console, so a machine without one expects none.
 if [ -f "$ADMIN_SCRIPT" ] && id -u hosting-manager >/dev/null 2>&1; then
-    { SITES_CONF="$SITES_CONF" bash "$ADMIN_SCRIPT" --list >"$GEN_DIR/admin.list" 2>/dev/null || true; } &
+    { SITES_CONF="$SITES_CONF" bash "$ADMIN_SCRIPT" --list >"$GEN_DIR/admin.list" 2>/dev/null || : >"$GEN_DIR/admin.list"; } &
 fi
 # A generator that predates RENDER_ONLY would IGNORE the variable and run a
 # real write, so it is not started at all.
