@@ -210,7 +210,8 @@ site_account() {
     printf '%s' "$n"
 }
 
-EXPECTED_VHOST["000-catchall.conf"]=1
+# The catch-all redirects to BASE_DOMAIN, so a machine without one has none.
+[ -n "$(conf_get BASE_DOMAIN "")" ] && EXPECTED_VHOST["000-catchall.conf"]=1
 DEPRECATED="$(conf_get DEPRECATED_DOMAINS "")"
 if [ -n "$DEPRECATED" ]; then
     IFS=',' read -r -a dep_list <<< "$DEPRECATED"

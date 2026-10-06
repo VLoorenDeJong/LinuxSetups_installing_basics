@@ -819,7 +819,13 @@ if [ "$NO_ROWS_CHANGED" -eq 1 ]; then
     apply_skipped "the write steps" "no row changed"
 else
 run_step add_app_services.sh
-run_step add_app_vhosts.sh
+# Every site vhost and the catch-all redirect name BASE_DOMAIN; without one
+# (HomeRun, panels only) there is nothing for this step to write.
+if [ -n "$BASE_DOMAIN" ]; then
+    run_step add_app_vhosts.sh
+else
+    apply_skipped "add_app_vhosts.sh" "no BASE_DOMAIN, so no sites"
+fi
 
 if [ "$NEEDS_CERT" -eq 1 ] && command -v certbot >/dev/null 2>&1; then
     # The config is as good a source as the environment, and it is where the
