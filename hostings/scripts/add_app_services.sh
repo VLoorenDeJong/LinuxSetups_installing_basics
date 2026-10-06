@@ -292,6 +292,14 @@ row_selected() {
     [ -n "${_WANTED[$1]:-}" ]
 }
 
+# A machine with no rows and no units (HomeRun) has nothing to write or prune,
+# so the app-machine settings checked below are not asked of it.
+if ! grep -qE '^[[:space:]]*(app|website|proxy|mailbox)[[:space:]]*\|' "$SITES_CONF" \
+   && ! compgen -G "/etc/systemd/system/kestrel-*.service" >/dev/null; then
+    print_success "No app rows and no app units, so there is nothing to do."
+    exit 0
+fi
+
 print_header "App services"
 print_status "Config:       $SITES_CONF"
 print_status "Deploy user:  $RUN_USER"
