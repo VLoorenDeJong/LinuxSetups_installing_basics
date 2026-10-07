@@ -49,6 +49,7 @@ print_status()  { printf "\033[34m🔧 %s\033[0m\n" "$1"; }
 print_success() { printf "\033[32m✅ %s\033[0m\n" "$1"; }
 print_action()  { printf "\033[33m👉 %s\033[0m\n" "$1"; }
 print_error()   { printf "\033[31m❌ %s\033[0m\n" "$1"; }
+print_hint()    { printf "   %s\n" "$1"; }
 
 SPIN_FRAMES=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
 SPIN_TICK=0
@@ -195,22 +196,59 @@ fi
 
 # --- Prove it ----------------------------------------------------------------
 # The first start builds its database and can take minutes on a Pi.
-ANSWERED=0
 WAIT_LIMIT=300
-WAIT_START="$(date +%s)"
-while [ $(( $(date +%s) - WAIT_START )) -lt "$WAIT_LIMIT" ]; do
-    CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 "http://127.0.0.1:${PORT}/" 2>/dev/null || true)"
-    case "$CODE" in 200|302) ANSWERED=1; break ;; esac
-    is_ours || break
-    spin_tick "Waiting for Home Assistant, $(( $(date +%s) - WAIT_START ))s of ${WAIT_LIMIT}s"
-done
-printf '\r\033[K'
-if [ "$ANSWERED" -ne 1 ]; then
-    print_error "Home Assistant did not answer on port ${PORT} within ${WAIT_LIMIT}s. Last lines:"
-    docker logs --tail 20 homeassistant 2>&1 | sed 's/^/   /'
-    exit 1
-fi
+wait_for_answer() {
+    local answered=0 code wait_start
+    wait_start="$(date +%s)"
+    while [ $(( $(date +%s) - wait_start )) -lt "$WAIT_LIMIT" ]; do
+        code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 "http://127.0.0.1:${PORT}/" 2>/dev/null || true)"
+        case "$code" in 200|302) answered=1; break ;; esac
+        is_ours || break
+        spin_tick "Waiting for Home Assistant, $(( $(date +%s) - wait_start ))s of ${WAIT_LIMIT}s"
+    done
+    printf '\r\033[K'
+    if [ "$answered" -ne 1 ]; then
+        print_error "Home Assistant did not answer on port ${PORT} within ${WAIT_LIMIT}s. Last lines:"
+        docker logs --tail 20 homeassistant 2>&1 | sed 's/^/   /'
+        exit 1
+    fi
+}
+wait_for_answer
 print_success "Home Assistant answers on port ${PORT}."
+
+# --- Behind this machine's own proxy -----------------------------------------
+# A console page proxies to it from 127.0.0.1; without this block Home
+# Assistant answers every proxied request with 400.
+CONFIG_YAML="$DATA_DIR/config/configuration.yaml"
+proxied_code() {
+    curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
+        -H 'X-Forwarded-For: 192.0.2.1' "http://127.0.0.1:${PORT}/" 2>/dev/null || true
+}
+if [ ! -f "$CONFIG_YAML" ]; then
+    print_action "No $CONFIG_YAML yet, so the proxy is not trusted. Re-run this script once Home Assistant has started."
+elif grep -qE '^[[:space:]]+use_x_forwarded_for:[[:space:]]*true' "$CONFIG_YAML"; then
+    print_success "Home Assistant already trusts this machine's proxy."
+elif grep -qE '^http:' "$CONFIG_YAML"; then
+    print_action "$CONFIG_YAML has its own http: section, left alone. Add to it by hand, then: sudo docker restart homeassistant"
+    print_hint "  use_x_forwarded_for: true"
+    print_hint "  trusted_proxies:"
+    print_hint "    - 127.0.0.1"
+    print_hint "    - ::1"
+else
+    printf '\n# Added by add_home_assistant.sh: trust the proxy on this machine.\nhttp:\n  use_x_forwarded_for: true\n  trusted_proxies:\n    - 127.0.0.1\n    - ::1\n' >> "$CONFIG_YAML"
+    print_status "Added an http: section to $CONFIG_YAML trusting 127.0.0.1 and ::1."
+    if ! run_watched "Restarting Home Assistant" docker restart homeassistant; then
+        print_error "Home Assistant did not restart. Logs: sudo docker logs homeassistant"
+        exit 1
+    fi
+    wait_for_answer
+fi
+PROXIED="$(proxied_code)"
+case "$PROXIED" in
+    200|302) print_success "A proxied request is answered ($PROXIED)." ;;
+    *)       print_error "A proxied request gets $PROXIED, so a console page in front of it will fail."
+             print_action "Check the http: section in $CONFIG_YAML, then: sudo docker logs homeassistant" ;;
+esac
 
 echo ""
 print_success "Home Assistant is up."
