@@ -55,6 +55,8 @@ const LASTAPPLY   = '/var/lib/hosting-manager/last-apply.json';
 const PUBLISH     = '/usr/local/sbin/publish_hostings.sh';
 const CHECK       = '/usr/local/sbin/check_hostings.sh';
 const APPLY       = '/usr/local/sbin/trigger_apply.sh';
+// Without Jenkins, trigger_apply.sh runs the apply as the unit hosting-apply.
+define('WATCH_APPLY', is_dir('/var/lib/jenkins') ? 'Watch it in Jenkins.' : 'Follow it on the machine: journalctl -u hosting-apply -f');
 const FASTAPPLY   = '/usr/local/sbin/apply_config_only.sh';
 const GOLIVE      = '/usr/local/sbin/go_live.sh';
 const UPDATE      = '/usr/local/sbin/trigger_update.sh';
@@ -2349,7 +2351,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exec('sudo ' . APPLY . ' 2>&1', $fixLines, $fixRc);
             $output = strip_ansi(implode("\n", $fixLines));
             $message = $fixRc === 0
-                ? 'This drift needs the full apply, so the job was started. Watch it in Jenkins.'
+                ? 'This drift needs the full apply, so it was started. ' . WATCH_APPLY
                 : 'Could not start the apply job. Nothing changed.';
             $messageClass = $fixRc === 0 ? 'good' : 'bad';
             // This press started the SAME Jenkins job that Save and apply
@@ -2589,7 +2591,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exec('sudo ' . APPLY . ' 2>&1', $lines, $rc);
         $output = strip_ansi(implode("\n", $lines));
         $message = $rc === 0
-            ? 'Apply job started. Watch it in Jenkins.'
+            ? 'Apply started. ' . WATCH_APPLY
             : 'Could not start the apply job. Nothing changed.';
         $messageClass = $rc === 0 ? 'good' : 'bad';
     }
@@ -5320,6 +5322,7 @@ const FIELDS   = <?= json_encode(FIELDS, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED
 const WIDTHS   = <?= json_encode($widths) ?>;
 const BASE     = <?= json_encode($baseDomain) ?>;
 const TABS_ON  = <?= json_encode(tabs_on($config)) ?>;
+const HAS_JENKINS = <?= json_encode(is_dir('/var/lib/jenkins')) ?>;
 // The progress-instance preset (drawer.js). Either empty hides its tick.
 const PROGRESS_REPO = <?= json_encode((string) conf_val($config, 'PROGRESS_REPO')) ?>;
 const PROGRESS_DLL  = <?= json_encode((string) conf_val($config, 'PROGRESS_DLL')) ?>;

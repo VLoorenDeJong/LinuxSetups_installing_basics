@@ -324,10 +324,11 @@ function applyFinished(result) {
     fetch('?recheck=1', { headers: { 'Accept': 'application/json' } }).catch(() => {});
   }
 
+  const local = typeof HAS_JENKINS !== 'undefined' && !HAS_JENKINS;
   const say = result === 'SUCCESS'  ? t.applyDone
-            : result === 'UNSTABLE' ? t.applyUnstable
-            : result === 'FAILURE'  ? t.applyFailed
-            : t.applyUnknown;
+            : result === 'UNSTABLE' ? (local ? t.applyUnstableLocal : t.applyUnstable)
+            : result === 'FAILURE'  ? (local ? t.applyFailedLocal : t.applyFailed)
+            : (local ? t.applyUnknownLocal : t.applyUnknown);
   const p = document.querySelector('#apply-progress .msg');
   if (p) p.className = 'msg ' + (result === 'SUCCESS' ? 'good' : result ? 'bad' : 'note');
   const spin = document.querySelector('#apply-progress .spin');
