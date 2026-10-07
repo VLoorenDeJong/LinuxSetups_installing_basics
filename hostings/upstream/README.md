@@ -32,6 +32,7 @@ app row, Runtime upstream:<name>     → one container per row per environment
 | `ENV` | `KEY=value` handed to the container. `{PUBLIC_URL}` becomes the row's `https://` address in that environment, `{PUBLIC_HOST}` its hostname, `{HOSTS}` the hostname plus its LAN preview address (comma-separated) |
 | `SECRET` | A variable generated once per row and environment, kept in `/etc/upstream/app-<row><suffix>.env`, root only. 32 random hex characters ending `Aa1!`, so it passes the usual password rules |
 | `SECRET_UNTIL` | A file the install leaves behind, relative to the row's data folder (`data/Oqtane.db`). Once it exists, the next start hands the container none of the `SECRET`s, so `docker inspect` cannot show a password only the install reads. The file in `/etc/upstream` stays, for `LOGIN` and transfers |
+| `INSTALL_ENV` | Like `ENV`, but handed over only while `SECRET_UNTIL` is missing: settings that make the app demand the secrets (Umbraco's unattended install) |
 | `CAPS` | Linux capabilities to give back. Every container starts with none |
 | `READ_ONLY` | `yes` (default): the filesystem is read-only apart from `/tmp`, the mounts and `WRITABLE`. `no` only for an app that writes into its own install folder |
 | `WRITABLE` | Space-separated paths kept in memory, emptied on restart |
