@@ -32,9 +32,15 @@ docker network inspect "$NET" >/dev/null 2>&1 \
 # Replies to connections made TO a container are ESTABLISHED and pass; only
 # connections a container opens itself are NEW and dropped. FORWARD covers
 # everything beyond this machine, INPUT this machine itself.
-rule=(-s "$SUBNET" -m conntrack --ctstate NEW -j DROP)
-iptables -C DOCKER-USER "${rule[@]}" 2>/dev/null || iptables -I DOCKER-USER "${rule[@]}"
-iptables -C INPUT "${rule[@]}" 2>/dev/null || iptables -I INPUT "${rule[@]}"
+spec="-s $SUBNET -m conntrack --ctstate NEW -j DROP"
+read -ra rule <<< "$spec"
+for chain in DOCKER-USER INPUT; do
+    iptables -C "$chain" "${rule[@]}" 2>/dev/null || iptables -I "$chain" "${rule[@]}"
+    # One copy, however it got doubled (seen 2026-10-06, cause unproven).
+    while [ "$(iptables -S "$chain" | grep -cxF -- "-A $chain $spec")" -gt 1 ]; do
+        iptables -D "$chain" "${rule[@]}"
+    done
+done
 
 # Re-inserted rather than checked: an ACCEPT that ends up below the DROP opens
 # nothing.
