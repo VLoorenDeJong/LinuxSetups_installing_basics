@@ -840,7 +840,16 @@ ExecStop=/usr/bin/docker stop ${image}
                 until_file="$(recipe_all "$recipe" SECRET_UNTIL | head -n1)"
                 if [ -n "$until_file" ]; then
                     env_file="${UPSTREAM_SECRETS}/${cname}.run.env"
-                    env_pre="ExecStartPre=/bin/sh -c 'umask 077; if [ -e ${data_root}/${until_file} ]; then : > ${env_file}; else cp ${secrets_file} ${env_file}; fi'
+                    # INSTALL_ENV: settings that make the app demand the secrets
+                    # (Umbraco's unattended install), so they leave with them.
+                    install_env="${UPSTREAM_SECRETS}/${cname}.install.env"
+                    install -m 600 /dev/null "$install_env"
+                    while IFS= read -r e; do
+                        [ -n "$e" ] || continue
+                        e="${e//"$P_URL"/https://$host}"; e="${e//"$P_HOSTS"/$hosts}"; e="${e//"$P_HOST"/$host}"
+                        echo "$e" >> "$install_env"
+                    done < <(recipe_all "$recipe" INSTALL_ENV)
+                    env_pre="ExecStartPre=/bin/sh -c 'umask 077; if [ -e ${data_root}/${until_file} ]; then : > ${env_file}; else cat ${secrets_file} ${install_env} > ${env_file}; fi'
 "
                 fi
                 exec_start+=" --env-file ${env_file} upstream-${pkg}:${env}"

@@ -217,7 +217,7 @@ P_URL="{PUBLIC_URL}" P_HOST="{PUBLIC_HOST}" P_HOSTS="{HOSTS}"
 while IFS= read -r e; do
     [ -n "$e" ] || continue
     e="${e//"$P_URL"/http://127.0.0.1}"; e="${e//"$P_HOSTS"/127.0.0.1}"; run_args+=(-e "${e//"$P_HOST"/127.0.0.1}")
-done < <(recipe_all ENV)
+done < <(recipe_all ENV; recipe_all INSTALL_ENV)
 while IFS= read -r s; do
     [ -n "$s" ] || continue
     run_args+=(-e "$s=$(openssl rand -hex 16)Aa1!")
