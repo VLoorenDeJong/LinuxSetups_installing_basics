@@ -833,9 +833,19 @@ ExecStop=/usr/bin/docker stop ${image}
                     fi
                     grep -q "^${s}=" "$secrets_file" || echo "${s}=$(openssl rand -hex 16)Aa1!" >> "$secrets_file"
                 done < <(recipe_all "$recipe" SECRET)
-                exec_start+=" --env-file ${secrets_file} upstream-${pkg}:${env}"
+                # A password only the install reads stays out of docker inspect
+                # once the install has left SECRET_UNTIL behind.
+                env_file="$secrets_file"
+                env_pre=""
+                until_file="$(recipe_all "$recipe" SECRET_UNTIL | head -n1)"
+                if [ -n "$until_file" ]; then
+                    env_file="${UPSTREAM_SECRETS}/${cname}.run.env"
+                    env_pre="ExecStartPre=/bin/sh -c 'umask 077; if [ -e ${data_root}/${until_file} ]; then : > ${env_file}; else cp ${secrets_file} ${env_file}; fi'
+"
+                fi
+                exec_start+=" --env-file ${env_file} upstream-${pkg}:${env}"
 
-                unit_extra="ExecStartPre=/bin/bash /usr/local/lib/linuxbasics/hostings/scripts/upstream_net.sh${self_ports:+ $self_ports}
+                unit_extra="${env_pre}ExecStartPre=/bin/bash /usr/local/lib/linuxbasics/hostings/scripts/upstream_net.sh${self_ports:+ $self_ports}
 ExecStartPre=-/usr/bin/docker rm -f ${cname}
 ExecStop=/usr/bin/docker stop ${cname}"
                 ;;
