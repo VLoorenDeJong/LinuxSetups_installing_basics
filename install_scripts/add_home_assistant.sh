@@ -217,37 +217,64 @@ wait_for_answer
 print_success "Home Assistant answers on port ${PORT}."
 
 # --- Behind this machine's own proxy -----------------------------------------
-# A console page proxies to it from 127.0.0.1; without this block Home
-# Assistant answers every proxied request with 400.
-CONFIG_YAML="$DATA_DIR/config/configuration.yaml"
+# A console page proxies to it from 127.0.0.1; untrusted, every proxied
+# request gets 400. Since 2026.9 Home Assistant reads http: from YAML only
+# on its first start, so the setting goes into its own store, with it stopped.
+HTTP_STORE="$DATA_DIR/config/.storage/http"
 proxied_code() {
     curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
         -H 'X-Forwarded-For: 192.0.2.1' "http://127.0.0.1:${PORT}/" 2>/dev/null || true
 }
-if [ ! -f "$CONFIG_YAML" ]; then
-    print_action "No $CONFIG_YAML yet, so the proxy is not trusted. Re-run this script once Home Assistant has started."
-elif grep -qE '^[[:space:]]+use_x_forwarded_for:[[:space:]]*true' "$CONFIG_YAML"; then
-    print_success "Home Assistant already trusts this machine's proxy."
-elif grep -qE '^http:' "$CONFIG_YAML"; then
-    print_action "$CONFIG_YAML has its own http: section, left alone. Add to it by hand, then: sudo docker restart homeassistant"
-    print_hint "  use_x_forwarded_for: true"
-    print_hint "  trusted_proxies:"
-    print_hint "    - 127.0.0.1"
-    print_hint "    - ::1"
-else
-    printf '\n# Added by add_home_assistant.sh: trust the proxy on this machine.\nhttp:\n  use_x_forwarded_for: true\n  trusted_proxies:\n    - 127.0.0.1\n    - ::1\n' >> "$CONFIG_YAML"
-    print_status "Added an http: section to $CONFIG_YAML trusting 127.0.0.1 and ::1."
-    if ! run_watched "Restarting Home Assistant" docker restart homeassistant; then
-        print_error "Home Assistant did not restart. Logs: sudo docker logs homeassistant"
-        exit 1
-    fi
-    wait_for_answer
+# The block an earlier version of this script added, now ignored and flagged.
+CONFIG_YAML="$DATA_DIR/config/configuration.yaml"
+if [ -f "$CONFIG_YAML" ] && grep -q '^# Added by add_home_assistant.sh: trust the proxy' "$CONFIG_YAML"; then
+    sed -i '/^# Added by add_home_assistant.sh: trust the proxy/,/^    - ::1$/d' "$CONFIG_YAML"
+    print_status "Removed the ignored http: block from $CONFIG_YAML."
 fi
-PROXIED="$(proxied_code)"
-case "$PROXIED" in
-    200|302) print_success "A proxied request is answered ($PROXIED)." ;;
-    *)       print_error "A proxied request gets $PROXIED, so a console page in front of it will fail."
-             print_action "Check the http: section in $CONFIG_YAML, then: sudo docker logs homeassistant" ;;
+
+case "$(proxied_code)" in
+    200|302) print_success "Home Assistant already trusts this machine's proxy." ;;
+    *)
+        if [ ! -f "$HTTP_STORE" ]; then
+            print_error "No $HTTP_STORE, so the proxy cannot be trusted. Re-run this script once Home Assistant has started."
+            exit 1
+        fi
+        if ! run_watched "Stopping Home Assistant" docker stop homeassistant; then
+            print_error "Home Assistant did not stop. Logs: sudo docker logs homeassistant"
+            exit 1
+        fi
+        cp -p "$HTTP_STORE" "$HTTP_STORE.before-proxy"
+        if ! python3 - "$HTTP_STORE" <<'PY'
+import json, sys
+path = sys.argv[1]
+with open(path) as f:
+    store = json.load(f)
+stable = store["data"]["stable"]
+stable["use_x_forwarded_for"] = True
+stable["trusted_proxies"] = sorted(set(stable.get("trusted_proxies", [])) | {"127.0.0.1", "::1"})
+with open(path, "w") as f:
+    json.dump(store, f, indent=2)
+PY
+        then
+            cp -p "$HTTP_STORE.before-proxy" "$HTTP_STORE"
+            print_error "Could not edit $HTTP_STORE; put it back as it was."
+            docker start homeassistant >/dev/null 2>&1 || true
+            exit 1
+        fi
+        print_status "Set use_x_forwarded_for and trusted_proxies 127.0.0.1, ::1 in $HTTP_STORE (old copy: $HTTP_STORE.before-proxy)."
+        if ! run_watched "Starting Home Assistant" docker start homeassistant; then
+            print_error "Home Assistant did not start. Logs: sudo docker logs homeassistant"
+            exit 1
+        fi
+        wait_for_answer
+        PROXIED="$(proxied_code)"
+        case "$PROXIED" in
+            200|302) print_success "A proxied request is answered ($PROXIED)." ;;
+            *)       print_error "A proxied request still gets $PROXIED, so a console page in front of it will fail."
+                     print_action "Look for 'reverse proxy' in: sudo docker logs homeassistant"
+                     exit 1 ;;
+        esac
+        ;;
 esac
 
 echo ""
