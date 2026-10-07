@@ -120,7 +120,9 @@ run_in() {
     # Named, because timeout only kills the docker client; the container
     # itself keeps building until it is stopped by name.
     local name="build-$$-$RANDOM" rc=0
-    timeout "$BUILD_TIMEOUT" docker run --rm \
+    # -k: the client waits for the container, so TERM alone returns only when
+    # the build ends anyway (measured 62 s on a 5 s limit).
+    timeout -k 10s "$BUILD_TIMEOUT" docker run --rm \
         --name "$name" \
         --user "$owner" \
         -e HOME=/tmp \
@@ -128,7 +130,7 @@ run_in() {
         -v "$cache":/nuget \
         -w /src \
         "$IMAGE" "$@" >&2 || rc=$?
-    if [ "$rc" -eq 124 ]; then
+    if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
         docker stop -t 10 "$name" >/dev/null 2>&1 || true
         print_error "The build ran longer than $BUILD_TIMEOUT; container $name stopped."
     fi
