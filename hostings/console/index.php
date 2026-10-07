@@ -1494,7 +1494,8 @@ function tabs_on(string $config): array {
         // Environments only name copies of apps and websites.
         'environments' => $jenkins || $rows('app') || $rows('website'),
         'ports'        => true,
-        'repos'        => $jenkins || (string) conf_val($config, 'GITHUB_APP_ID') !== '',
+        // Not the GitHub App: a machine may hold one only to push console saves.
+        'repos'        => $jenkins,
         'users'        => true,
         'raw'          => true,
         'audit'        => true,
