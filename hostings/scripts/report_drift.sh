@@ -391,6 +391,9 @@ while IFS='|' read -r p_id _p_port _p_label p_kind _rest; do
     p_id="$(printf '%s' "${p_id#*=}" | tr -d '\r' | xargs)"
     p_kind="$(printf '%s' "$p_kind" | tr -d '\r' | xargs)"
     [ -n "$p_id" ] && [ -n "$p_kind" ] || continue
+    # A dash is `itself`: the page's own installer owns its vhost.
+    case "$p_kind" in -|itself) continue ;; esac
+    case ",$(conf_get PANELS_OFF "" | tr -d ' ')," in *",${p_id},"*) continue ;; esac
     [ -f "$AVAILABLE_DIR/panel-${p_id}.conf" ] || ADD+=("panel   panel-${p_id}.conf")
 done < <(grep -E '^[[:space:]]*PANEL[[:space:]]*=' "$SITES_CONF" 2>/dev/null || true)
 

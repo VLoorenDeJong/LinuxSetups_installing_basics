@@ -211,6 +211,12 @@ auth_in_env() {
     return 0
 }
 
+# A machine with only panels (HomeRun) has no site to ask, and no BASE_DOMAIN.
+if [ -z "$(conf_rows)" ]; then
+    print_info "No site rows in $SITES_CONF, so there is no site to ask."
+    exit 0
+fi
+
 BASE_DOMAIN="$(conf_get BASE_DOMAIN "")"
 if [ -z "$BASE_DOMAIN" ]; then
     print_error "No BASE_DOMAIN in $SITES_CONF"
