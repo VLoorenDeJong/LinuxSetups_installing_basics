@@ -1487,10 +1487,12 @@ function tabs_on(string $config): array {
         'apps'         => $jenkins || $rows('app'),
         'websites'     => $jenkins || $rows('website'),
         'mailboxes'    => is_file('/etc/postfix/main.cf') || $rows('mailbox'),
-        'proxies'      => true,
+        // A proxy needs a public certificate, so it follows certbot (module 9).
+        'proxies'      => is_dir('/etc/letsencrypt') || $rows('proxy'),
         'machine'      => true,
         'smb'          => is_file('/etc/samba/smb.conf'),
-        'environments' => true,
+        // Environments only name copies of apps and websites.
+        'environments' => $jenkins || $rows('app') || $rows('website'),
         'ports'        => true,
         'repos'        => $jenkins || (string) conf_val($config, 'GITHUB_APP_ID') !== '',
         'users'        => true,
