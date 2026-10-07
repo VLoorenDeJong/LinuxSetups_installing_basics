@@ -252,7 +252,18 @@ for entry in "${TREES[@]}"; do
     # exactly that. The trees are compared to each other below, which needs no
     # network and catches the case this script was written for.
     upstream="origin/$branch"
-    if git -C "$path" rev-parse --verify --quiet "$upstream" >/dev/null 2>&1; then
+    # Detached on purpose: add_pipeline_scripts.sh puts the tree on the commit
+    # a clone in a home directory pins, so that pin is what it can be behind.
+    # origin/HEAD is the default branch, which this tree never follows.
+    if [ "$branch" = "HEAD" ]; then
+        upstream=""
+        for _pc in /home/*/*/; do
+            _pin="$(git -c safe.directory='*' -C "$_pc" ls-tree HEAD LinuxBasics 2>/dev/null | awk '$2 == "commit" {print $3; exit}')"
+            [ -n "$_pin" ] && { upstream="$_pin"; branch="pin in ${_pc%/}"; break; }
+        done
+        unset _pc _pin
+    fi
+    if [ -n "$upstream" ] && git -C "$path" rev-parse --verify --quiet "${upstream}^{commit}" >/dev/null 2>&1; then
         behind="$(git -C "$path" rev-list --count "HEAD..$upstream" 2>/dev/null || echo 0)"
         ahead="$(git -C "$path" rev-list --count "$upstream..HEAD" 2>/dev/null || echo 0)"
     else
@@ -429,7 +440,7 @@ else
     done
     for b in "${BEHIND_LIST[@]}"; do
         IFS='|' read -r path label refresher behind <<< "$b"
-        print_action "The $label is $behind behind its last fetched branch. Refresh it with: $refresher"
+        print_action "The $label is $behind behind what it should hold. Refresh it with: $refresher"
     done
     for d in "${DIRTY_LIST[@]}"; do
         print_action "$d has content edited in place. What it runs is not in git."
