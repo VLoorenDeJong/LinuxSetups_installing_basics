@@ -572,6 +572,11 @@ build_previews() {
                 PROTECTED+=("$name/$env")
             fi
 
+            # A proxy to another machine (host:port) has no port here to preview.
+            if [[ "$port" == *:* ]]; then
+                FAILED+=("${name}/${env} (its port $port is on another machine, so it has no preview)")
+                continue
+            fi
             _conf_get offset "${env_upper}_PORT_OFFSET" 0
             env_port=$((port + offset))
             if [ "$want" = "auto" ] && [ -z "$port" ]; then

@@ -549,7 +549,12 @@ while IFS='|' read -r c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c11 c12 c13 c14 c15 c16 c17
 
     # Ports, across every environment. 5205 and a dev offset of 1000 means 6205
     # is taken too, and a collision only shows up as one app refusing to start.
-    if [ -n "$port" ]; then
+    # A proxy row may point at another machine as host:port. That port is not
+    # this machine's, so it cannot collide with anything here.
+    if [ "$type" = "proxy" ] && [[ "$port" == *:* ]]; then
+        [[ "$port" =~ ^[A-Za-z0-9.-]+:[0-9]+$ ]] \
+            || err "$label: Port '$port' is not a port or host:port"
+    elif [ -n "$port" ]; then
         if ! [[ "$port" =~ ^[0-9]+$ ]]; then
             err "$label: Port '$port' is not a number"
         else

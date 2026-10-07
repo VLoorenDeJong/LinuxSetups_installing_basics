@@ -1243,7 +1243,7 @@ build_rows() {
     # writing into `env` would reach this loop's variable if it were global.
     local type name port path sub datasource options authprotected
     local siterepo sitebranch rowenvs authusers repomode runtime enabled
-    local env env_upper prefix offset env_port host file body content ssl web_root doc_root site_acct
+    local env env_upper prefix offset env_port upstream host file body content ssl web_root doc_root site_acct
     local offline_fallback
     local auth_443 auth_80 login_page users_here
 
@@ -1418,9 +1418,15 @@ build_rows() {
                         continue
                     fi
                     # A proxy row's port is not ours to shift: the service owns
-                    # its own unit and listens where it listens
+                    # its own unit and listens where it listens. It may name
+                    # another machine as host:port; a bare port is this one.
+                    upstream="127.0.0.1"
                     if [ "$type" = "proxy" ]; then
                         env_port="$port"
+                        if [[ "$port" == *:* ]]; then
+                            upstream="${port%:*}"
+                            env_port="${port##*:}"
+                        fi
                     else
                         env_port=$((port + offset))
                     fi
@@ -1436,8 +1442,8 @@ build_rows() {
                     body="$(cat <<EOF
     ProxyPreserveHost On
 ${encoded}
-    ProxyPass / http://127.0.0.1:${env_port}/${nocanon}
-    ProxyPassReverse / http://127.0.0.1:${env_port}/
+    ProxyPass / http://${upstream}:${env_port}/${nocanon}
+    ProxyPassReverse / http://${upstream}:${env_port}/
 
     # Kestrel needs to know the request arrived over HTTPS, otherwise every URL
     # the app generates comes back as http and mixed content breaks it
@@ -1448,7 +1454,7 @@ ${encoded}
     # fall back to long polling or fail outright without this
     RewriteEngine On
     RewriteCond %{HTTP:Upgrade} =websocket [NC]
-    RewriteRule /(.*) ws://127.0.0.1:${env_port}/\$1 [P,L]
+    RewriteRule /(.*) ws://${upstream}:${env_port}/\$1 [P,L]
 EOF
 )"
                     ;;
