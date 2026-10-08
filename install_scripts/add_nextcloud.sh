@@ -1,0 +1,487 @@
+#!/usr/bin/env bash
+set -e
+
+# -d / --debug: trace every command. Stripped from "$@" so it never reaches the
+# script's own argument parsing.
+DEBUG_MODE=0
+_dbg_args=()
+for _a in "$@"; do
+    case "$_a" in
+        -d|--debug) DEBUG_MODE=1 ;;
+        *)          _dbg_args+=("$_a") ;;
+    esac
+done
+set -- ${_dbg_args+"${_dbg_args[@]}"}
+unset _a _dbg_args
+[ "$DEBUG_MODE" = "1" ] && set -x
+
+# =============================================================================
+# Nextcloud with Euro-Office, as one Docker stack:
+#
+#   browser -> :PORT front (Caddy) -> /             nextcloud
+#                                  -> /eurooffice/  eurooffice (the editor)
+#   nextcloud -> db (Postgres), redis (file locking)
+#
+# ONE PORT FOR BOTH. The editor is served under the same address as Nextcloud,
+# and Nextcloud is told it lives at /eurooffice/, so the browser loads it from
+# whichever address it reached Nextcloud on: the LAN address, a VPN, or a
+# public name that a reverse proxy on another machine serves.
+#
+# LAN ONLY BY ITSELF. Docker publishes the port past UFW, so the router not
+# forwarding it is what keeps it off the internet. A public name is another
+# machine's reverse proxy, named with --public-host and --trusted-proxy.
+#
+# SECRETS. The database password and the editor's JWT secret are generated
+# once into DATA_DIR/.env (0600) and never shown. The admin password comes
+# from a secret store when a secret_ask.sh is found, otherwise it is asked.
+#
+# Usage:
+#   add_nextcloud.sh
+#   add_nextcloud.sh --public-host cloud.example.com --trusted-proxy 192.0.2.10
+#   add_nextcloud.sh --no-office                     # Nextcloud alone
+#   add_nextcloud.sh --update                        # pull newer images
+#
+# Exit codes:
+#   0  Nextcloud (and the editor) answer through the front port
+#   1  something needed for the run is missing or failed
+#   2  bad usage
+# =============================================================================
+
+export DEBIAN_FRONTEND=noninteractive
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+print_header()  { printf "\n\033[36m=== %s ===\033[0m\n" "$1"; }
+print_info()    { printf "\033[36mℹ️ %s\033[0m\n" "$1"; }
+print_status()  { printf "\033[34m🔧 %s\033[0m\n" "$1"; }
+print_success() { printf "\033[32m✅ %s\033[0m\n" "$1"; }
+print_action()  { printf "\033[33m👉 %s\033[0m\n" "$1"; }
+print_error()   { printf "\033[31m❌ %s\033[0m\n" "$1"; }
+print_hint()    { printf "   %s\n" "$1"; }
+
+SPIN_FRAMES=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+SPIN_TICK=0
+spin_tick() {
+    printf '\r\033[K\033[34m%s %s\033[0m' "${SPIN_FRAMES[SPIN_TICK % 10]}" "$1"
+    SPIN_TICK=$((SPIN_TICK + 1))
+    sleep 0.2
+}
+
+# Watch-only: an image pull killed halfway leaves a partial layer cache.
+run_watched() {
+    local message="$1"; shift
+    if [ "$DEBUG_MODE" = "1" ]; then "$@"; return; fi
+    local log; log="$(mktemp)"
+    "$@" >"$log" 2>&1 &
+    local pid=$!
+    while kill -0 "$pid" 2>/dev/null; do spin_tick "$message"; done
+    local rc=0
+    wait "$pid" || rc=$?
+    printf '\r\033[K'
+    if [ "$rc" -ne 0 ]; then
+        print_error "$message failed (exit $rc)"
+        tail -n 20 "$log" >&2
+        print_info "Full log: $log"
+    else
+        rm -f "$log"
+    fi
+    return $rc
+}
+
+need_value() { [ -n "$2" ] || { print_error "$1 needs a value."; exit 2; }; }
+
+read_secret() {
+    local prompt="$1" out="" ch
+    printf '%s' "$prompt" > /dev/tty
+    while IFS= read -rsn1 ch < /dev/tty; do
+        case "$ch" in
+            ''|$'\n')       break ;;
+            $'\177'|$'\b')  [ -n "$out" ] && { out="${out%?}"; printf '\b \b' > /dev/tty; } ;;
+            *)              out="$out$ch"; printf '*' > /dev/tty ;;
+        esac
+    done
+    printf '\n' > /dev/tty
+    SECRET="$out"
+}
+
+# --- Arguments ---------------------------------------------------------------
+DATA_DIR="/opt/nextcloud"
+PORT="10005"
+PUBLIC_HOST=""
+TRUSTED_PROXY=""
+OFFICE=1
+UPDATE=0
+NC_IMAGE="nextcloud:34-apache"
+EO_IMAGE="ghcr.io/euro-office/documentserver:latest"
+DB_IMAGE="postgres:17-alpine"
+REDIS_IMAGE="redis:7-alpine"
+CADDY_IMAGE="caddy:2-alpine"
+# Fixed, so Nextcloud can trust its own front proxy by address.
+SUBNET="172.30.105.0/24"
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --data-dir)      need_value "$1" "${2:-}"; DATA_DIR="$2"; shift 2 ;;
+        --port)          need_value "$1" "${2:-}"; PORT="$2"; shift 2 ;;
+        --public-host)   need_value "$1" "${2:-}"; PUBLIC_HOST="$2"; shift 2 ;;
+        --trusted-proxy) need_value "$1" "${2:-}"; TRUSTED_PROXY="$2"; shift 2 ;;
+        --no-office)     OFFICE=0; shift ;;
+        --update)        UPDATE=1; shift ;;
+        -h|--help)       sed -n '/^# Nextcloud with/,/^#   2  bad usage/p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *)               print_error "Unknown argument: $1"; exit 2 ;;
+    esac
+done
+
+if [ "$EUID" -ne 0 ]; then
+    print_error "This script needs root."
+    print_action "Run it with: sudo bash $0 $*"
+    exit 2
+fi
+
+print_header "Nextcloud"
+
+occ() { docker exec -u www-data nextcloud php occ "$@"; }
+is_up() { docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$1"; }
+
+# --- Pre-flight --------------------------------------------------------------
+ERRORS=()
+if [ ! -f "$SCRIPT_DIR/check_docker.sh" ]; then
+    ERRORS+=("check_docker.sh is missing from $SCRIPT_DIR")
+elif ! bash "$SCRIPT_DIR/check_docker.sh"; then
+    ERRORS+=("Docker is not usable, see above")
+fi
+if ! [[ "$PORT" =~ ^[0-9]+$ ]] || [ "$PORT" -lt 1024 ] || [ "$PORT" -gt 65535 ]; then
+    ERRORS+=("--port must be a number between 1024 and 65535, not '$PORT'")
+elif ss -lnt 2>/dev/null | grep -qE "[:.]${PORT} " && ! is_up nextcloud-front; then
+    ERRORS+=("Something else already listens on port $PORT. Find it: sudo ss -lntp | grep :$PORT")
+fi
+if [ -n "$PUBLIC_HOST" ] && [ -z "$TRUSTED_PROXY" ]; then
+    ERRORS+=("--public-host needs --trusted-proxy: the address of the machine whose proxy serves it")
+fi
+command -v curl    >/dev/null 2>&1 || ERRORS+=("curl is missing: sudo apt-get install -y curl")
+command -v openssl >/dev/null 2>&1 || ERRORS+=("openssl is missing: sudo apt-get install -y openssl")
+
+MEM_MB="$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)"
+if [ "$OFFICE" -eq 1 ] && [ "${MEM_MB:-0}" -lt 3500 ]; then
+    ERRORS+=("Euro-Office needs 4 GB of memory and this machine has ${MEM_MB} MB. Use --no-office")
+fi
+
+LAN_IP="$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -1)"
+[ -n "$LAN_IP" ] || ERRORS+=("No LAN address found, so Nextcloud cannot be told which name to trust")
+
+# Optional. Without it the admin password is asked at the keyboard.
+STORE=0
+for cand in "${SECRET_ASK_SH:-}" "$SCRIPT_DIR/../hostings/scripts/secret_ask.sh"; do
+    [ -n "$cand" ] && [ -f "$cand" ] || continue
+    # shellcheck source=/dev/null
+    . "$cand" 2>/dev/null || true
+    [ "${SECRET_READY:-0}" = "1" ] && secret_preflight >/dev/null 2>&1 && STORE=1
+    break
+done
+
+INSTALLED=0
+is_up nextcloud && occ status --output=json 2>/dev/null | grep -q '"installed":true' && INSTALLED=1
+if [ "$INSTALLED" -eq 0 ] && [ "$STORE" -eq 0 ] && ! { true > /dev/tty; } 2>/dev/null; then
+    ERRORS+=("No terminal to ask for the admin password, and Nextcloud is not installed yet")
+fi
+
+if [ ${#ERRORS[@]} -gt 0 ]; then
+    print_error "Pre-flight failed, nothing was changed:"
+    for e in "${ERRORS[@]}"; do print_error "  $e"; done
+    exit 1
+fi
+
+print_status "Front:     port ${PORT}, http://${LAN_IP}:${PORT}"
+print_status "Public:    ${PUBLIC_HOST:-none}${PUBLIC_HOST:+, through the proxy on $TRUSTED_PROXY}"
+print_status "Editor:    $([ "$OFFICE" -eq 1 ] && echo "Euro-Office at /eurooffice/" || echo "none (--no-office)")"
+print_status "Data:      $DATA_DIR"
+print_success "Pre-flight passed."
+
+# --- Images ------------------------------------------------------------------
+IMAGES=("$NC_IMAGE" "$DB_IMAGE" "$REDIS_IMAGE" "$CADDY_IMAGE")
+[ "$OFFICE" -eq 1 ] && IMAGES+=("$EO_IMAGE")
+for img in "${IMAGES[@]}"; do
+    if [ "$UPDATE" -eq 1 ] || ! docker image inspect "$img" >/dev/null 2>&1; then
+        run_watched "Pulling $img" docker pull "$img" || exit 1
+        print_success "Pulled $img"
+    fi
+done
+
+# --- Files -------------------------------------------------------------------
+mkdir -p "$DATA_DIR"/{html,db}
+chmod 0755 "$DATA_DIR"
+ENV_FILE="$DATA_DIR/.env"
+if [ ! -f "$ENV_FILE" ]; then
+    ( umask 077
+      printf 'POSTGRES_PASSWORD=%s\nJWT_SECRET=%s\n' \
+          "$(openssl rand -hex 24)" "$(openssl rand -hex 32)" > "$ENV_FILE" )
+    print_status "Generated the database password and the editor secret into $ENV_FILE"
+fi
+chmod 0600 "$ENV_FILE"
+JWT_SECRET="$(sed -n 's/^JWT_SECRET=//p' "$ENV_FILE")"
+
+TRUSTED_BLOCK=""
+[ -n "$TRUSTED_PROXY" ] && TRUSTED_BLOCK="    servers {
+        trusted_proxies static ${TRUSTED_PROXY}/32
+    }"
+OFFICE_ROUTE=""
+[ "$OFFICE" -eq 1 ] && OFFICE_ROUTE="    route /eurooffice/* {
+        uri strip_prefix /eurooffice
+        reverse_proxy eurooffice:80 {
+            header_up X-Forwarded-Prefix /eurooffice
+        }
+    }"
+
+NEW_CADDY="# Generated by add_nextcloud.sh. The next run overwrites it.
+{
+    auto_https off
+${TRUSTED_BLOCK}
+}
+:80 {
+    request_body {
+        max_size 10GB
+    }
+${OFFICE_ROUTE}
+    reverse_proxy nextcloud:80
+}"
+
+OFFICE_SERVICE=""
+[ "$OFFICE" -eq 1 ] && OFFICE_SERVICE="  eurooffice:
+    container_name: nextcloud-eurooffice
+    image: \"${EO_IMAGE}\"
+    restart: unless-stopped
+    environment:
+      JWT_ENABLED: \"true\"
+      JWT_SECRET: \${JWT_SECRET}
+      # It fetches documents from the nextcloud container, a private address.
+      ALLOW_PRIVATE_IP_ADDRESS: \"true\"
+    volumes:
+      - eurooffice-data:/var/lib/euro-office/documentserver
+      - eurooffice-private:/var/www/euro-office/Data
+    networks: [nextcloud]"
+# Named, not ./ folders: a new volume takes the image's own files and ds owner.
+OFFICE_VOLUMES=""
+[ "$OFFICE" -eq 1 ] && OFFICE_VOLUMES="
+volumes:
+  eurooffice-data:
+  eurooffice-private:"
+
+NEW_COMPOSE="# Generated by add_nextcloud.sh. The next run overwrites it.
+services:
+  db:
+    container_name: nextcloud-db
+    image: \"${DB_IMAGE}\"
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: nextcloud
+      POSTGRES_USER: nextcloud
+      POSTGRES_PASSWORD: \${POSTGRES_PASSWORD}
+    volumes:
+      - ./db:/var/lib/postgresql/data
+    networks: [nextcloud]
+  redis:
+    container_name: nextcloud-redis
+    image: \"${REDIS_IMAGE}\"
+    restart: unless-stopped
+    networks: [nextcloud]
+  nextcloud:
+    container_name: nextcloud
+    image: \"${NC_IMAGE}\"
+    restart: unless-stopped
+    depends_on: [db, redis]
+    environment:
+      REDIS_HOST: redis
+      APACHE_DISABLE_REWRITE_IP: \"1\"
+      PHP_UPLOAD_LIMIT: 10G
+    volumes:
+      - ./html:/var/www/html
+    networks: [nextcloud]
+${OFFICE_SERVICE}
+  front:
+    container_name: nextcloud-front
+    image: \"${CADDY_IMAGE}\"
+    restart: unless-stopped
+    ports:
+      - \"${PORT}:80\"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    networks: [nextcloud]
+networks:
+  nextcloud:
+    ipam:
+      config:
+        - subnet: ${SUBNET}${OFFICE_VOLUMES}"
+
+write_if_changed() {
+    local file="$1" content="$2"
+    if [ -f "$file" ] && [ "$(cat "$file")" = "$content" ]; then
+        print_success "$(basename "$file") unchanged."
+    else
+        printf '%s\n' "$content" > "$file"
+        chmod 0644 "$file"
+        print_success "Wrote $file"
+    fi
+}
+write_if_changed "$DATA_DIR/Caddyfile" "$NEW_CADDY"
+write_if_changed "$DATA_DIR/docker-compose.yml" "$NEW_COMPOSE"
+
+# --- Start it ----------------------------------------------------------------
+if ! run_watched "Starting the stack" docker compose --project-directory "$DATA_DIR" up -d --remove-orphans; then
+    print_action "Logs: sudo docker compose --project-directory $DATA_DIR logs --tail 30"
+    exit 1
+fi
+# The Caddyfile is read at start only.
+docker exec nextcloud-front caddy reload --config /etc/caddy/Caddyfile >/dev/null 2>&1 || true
+print_success "Containers started."
+
+wait_until() {
+    local what="$1" limit="$2" check="$3" start
+    start="$(date +%s)"
+    while [ $(( $(date +%s) - start )) -lt "$limit" ]; do
+        if eval "$check"; then printf '\r\033[K'; return 0; fi
+        spin_tick "Waiting for $what, $(( $(date +%s) - start ))s of ${limit}s"
+    done
+    printf '\r\033[K'
+    return 1
+}
+
+# The first start copies Nextcloud into ./html before occ exists.
+if ! wait_until "Nextcloud's files" 300 'occ status >/dev/null 2>&1'; then
+    print_error "Nextcloud did not come up within 300s. Last lines:"
+    docker logs --tail 20 nextcloud 2>&1 | sed 's/^/   /'
+    exit 1
+fi
+
+# --- Install, once -----------------------------------------------------------
+if occ status --output=json 2>/dev/null | grep -q '"installed":true'; then
+    print_success "Nextcloud is already installed, so no password is asked."
+else
+    ENTRY="Nextcloud admin"
+    PASSWORD=""
+    entry_password() {
+        secret_entry_get "$ENTRY" "" 2>/dev/null | awk -F'\t' '$1 == "" && $2 == "password" { print $3; exit }'
+    }
+    if [ "$STORE" -eq 1 ]; then
+        PASSWORD="$(entry_password)" || PASSWORD=""
+        if [ ${#PASSWORD} -ge 12 ]; then
+            print_status "Admin password read from the secret store ('$ENTRY')."
+        else
+            # Stored before Nextcloud sees it: a password nobody holds is a lockout.
+            PASSWORD="$(openssl rand -base64 24 | tr -d '/+=\n' | cut -c1-20)"
+            if printf 'username\ttext\tadmin\npassword\tpassword\t%s\n' "$PASSWORD" \
+                    | secret_entry_set "$ENTRY" "" \
+               && printf 'Nextcloud\t%s\n' "http://$LAN_IP:$PORT" \
+                    | secret_entry_urls "$ENTRY" \
+               && [ "$(entry_password)" = "$PASSWORD" ]; then
+                print_status "New admin password generated and stored in '$ENTRY'."
+            else
+                PASSWORD=""
+                print_error "The secret store did not keep a new password, so it was not used."
+            fi
+        fi
+    fi
+    if [ -z "$PASSWORD" ]; then
+        if ! { true > /dev/tty; } 2>/dev/null; then
+            print_error "No terminal to ask for the admin password instead. Nextcloud is not installed."
+            exit 1
+        fi
+        echo ""
+        print_action "NEEDED: a password for Nextcloud's 'admin' account"
+        while true; do
+            read_secret "   Nextcloud admin password: "; p1="$SECRET"; unset SECRET
+            if [ ${#p1} -lt 12 ]; then
+                printf "   \033[33mAt least 12 characters.\033[0m\n" > /dev/tty; continue
+            fi
+            read_secret "   Again: "; p2="$SECRET"; unset SECRET
+            [ "$p1" = "$p2" ] && { PASSWORD="$p1"; break; }
+            printf "   \033[33mThey do not match. Try again.\033[0m\n" > /dev/tty
+        done
+        unset p1 p2
+    fi
+
+    # Installed with a throwaway password, then set from the environment, so the
+    # real one never appears on a command line that ps can show.
+    DB_PASS="$(sed -n 's/^POSTGRES_PASSWORD=//p' "$ENV_FILE")"
+    if ! run_watched "Installing Nextcloud (a few minutes on a Pi)" \
+            docker exec -u www-data nextcloud php occ maintenance:install \
+            --database pgsql --database-host db --database-name nextcloud \
+            --database-user nextcloud --database-pass "$DB_PASS" \
+            --admin-user admin --admin-pass "$(openssl rand -hex 24)" \
+            --data-dir /var/www/html/data; then
+        unset PASSWORD DB_PASS
+        exit 1
+    fi
+    unset DB_PASS
+    if ! OC_PASS="$PASSWORD" docker exec -e OC_PASS -u www-data nextcloud \
+            php occ user:resetpassword --password-from-env admin >/dev/null 2>&1; then
+        unset PASSWORD
+        print_error "Nextcloud is installed, but the admin password could not be set."
+        print_action "Set it by hand: sudo docker exec -it -u www-data nextcloud php occ user:resetpassword admin"
+        exit 1
+    fi
+    unset PASSWORD
+    print_success "Installed, with the account 'admin'."
+fi
+
+# --- Names and proxies, every run --------------------------------------------
+# Each address it is reached on, plus the container name the editor calls back on.
+TRUSTED=("localhost" "$LAN_IP" "nextcloud")
+[ -n "$PUBLIC_HOST" ] && TRUSTED+=("$PUBLIC_HOST")
+occ config:system:delete trusted_domains >/dev/null
+for i in "${!TRUSTED[@]}"; do
+    occ config:system:set trusted_domains "$i" --value="${TRUSTED[$i]}" >/dev/null
+done
+# Its own front proxy. The machine in front of THAT one is trusted by Caddy,
+# which then passes on the original scheme and host.
+occ config:system:set trusted_proxies 0 --value="$SUBNET" >/dev/null
+if [ -n "$PUBLIC_HOST" ]; then
+    occ config:system:set overwrite.cli.url --value="https://$PUBLIC_HOST" >/dev/null
+else
+    occ config:system:set overwrite.cli.url --value="http://$LAN_IP:$PORT" >/dev/null
+fi
+print_success "Trusted names: ${TRUSTED[*]}"
+
+# --- The editor --------------------------------------------------------------
+if [ "$OFFICE" -eq 1 ]; then
+    # Font generation on the first start takes minutes on a Pi.
+    if ! wait_until "Euro-Office" 900 '[ "$(curl -s --max-time 5 "http://127.0.0.1:${PORT}/eurooffice/healthcheck")" = "true" ]'; then
+        print_error "Euro-Office did not answer its health check within 900s. Last lines:"
+        docker logs --tail 20 nextcloud-eurooffice 2>&1 | sed 's/^/   /'
+        exit 1
+    fi
+    print_success "Euro-Office answers its health check."
+
+    if ! occ app:list --output=json 2>/dev/null | grep -q '"eurooffice"'; then
+        run_watched "Installing the Euro-Office connector" \
+            docker exec -u www-data nextcloud php occ app:install eurooffice || exit 1
+    fi
+    occ app:enable eurooffice >/dev/null 2>&1 || true
+    # Relative, so the browser loads the editor from the address it is on.
+    occ config:app:set eurooffice DocumentServerUrl         --value="/eurooffice/" >/dev/null
+    occ config:app:set eurooffice DocumentServerInternalUrl --value="http://eurooffice/" >/dev/null
+    occ config:app:set eurooffice StorageUrl                --value="http://nextcloud/" >/dev/null
+    # From stdin, so the secret is on no command line.
+    printf '%s' "$JWT_SECRET" | docker exec -i -u www-data nextcloud \
+        sh -c 'php occ config:app:set eurooffice jwt_secret --value="$(cat)"' >/dev/null
+    CHECK="$(occ eurooffice:documentserver --check 2>&1 || true)"
+    printf '%s\n' "$CHECK" | sed 's/^/   /'
+    if printf '%s' "$CHECK" | grep -qi 'error\|fail'; then
+        print_error "The connector cannot reach Euro-Office, see above."
+        exit 1
+    fi
+    print_success "Connector set: editor at /eurooffice/, internal calls container to container."
+fi
+
+# --- Prove it ----------------------------------------------------------------
+CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://127.0.0.1:${PORT}/status.php")"
+if [ "$CODE" != "200" ]; then
+    print_error "Nextcloud's status page answers $CODE through the front port."
+    exit 1
+fi
+print_success "Nextcloud answers through port ${PORT}."
+
+echo ""
+print_success "Nextcloud is up."
+print_action "Open http://${LAN_IP}:${PORT} and sign in as admin."
+[ -n "$PUBLIC_HOST" ] && print_info "Publicly: https://${PUBLIC_HOST}, once the proxy on ${TRUSTED_PROXY} serves it."
+print_info "Newer images: re-run with --update"
+print_info "Logs: sudo docker compose --project-directory $DATA_DIR logs --tail 30"
