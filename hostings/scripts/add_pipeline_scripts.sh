@@ -306,6 +306,46 @@ if id "$CI_USER" >/dev/null 2>&1; then
     print_success "${CI_USER} cannot write anything under ${PIPELINE_ROOT}."
 fi
 
+# =============================================================================
+# The console page follows the tree
+#
+# The page is a copy under the web root, written by add_hosting_manager.sh. A
+# new tree without it left a console fix unserved for two days. Only on a
+# machine that has the console; installing it stays add_hosting_manager.sh's job.
+# =============================================================================
+CONSOLE_SRC="$PIPELINE_ROOT/hostings/console"
+CONSOLE_WEB="/var/www/hosting-manager"
+# The same list as SRC_PAGE + SRC_ASSETS in add_hosting_manager.sh. Change both.
+CONSOLE_FILES=(style.css i18n.js cells.js drawer.js chrome.js apply.js smb.js bulk.js users.js requests.js audit.js boot.js second_factor.php recovery_cli.php forgot.php index.php)
+if [ -f "$CONSOLE_WEB/index.php" ] && [ -d "$CONSOLE_SRC" ]; then
+    # A PHP file that does not parse serves a blank console, the tool used to recover.
+    broken=()
+    for f in "${CONSOLE_FILES[@]}"; do
+        case "$f" in *.php) php -l "$CONSOLE_SRC/$f" >/dev/null 2>&1 || broken+=("$f") ;; esac
+    done
+    if [ ${#broken[@]} -gt 0 ]; then
+        print_error "Console page NOT updated: ${broken[*]} does not parse. The old page stays."
+        print_action "Fix it, or check it with: php -l $CONSOLE_SRC/${broken[0]}"
+    else
+        # index.php last, so a new page never loads before its new scripts.
+        copied=()
+        for f in "${CONSOLE_FILES[@]}"; do
+            [ -f "$CONSOLE_SRC/$f" ] || continue
+            cmp -s "$CONSOLE_SRC/$f" "$CONSOLE_WEB/$f" && continue
+            if ! install -m 0644 -o root -g root "$CONSOLE_SRC/$f" "$CONSOLE_WEB/$f"; then
+                print_error "Could not copy $f into $CONSOLE_WEB. Re-run: sudo bash $PIPELINE_ROOT/hostings/scripts/add_hosting_manager.sh"
+                break
+            fi
+            copied+=("$f")
+        done
+        if [ ${#copied[@]} -gt 0 ]; then
+            print_success "Console page updated: ${copied[*]}"
+        else
+            print_info "Console page already matches the tree."
+        fi
+    fi
+fi
+
 echo ""
 print_success "Pipeline scripts installed."
 print_info "The sudoers grants and the Jenkinsfiles both name paths under here."

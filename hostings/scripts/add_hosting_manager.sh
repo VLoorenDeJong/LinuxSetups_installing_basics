@@ -250,6 +250,7 @@ SRC_PAGE="$SRC_DIR/index.php"
 # globbed, so a file left behind in the checkout is never published, and a file
 # added to the page without being added here fails pre-flight instead of
 # reaching the browser as a 404 and a blank table.
+# The same list as CONSOLE_FILES in add_pipeline_scripts.sh. Change both.
 SRC_ASSETS=(style.css i18n.js cells.js drawer.js chrome.js apply.js smb.js bulk.js users.js requests.js audit.js boot.js second_factor.php recovery_cli.php forgot.php)
 SRC_PUBLISHER="$SCRIPT_DIR/publish_hostings.sh"
 SRC_UPDATER="$SCRIPT_DIR/trigger_update.sh"
