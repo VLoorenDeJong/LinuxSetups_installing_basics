@@ -109,7 +109,7 @@ TREES_OUT="${TREES_OUT:-}"
 # Nothing is written to any object store. `git hash-object` computes and
 # prints; it does not store without `-w`. That matters because this script is
 # read-only by contract and is run against a root-owned pipeline tree by a
-# page. It is also why gstack's write-tree approach is not usable here.
+# page. It is also why a write-tree approach is not usable here.
 #
 # A file nothing has touched is not read at all: the index already holds its
 # hash, and git diff-files says which files that is not true of. Reading all
