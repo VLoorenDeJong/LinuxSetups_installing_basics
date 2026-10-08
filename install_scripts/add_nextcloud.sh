@@ -32,7 +32,8 @@ unset _a _dbg_args
 # machine's reverse proxy, named with --public-host and --trusted-proxy.
 #
 # SECRETS. The database password and the editor's JWT secret are generated
-# once into DATA_DIR/.env (0600) and never shown. The admin password comes
+# once into DATA_DIR/secrets (0400 files) and handed to the containers as
+# files, never as environment variables. The admin password comes
 # from a secret store when a secret_ask.sh is found, otherwise it is asked.
 #
 # Usage:
@@ -219,15 +220,26 @@ done
 # --- Files -------------------------------------------------------------------
 mkdir -p "$DATA_DIR"/{html,db}
 chmod 0755 "$DATA_DIR"
-ENV_FILE="$DATA_DIR/.env"
-if [ ! -f "$ENV_FILE" ]; then
-    ( umask 077
-      printf 'POSTGRES_PASSWORD=%s\nJWT_SECRET=%s\n' \
-          "$(openssl rand -hex 24)" "$(openssl rand -hex 32)" > "$ENV_FILE" )
-    print_status "Generated the database password and the editor secret into $ENV_FILE"
+# Files handed to the containers, not environment variables, so neither
+# docker inspect nor the compose file holds a secret.
+SECRETS_DIR="$DATA_DIR/secrets"
+DB_PASS_FILE="$SECRETS_DIR/db_password"
+JWT_FILE="$SECRETS_DIR/jwt_secret"
+mkdir -p "$SECRETS_DIR"
+chmod 0700 "$SECRETS_DIR"
+if [ ! -s "$DB_PASS_FILE" ]; then
+    ( umask 077; openssl rand -hex 24 | tr -d '\n' > "$DB_PASS_FILE" )
+    print_status "Generated the database password into $DB_PASS_FILE"
 fi
-chmod 0600 "$ENV_FILE"
-JWT_SECRET="$(sed -n 's/^JWT_SECRET=//p' "$ENV_FILE")"
+if [ ! -s "$JWT_FILE" ]; then
+    ( umask 077; openssl rand -hex 32 | tr -d '\n' > "$JWT_FILE" )
+    print_status "Generated the editor secret into $JWT_FILE"
+fi
+# Postgres reads its file after dropping to its own user, uid 70 in alpine.
+chown 70:70 "$DB_PASS_FILE"
+chmod 0400 "$DB_PASS_FILE"
+chown root:root "$JWT_FILE"
+chmod 0400 "$JWT_FILE"
 
 TRUSTED_BLOCK=""
 [ -n "$TRUSTED_PROXY" ] && TRUSTED_BLOCK="    servers {
@@ -261,12 +273,13 @@ OFFICE_SERVICE=""
     restart: unless-stopped
     environment:
       JWT_ENABLED: \"true\"
-      JWT_SECRET: \${JWT_SECRET}
       # It fetches documents from the nextcloud container, a private address.
       ALLOW_PRIVATE_IP_ADDRESS: \"true\"
     volumes:
       - eurooffice-data:/var/lib/euro-office/documentserver
       - eurooffice-private:/var/www/euro-office/Data
+      # With JWT_SECRET unset, the image's entrypoint reads its secret here.
+      - ./secrets/jwt_secret:/var/www/euro-office/Data/.private/jwt_secret:ro
     networks: [nextcloud]"
 # Named, not ./ folders: a new volume takes the image's own files and ds owner.
 OFFICE_VOLUMES=""
@@ -284,9 +297,10 @@ services:
     environment:
       POSTGRES_DB: nextcloud
       POSTGRES_USER: nextcloud
-      POSTGRES_PASSWORD: \${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
     volumes:
       - ./db:/var/lib/postgresql/data
+      - ./secrets/db_password:/run/secrets/db_password:ro
     networks: [nextcloud]
   redis:
     container_name: nextcloud-redis
@@ -413,9 +427,9 @@ else
     fi
 
     # The admin password goes in from the environment, so ps never shows it.
-    # The DB password does show in ps during the install: occ takes no other
-    # way, and it also sits in .env and the db container's environment.
-    DB_PASS="$(sed -n 's/^POSTGRES_PASSWORD=//p' "$ENV_FILE")"
+    # The DB password does show in ps during this one install: occ takes no
+    # other way, and the image's own auto-install does the same.
+    DB_PASS="$(cat "$DB_PASS_FILE")"
     if ! run_watched "Installing Nextcloud (a few minutes on a Pi)" \
             docker exec -u www-data nextcloud php occ maintenance:install \
             --database pgsql --database-host db --database-name nextcloud \
@@ -476,10 +490,16 @@ if [ "$OFFICE" -eq 1 ]; then
     occ config:app:set eurooffice StorageUrl                --value="http://nextcloud/" >/dev/null
     # ODF opens read-only by default; saving it back may lose some formatting.
     occ config:app:set eurooffice editFormats --value='{"odt":"true","ods":"true","odp":"true"}' >/dev/null
-    # Off the host command line; php inside the container still shows it in ps
-    # for a moment. It is already in the editor container's environment.
-    printf '%s' "$JWT_SECRET" | docker exec -i -u www-data nextcloud \
-        sh -c 'php occ config:app:set eurooffice jwt_secret --value="$(cat)"' >/dev/null
+    # Nextcloud merges config/*.config.php, and the connector falls back to its
+    # 'eurooffice' system entry when no app value is set. Written from here, so
+    # the secret is on no command line.
+    NC_JWT_CONF="$DATA_DIR/html/config/eurooffice.config.php"
+    ( umask 077
+      printf "<?php\n\$CONFIG = array('eurooffice' => array('jwt_secret' => '%s'));\n" \
+          "$(cat "$JWT_FILE")" > "$NC_JWT_CONF" )
+    chown 33:33 "$NC_JWT_CONF"
+    chmod 0600 "$NC_JWT_CONF"
+    occ config:app:delete eurooffice jwt_secret >/dev/null 2>&1 || true
     CHECK="$(occ eurooffice:documentserver --check 2>&1 || true)"
     printf '%s\n' "$CHECK" | sed 's/^/   /'
     if printf '%s' "$CHECK" | grep -qi 'error\|fail'; then
