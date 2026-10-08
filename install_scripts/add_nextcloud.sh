@@ -459,6 +459,8 @@ if [ "$OFFICE" -eq 1 ]; then
     occ config:app:set eurooffice DocumentServerUrl         --value="/eurooffice/" >/dev/null
     occ config:app:set eurooffice DocumentServerInternalUrl --value="http://eurooffice/" >/dev/null
     occ config:app:set eurooffice StorageUrl                --value="http://nextcloud/" >/dev/null
+    # ODF opens read-only by default; saving it back may lose some formatting.
+    occ config:app:set eurooffice editFormats --value='{"odt":"true","ods":"true","odp":"true"}' >/dev/null
     # From stdin, so the secret is on no command line.
     printf '%s' "$JWT_SECRET" | docker exec -i -u www-data nextcloud \
         sh -c 'php occ config:app:set eurooffice jwt_secret --value="$(cat)"' >/dev/null
