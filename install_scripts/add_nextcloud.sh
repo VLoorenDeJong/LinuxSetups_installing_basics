@@ -191,6 +191,11 @@ done
 
 INSTALLED=0
 is_up nextcloud && occ status --output=json 2>/dev/null | grep -q '"installed":true' && INSTALLED=1
+# A restored drive: config says installed, the dump is the database.
+RESTORED_CONF=0
+grep -q "'installed' => true" "$DATA_DIR/html/config/config.php" 2>/dev/null \
+    && [ -s "$DATA_DIR/dump/nextcloud.sql" ] && RESTORED_CONF=1
+[ "$RESTORED_CONF" -eq 1 ] && INSTALLED=1
 if [ "$INSTALLED" -eq 0 ] && [ "$STORE" -eq 0 ] && ! { true > /dev/tty; } 2>/dev/null; then
     ERRORS+=("No terminal to ask for the admin password, and Nextcloud is not installed yet")
 fi
@@ -353,8 +358,18 @@ if ! run_watched "Starting the stack" docker compose --project-directory "$DATA_
     print_action "Logs: sudo docker compose --project-directory $DATA_DIR logs --tail 30"
     exit 1
 fi
-# The Caddyfile is read at start only.
-if ! RELOAD="$(docker exec nextcloud-front caddy reload --config /etc/caddy/Caddyfile 2>&1)"; then
+# The Caddyfile is read at start only. A just-started Caddy refuses the reload
+# until its admin port is up, so it is retried for 10 s.
+RELOAD_OK=0
+for _ in $(seq 1 20); do
+    if RELOAD="$(docker exec nextcloud-front caddy reload --config /etc/caddy/Caddyfile 2>&1)"; then
+        RELOAD_OK=1
+        break
+    fi
+    printf '%s' "$RELOAD" | grep -q 'connection refused' || break
+    sleep 0.5
+done
+if [ "$RELOAD_OK" -ne 1 ]; then
     print_error "Caddy refused the Caddyfile, so it still serves the old one:"
     printf '%s\n' "$RELOAD" | tail -n 10 | sed 's/^/   /'
     exit 1
@@ -371,6 +386,28 @@ wait_until() {
     printf '\r\033[K'
     return 1
 }
+
+# Restored from a backup: the database starts empty, so the dump goes in
+# before Nextcloud is asked anything.
+if [ "$RESTORED_CONF" -eq 1 ]; then
+    # Over TCP: the first start's init server answers on the socket only, then
+    # restarts and would cut the load off.
+    if ! wait_until "the database" 120 'docker exec nextcloud-db pg_isready -h 127.0.0.1 -U nextcloud >/dev/null 2>&1'; then
+        print_error "The database did not come up within 120s."
+        exit 1
+    fi
+    TABLES="$(docker exec nextcloud-db psql -tA -U nextcloud nextcloud \
+        -c "select count(*) from information_schema.tables where table_name like 'oc_%'" 2>/dev/null || echo 0)"
+    if [ "${TABLES:-0}" -eq 0 ]; then
+        # The fresh container already made the nextcloud role; that one line fails.
+        if ! docker exec -i nextcloud-db psql -q -U nextcloud nextcloud \
+                < "$DATA_DIR/dump/nextcloud.sql" >/dev/null 2>"$DATA_DIR/dump/restore.log"; then
+            print_error "Loading the dump failed: $DATA_DIR/dump/restore.log"
+            exit 1
+        fi
+        print_success "Database loaded from $DATA_DIR/dump/nextcloud.sql"
+    fi
+fi
 
 # The first start copies Nextcloud into ./html before occ exists.
 if ! wait_until "Nextcloud's files" 300 'occ status >/dev/null 2>&1'; then
