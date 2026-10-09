@@ -386,6 +386,7 @@ BACKUP_ROOT="$(conf_get BACKUP_ROOT '')"
 # Upstream packages (upstream/README.md). Their live data stays out of
 # BACKUP_ROOT, which sits inside a guest-writable Samba share.
 UPSTREAM_DATA_ROOT="$(conf_get UPSTREAM_DATA_ROOT /srv/upstream_apps)"
+DOCKER_DATA_ROOT="$(conf_get DOCKER_DATA_ROOT /srv/docker_apps)"
 UPSTREAM_SECRETS="/etc/upstream"
 
 recipe_all() { sed -n "s/^[[:space:]]*$2[[:space:]]*=[[:space:]]*//p" "$1" | tr -d '\r' | sed 's/[[:space:]]*$//'; }
@@ -796,7 +797,10 @@ while IFS='|' read -r type name port path subdomain datasource options auth repo
                 work_dir="/"
                 unit_user="root"
                 sandbox=""
-                exec_start="/usr/bin/docker run --rm --name ${image} -p 127.0.0.1:${env_port}:8080 --cgroup-parent ${slice} --memory ${app_memory} -e ASPNETCORE_ENVIRONMENT=Production ${image}:latest"
+                # Every container gets /data, kept outside it so a rebuild keeps it.
+                docker_data="${data_dir:-${DOCKER_DATA_ROOT%/}/${name}/${env}}"
+                install -d -m 750 "$docker_data"
+                exec_start="/usr/bin/docker run --rm --name ${image} -p 127.0.0.1:${env_port}:8080 --cgroup-parent ${slice} --memory ${app_memory} -v ${docker_data}:/data -e ASPNETCORE_ENVIRONMENT=Production ${image}:latest"
                 # The marker comment is how prune_orphans.sh finds it again.
                 unit_extra="ExecStartPre=-/usr/bin/docker rm -f ${image}
 ExecStop=/usr/bin/docker stop ${image}
