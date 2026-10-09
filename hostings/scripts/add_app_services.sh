@@ -952,9 +952,11 @@ WorkingDirectory=${work_dir}
 ExecStart=${exec_start}${unit_extra:+
 ${unit_extra}}
 Restart=always
-# Long enough that a crash loop does not hammer the box, short enough that a
-# transient failure recovers without anyone noticing
+# A transient failure recovers in 10 s; a crash loop backs off to one try
+# every 5 minutes instead of hammering the box, and never gives up.
 RestartSec=10
+RestartSteps=5
+RestartMaxDelaySec=300
 KillSignal=SIGINT
 SyslogIdentifier=app-${name}${suffix}
 User=${unit_user}${sandbox:+
