@@ -1215,6 +1215,7 @@ function isDirty() {
   if (rows.some(r => r.dirty || r.deleted)) return true;
   if (panelEntries().some(e => e.dirty || e.deleted)) return true;
   if (ENVGONE.size) return true;
+  if (envLimDirty()) return true;
   return ENVS.some(e =>
        (ENVBRANCH[e] || '') !== (ENVWAS.b[e] || '')
     || (PREFIX[e]    || '') !== (ENVWAS.p[e] || '')
@@ -1231,6 +1232,7 @@ function needsMachineApply() {
   if (rows.some(r => (r.dirty || r.deleted) && r.f[0] !== 'mailbox')) return true;
   if (panelEntries().some(e => e.dirty || e.deleted)) return true;
   if (ENVGONE.size) return true;
+  if (envLimDirty()) return true;
   return ENVS.some(e =>
        (ENVBRANCH[e] || '') !== (ENVWAS.b[e] || '')
     || (PREFIX[e]    || '') !== (ENVWAS.p[e] || '')
@@ -1958,7 +1960,7 @@ function serialise() {
     // rather than at the end of the file.
     let at = -1;
     for (let i = 0; i < out.length; i++) {
-      if (out[i] !== null && /^[ \t]*[A-Z0-9]+_(BRANCH|PORT_OFFSET|HOST_PREFIX)[ \t]*=/.test(out[i])) { at = i; }
+      if (out[i] !== null && /^[ \t]*[A-Z0-9]+_(BRANCH|PORT_OFFSET|HOST_PREFIX|CPU|MEMORY|APP_MEMORY)[ \t]*=/.test(out[i])) { at = i; }
     }
     const line = key + tail;
     if (at === -1) { out.push(line); } else { out[at] = out[at] + '\n' + line; }
@@ -1972,6 +1974,14 @@ function serialise() {
     if (ENVWAS.o[e] !== offset) setEnv(up + '_PORT_OFFSET', offset);
   });
 
+  // Resource limits: only what was changed is written, so an untouched one
+  // keeps following add_app_services.sh's default.
+  const goneUp = [...ENVGONE].map(e => e.toUpperCase() + '_');
+  Object.keys(ENVLIM).forEach(k => {
+    if (!limitChanged(k) || goneUp.some(p => k.startsWith(p))) return;
+    setEnv(k, ENVLIM[k]);
+  });
+
   // Every setting named after the environment goes, in both spellings the file
   // uses: <ENV>_ for the ones the environment owns, and <THING>_<ENV> for the
   // roots. A leftover APP_ROOT_SKUNK reads as configuration for something that
@@ -1980,7 +1990,7 @@ function serialise() {
     const up = e.toUpperCase();
     for (let i = 0; i < out.length; i++) {
       if (out[i] !== null &&
-          (new RegExp('^[ \\t]*' + up + '_(BRANCH|PORT_OFFSET|HOST_PREFIX|UNIT_SUFFIX)[ \\t]*=').test(out[i])
+          (new RegExp('^[ \\t]*' + up + '_(BRANCH|PORT_OFFSET|HOST_PREFIX|UNIT_SUFFIX|CPU|MEMORY|APP_MEMORY)[ \\t]*=').test(out[i])
         || new RegExp('^[ \\t]*(APP_ROOT|WEB_ROOT)_' + up + '[ \\t]*=').test(out[i]))) {
         out[i] = null;
       }

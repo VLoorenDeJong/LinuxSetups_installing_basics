@@ -3472,6 +3472,22 @@ foreach ($envList as $e) {
     $unitSuffix[$e] = (string) conf_val($config, strtoupper($e) . '_UNIT_SUFFIX');
 }
 
+// The resource limits add_app_services.sh turns into slices, as the file has
+// them; an absent key means the script's default, which the page shows.
+$envLimits = [];
+foreach (array_merge(['NONLIVE'], array_map('strtoupper', $envList)) as $up) {
+    foreach (['CPU', 'MEMORY', 'APP_MEMORY'] as $k) {
+        $v = conf_val($config, $up . '_' . $k);
+        if ($v !== null && $v !== '') $envLimits[$up . '_' . $k] = (string) $v;
+    }
+}
+// What the dropdowns may offer: no more than this machine has.
+$machineCores = count(preg_grep('/^cpu\d+ /', @file('/proc/stat') ?: [])) ?: 1;
+$machineMemMB = 0;
+foreach ((@file('/proc/meminfo') ?: []) as $l) {
+    if (preg_match('/^MemTotal:\s+(\d+)/', $l, $m)) { $machineMemMB = intdiv((int) $m[1], 1024); }
+}
+
 // The previews. Not rows, so they have no table of their own: PREVIEW_ROWS names
 // a row and add_preview_vhosts.sh derives the port. Shown read-only, because
 // that script decides and this only reports what it would do.
@@ -4550,9 +4566,16 @@ if ($myRole !== 'full') {
             <th data-i18n-title="sEnvBand" title="the thousand its ports sit in"
                 data-i18n="cEnvOffset">Ports</th>
             <th data-i18n="cEnvPrefix">Host prefix</th>
+            <th data-i18n-title="sEnvCpu" title="the most CPU this environment's apps get together"
+                data-i18n="cEnvCpu">Cores</th>
+            <th data-i18n-title="sEnvMem" title="the most memory this environment's apps get together"
+                data-i18n="cEnvMem">RAM</th>
+            <th data-i18n-title="sEnvAppMem" title="the most memory one app gets; it restarts at this ceiling"
+                data-i18n="cEnvAppMem">Per app</th>
           </tr>
         </thead>
         <tbody id="envs-body"></tbody>
+        <tfoot id="envs-foot"></tfoot>
       </table>
       <p class="note" data-i18n="envNote">
         Adding one gives every row that runs everywhere a new unit, vhost and
@@ -5347,6 +5370,8 @@ let PREFIX     = <?= json_encode($hostPrefix) ?>;
 let OFFSET     = <?= json_encode($portOffset) ?>;
 let ENVBRANCH  = <?= json_encode($envBranch) ?>;
 let SUFFIX     = <?= json_encode($unitSuffix) ?>;
+let ENVLIM     = <?= json_encode($envLimits ?: new stdClass()) ?>;
+const MACHINE  = { cores: <?= (int) $machineCores ?>, memMB: <?= (int) $machineMemMB ?> };
 // A variable, not a constant: the page re-reads this file every few seconds now, so a
 // now, so a unit coming up is visible without a reload. See readStatus().
 let STATUS   = <?= json_encode($status, JSON_UNESCAPED_SLASHES) ?>;
@@ -5365,7 +5390,7 @@ const STAGED   = <?= $staged !== '' ? 'true' : 'false' ?>;
 const ROWWAS   = <?= json_encode(array_map(fn($r) => $r['f'], $rows), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
 // What the file held when the page loaded, so a save only rewrites the settings
 // that actually changed and leaves the others on their aligned lines.
-const ENVWAS   = JSON.parse(JSON.stringify({ b: ENVBRANCH, p: PREFIX, o: OFFSET }));
+const ENVWAS   = JSON.parse(JSON.stringify({ b: ENVBRANCH, p: PREFIX, o: OFFSET, l: ENVLIM }));
 const PANELS   = <?= json_encode($services, JSON_UNESCAPED_SLASHES) ?>;
 // Who is signed in, and what they may do: 'full' or 'admin'. The page hides
 // what a role may not use, and THAT IS NOT THE CHECK: every script behind a

@@ -3754,6 +3754,7 @@ function pendingIsFastOnly() {
        (ENVBRANCH[e] || '') !== (ENVWAS.b[e] || '')
     || (PREFIX[e]    || '') !== (ENVWAS.p[e] || '')
     || (OFFSET[e]    ?? 0)  !== (ENVWAS.o[e] ?? 0))) return false;
+  if (envLimDirty()) return false;
   // The mailbox exemption is not absolute, and treating it as one is what let a
   // bulk Disable report success without taking the send right away. bulk.js
   // sets fastOnly=false on exactly the mailbox changes the fast apply cannot
@@ -4231,12 +4232,51 @@ function liveBand() {
   return Math.floor(Math.min(...ports) / 1000) * 1000;
 }
 
+// The defaults add_app_services.sh uses when a limit is not in the file.
+function limitDefault(key) {
+  if (key === 'NONLIVE_CPU')    return '2';
+  if (key === 'NONLIVE_MEMORY') return '3G';
+  if (key.endsWith('_APP_MEMORY')) return '768M';
+  return key.endsWith('_CPU') ? '1' : '1G';
+}
+const limitOf  = key => ENVLIM[key]   ?? limitDefault(key);
+const limitWas = key => ENVWAS.l[key] ?? limitDefault(key);
+const limitChanged = key => limitOf(key) !== limitWas(key);
+
+function envLimDirty() {
+  return Object.keys(ENVLIM).some(limitChanged);
+}
+
+// Never more than the machine has; live always keeps a core and a gigabyte.
+function coreOptions() {
+  const out = [];
+  for (let c = 0.5; c <= Math.max(0.5, MACHINE.cores - 1); c += 0.5) out.push({ v: String(c), l: String(c) });
+  return out;
+}
+function memOptions() {
+  const cap = Math.max(256, MACHINE.memMB - 1024);
+  return [256, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192, 12288, 16384, 24576, 32768]
+    .filter(mb => mb <= cap)
+    .map(mb => ({ v: mb % 1024 ? mb + 'M' : (mb / 1024) + 'G', l: mb < 1024 ? mb + ' MB' : (mb / 1024) + ' GB' }));
+}
+
+function limitSelect(key, opts, disabled) {
+  const cur = limitOf(key);
+  // A value typed into the file by hand is kept and shown, not replaced.
+  const list = opts.some(o => o.v === cur) ? opts : [{ v: cur, l: cur }, ...opts];
+  return `<td class="env-cell"><select data-env-lim="${esc(key)}" ${disabled ? 'disabled' : ''}>${
+    list.map(o => `<option value="${esc(o.v)}"${o.v === cur ? ' selected' : ''}>${esc(o.l)}</option>`).join('')
+  }</select></td>`;
+}
+
 function renderEnvs() {
   const t = T[lang];
   const band = liveBand();
+  const cores = coreOptions(), mem = memOptions();
   document.getElementById('count-environments').textContent = ENVS.length;
   document.getElementById('envs-body').innerHTML = ENVS.map(e => {
     const gone = ENVGONE.has(e);
+    const up = e.toUpperCase();
     const box  = (k, v, ph) => `<td class="env-cell"><input data-env-set="${k}"
         data-env="${esc(e)}" value="${esc(v)}" placeholder="${esc(ph)}"
         ${gone ? 'disabled' : ''}></td>`;
@@ -4263,9 +4303,28 @@ function renderEnvs() {
       ${box('BRANCH', ENVBRANCH[e] || '', e)}
       ${portCell}
       ${box('HOST_PREFIX', PREFIX[e] || '', t.envPrefixHint)}
+      ${e === 'live'
+        ? `<td class="env-cell" title="${esc(t.sEnvLiveFirst)}">${esc(t.envLiveFirst)}</td><td class="env-cell">-</td>`
+        : limitSelect(up + '_CPU', cores, gone) + limitSelect(up + '_MEMORY', mem, gone)}
+      ${limitSelect(up + '_APP_MEMORY', mem, gone)}
     </tr>`;
   }).join('');
+
+  const shared = ENVS.some(e => e !== 'live' && !ENVGONE.has(e));
+  document.getElementById('envs-foot').innerHTML = shared
+    ? `<tr><td></td><td colspan="4">${esc(t.envNonliveTogether)}</td>
+         ${limitSelect('NONLIVE_CPU', cores, false)}${limitSelect('NONLIVE_MEMORY', mem, false)}<td></td></tr>`
+    : '';
 }
+
+// One listener for both: the per-environment rows and the shared row below.
+['envs-body', 'envs-foot'].forEach(id => document.getElementById(id).addEventListener('change', e => {
+  const sel = e.target.closest('[data-env-lim]');
+  if (!sel) return;
+  ENVLIM[sel.dataset.envLim] = sel.value;
+  serialise();
+  paintDiscard();
+}));
 
 document.getElementById('envs-body').addEventListener('input', e => {
   const box = e.target.closest('[data-env-set]');
@@ -4317,6 +4376,7 @@ document.getElementById('add-env').addEventListener('click', () => {
   const name = (prompt(t.envName) || '').trim().toLowerCase();
   if (!name) return;
   if (!/^[a-z][a-z0-9]*$/.test(name)) { alert(t.envBadName); return; }
+  if (name === 'nonlive') { alert(t.envNameTaken); return; }
   if (ENVS.includes(name)) {
     // A name that is only marked for removal is brought back rather than added
     // twice, which would write the settings block out two times.
