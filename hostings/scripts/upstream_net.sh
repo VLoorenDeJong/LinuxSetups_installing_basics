@@ -26,6 +26,11 @@ SUBNET="172.30.0.0/24"
 
 [ "$EUID" -eq 0 ] || { print_error "This needs root: it changes the firewall."; exit 2; }
 
+# Every upstream unit runs this at the same moment on boot. Unlocked, the
+# check-then-insert doubles rules and the clean-up below deletes them all.
+exec 9>/run/lock/upstream_net.lock
+flock 9
+
 docker network inspect "$NET" >/dev/null 2>&1 \
     || docker network create --driver bridge --subnet "$SUBNET" "$NET" >/dev/null
 
@@ -36,7 +41,7 @@ spec="-s $SUBNET -m conntrack --ctstate NEW -j DROP"
 read -ra rule <<< "$spec"
 for chain in DOCKER-USER INPUT; do
     iptables -C "$chain" "${rule[@]}" 2>/dev/null || iptables -I "$chain" "${rule[@]}"
-    # One copy, however it got doubled (seen 2026-10-06, cause unproven).
+    # Clears copies left by runs from before the lock.
     while [ "$(iptables -S "$chain" | grep -cxF -- "-A $chain $spec")" -gt 1 ]; do
         iptables -D "$chain" "${rule[@]}"
     done
