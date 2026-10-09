@@ -3481,6 +3481,12 @@ foreach (array_merge(['NONLIVE'], array_map('strtoupper', $envList)) as $up) {
         if ($v !== null && $v !== '') $envLimits[$up . '_' . $k] = (string) $v;
     }
 }
+// One app's own memory ceiling, over its environment's Per app: "name:1G, ...".
+$appMemSpec = [];
+foreach (array_filter(array_map('trim', explode(',', (string) conf_val($config, 'APP_MEMORY_ROWS')))) as $entry) {
+    [$an, $av] = array_pad(array_map('trim', explode(':', $entry, 2)), 2, '');
+    if ($an !== '' && $av !== '') $appMemSpec[$an] = $av;
+}
 // What the dropdowns may offer: no more than this machine has.
 $machineCores = count(preg_grep('/^cpu\d+ /', @file('/proc/stat') ?: [])) ?: 1;
 $machineMemMB = 0;
@@ -4755,6 +4761,16 @@ if ($myRole !== 'full') {
       <div id="preview-envs"></div>
     </div>
 
+    <!-- Not a row field either: APP_MEMORY_ROWS holds it, like PREVIEW_ROWS. -->
+    <div id="drawer-appmem" hidden>
+      <h4 style="margin:1.6rem 0 .3rem" data-i18n="appMemTitle">Memory</h4>
+      <select id="appmem-select"></select>
+      <p class="note" data-i18n="appMemNote" style="margin:.4rem 0 0">
+        The most memory this app gets, in every environment it runs in. At the
+        ceiling it is stopped and restarted, nothing else is touched.
+      </p>
+    </div>
+
 
     <!-- Mailboxes for this row's domain. These ARE rows, unlike the mail
          settings below: each ticked address is a `mailbox` line in
@@ -5371,6 +5387,7 @@ let OFFSET     = <?= json_encode($portOffset) ?>;
 let ENVBRANCH  = <?= json_encode($envBranch) ?>;
 let SUFFIX     = <?= json_encode($unitSuffix) ?>;
 let ENVLIM     = <?= json_encode($envLimits ?: new stdClass()) ?>;
+const APPMEM   = <?= json_encode($appMemSpec ?: new stdClass()) ?>;
 const MACHINE  = { cores: <?= (int) $machineCores ?>, memMB: <?= (int) $machineMemMB ?> };
 // A variable, not a constant: the page re-reads this file every few seconds now, so a
 // now, so a unit coming up is visible without a reload. See readStatus().

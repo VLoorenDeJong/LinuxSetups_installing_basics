@@ -654,6 +654,19 @@ conf_limit() {  # <key> <default> <validator>
 
 cores_to_quota() { awk -v c="$1" 'BEGIN { printf "%d%%", c * 100 }'; }
 
+# One app's own ceiling, over its environment's: APP_MEMORY_ROWS = name:1G, ...
+declare -A APP_MEMORY_ROW=()
+IFS=',' read -r -a _am <<< "$(conf_get APP_MEMORY_ROWS "")"
+for _e in "${_am[@]}"; do
+    _n="$(echo "${_e%%:*}" | xargs)"; _v="$(echo "${_e#*:}" | xargs)"
+    [ -n "$_n" ] && [ "$_e" != "$_n" ] || continue
+    if valid_memory "$_v"; then
+        APP_MEMORY_ROW[$_n]="$_v"
+    else
+        print_error "APP_MEMORY_ROWS gives '$_n' '$_v', which is not a valid limit; it keeps its environment's."
+    fi
+done
+
 env_slice() {  # <env>
     if [ "$1" = "live" ]; then echo "apps-live.slice"; else echo "apps-nonlive-$1.slice"; fi
 }
@@ -730,7 +743,7 @@ while IFS='|' read -r type name port path subdomain datasource options auth repo
         env_port=$((port + offset))
         env_path="${app_root%/}/${path#/}"
         slice="$(env_slice "$env")"
-        app_memory="$(conf_limit "${env_upper}_APP_MEMORY" 768M valid_memory)"
+        app_memory="${APP_MEMORY_ROW[$name]:-$(conf_limit "${env_upper}_APP_MEMORY" 768M valid_memory)}"
 
         unit_name="app-${name}${suffix}.service"
         unit_file="$UNIT_DIR/$unit_name"

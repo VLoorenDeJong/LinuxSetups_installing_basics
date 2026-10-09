@@ -423,6 +423,7 @@ function openDrawer(index, kind) {
   // Before the fields render: they paint the preview, and it must already hold
   // this row's value rather than the last one's.
   previewDraft = isNew ? {} : { ...(PREVIEWS[String(draft[1] || '').trim()] || {}) };
+  appMemDraft  = isNew ? '' : (APPMEM[String(draft[1] || '').trim()] || '');
   if (isNew) {
     draft[0] = kind;
     draft[10] = ENVS[0] || 'live';
@@ -535,6 +536,31 @@ function previewPort(env, spec, f) {
 function paintPreview() {
   const box = document.getElementById('drawer-preview');
   if (box) box.hidden = true;
+  paintAppMem();
+}
+
+// An app's own memory ceiling. Admins only: a limited save drops every
+// settings line, so the choice would be thrown away.
+let appMemDraft = '';
+function paintAppMem() {
+  const box = document.getElementById('drawer-appmem');
+  if (!box) return;
+  const f = previewFields();
+  box.hidden = !(f[0] === 'app' && MYROLE === 'full');
+  if (box.hidden) return;
+  const t = T[lang];
+  const opts = [{ v: '', l: t.appMemEnvDefault }, ...memOptions()];
+  if (appMemDraft && !opts.some(o => o.v === appMemDraft)) opts.push({ v: appMemDraft, l: appMemDraft });
+  document.getElementById('appmem-select').innerHTML = opts.map(o =>
+    `<option value="${esc(o.v)}"${o.v === appMemDraft ? ' selected' : ''}>${esc(o.l)}</option>`).join('');
+}
+document.getElementById('appmem-select').addEventListener('change', e => { appMemDraft = e.target.value; });
+
+function commitAppMem(fields) {
+  const f = fields || draft;
+  const name = String(f[1] || '').trim();
+  if (f[0] !== 'app' || !name || name === '-') return;
+  if (appMemDraft) APPMEM[name] = appMemDraft; else delete APPMEM[name];
 }
 
 // Edited into a copy, like the row's own fields, so Cancel really cancels.
@@ -3637,6 +3663,7 @@ document.getElementById('drawer-save').addEventListener('click', () => {
   const target = editing === null ? rows.length : editing;
   const before = editing === null ? null : rows[editing].f.slice();
   commitPreview(vals);
+  commitAppMem(vals);
 
   // Beside mbxCommit, and for the same reason: the instance row has to land in
   // THIS edit so it goes out with this publish rather than a later one.
@@ -4243,8 +4270,12 @@ const limitOf  = key => ENVLIM[key]   ?? limitDefault(key);
 const limitWas = key => ENVWAS.l[key] ?? limitDefault(key);
 const limitChanged = key => limitOf(key) !== limitWas(key);
 
+// Sorted, so removing and re-adding the same entry is not a change.
+const appMemText = () => Object.keys(APPMEM).sort().map(n => n + ':' + APPMEM[n]).join(', ');
+const APPMEMWAS  = appMemText();
+
 function envLimDirty() {
-  return Object.keys(ENVLIM).some(limitChanged);
+  return Object.keys(ENVLIM).some(limitChanged) || appMemText() !== APPMEMWAS;
 }
 
 // Never more than the machine has; live always keeps a core and a gigabyte.

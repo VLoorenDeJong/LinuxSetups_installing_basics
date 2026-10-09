@@ -2057,6 +2057,13 @@ function serialise() {
     }
   }
 
+  // APP_MEMORY_ROWS, the same way: a deleted row takes its entry with it.
+  // Untouched, the line is left as the file has it.
+  if (appMemText() !== APPMEMWAS) {
+    const mem = Object.keys(APPMEM).sort().filter(n => alive.has(n)).map(n => n + ':' + APPMEM[n]);
+    setEnv('APP_MEMORY_ROWS', mem.join(', '));
+  }
+
   // PANELS_OFF, rewritten in place from what the tick boxes hold. A page that
   // has been deleted takes its entry with it, so a stale id cannot be left
   // naming a page that no longer exists.
