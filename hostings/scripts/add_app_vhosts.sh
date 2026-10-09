@@ -256,6 +256,11 @@ AVAILABLE_DIR="/etc/apache2/sites-available"
 LE_DIR="/etc/letsencrypt/live"
 
 BASE_DOMAIN="$(conf_get BASE_DOMAIN "")"
+if [ -z "$BASE_DOMAIN" ] && ! grep -qE '^[[:space:]]*(website|app|proxy|mailbox)[[:space:]]*\|' "$SITES_CONF"; then
+    # A LAN-only machine (HomeRun): machine pages only, no row needs a name.
+    print_info "No BASE_DOMAIN and no rows, so there are no site vhosts to write."
+    exit 0
+fi
 if [ -z "$BASE_DOMAIN" ]; then
     print_error "No BASE_DOMAIN in $SITES_CONF"
     exit 1
