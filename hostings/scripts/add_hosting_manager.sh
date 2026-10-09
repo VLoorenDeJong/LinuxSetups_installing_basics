@@ -667,20 +667,26 @@ print_success "Installed $OTP_MOTD"
 SMB_LINK="/etc/samba/smb.conf"
 SMB_TARGET="/etc/hostings/smb/smb.conf"
 if [ -f "$SMB_TARGET" ]; then
+    # testparm exits 0 on unknown parameters too, so its output is read as well.
+    smb_faults="$(testparm --suppress-prompt "$SMB_TARGET" 2>&1 \
+        | grep -iE 'Unknown parameter|No path in service|^ERROR|Rejecting|Invalid' || true)"
     if [ "$(readlink -f "$SMB_LINK" 2>/dev/null)" = "$SMB_TARGET" ]; then
         print_success "Samba already reads $SMB_TARGET"
-    elif [ -L "$SMB_LINK" ] || [ ! -e "$SMB_LINK" ]; then
-        ln -sfn "$SMB_TARGET" "$SMB_LINK"
-        print_success "Samba now reads $SMB_TARGET"
+    elif [ -n "$smb_faults" ]; then
+        print_error "$SMB_TARGET fails testparm, so Samba was left reading $SMB_LINK."
+        printf '%s\n' "$smb_faults" | head -n 10
     else
-        # Usually the package's own file. Kept beside it, in case it was a hand edit.
-        smb_backup="$SMB_LINK.bak-$(date +%Y%m%d-%H%M%S)"
-        mv "$SMB_LINK" "$smb_backup"
+        if [ -e "$SMB_LINK" ] && [ ! -L "$SMB_LINK" ]; then
+            # Usually the package's own file. Kept beside it, in case it was a hand edit.
+            smb_backup="$SMB_LINK.bak-$(date +%Y%m%d-%H%M%S)"
+            mv "$SMB_LINK" "$smb_backup"
+            print_info "The file it replaces is kept as $smb_backup"
+        fi
         ln -sfn "$SMB_TARGET" "$SMB_LINK"
         print_success "Samba now reads $SMB_TARGET"
-        print_info "The file it replaced is $smb_backup"
+        bash "$RELOADSMB" \
+            || print_action "Samba did not reload. Run: sudo $RELOADSMB"
     fi
-    systemctl reload smbd 2>/dev/null || true
 else
     print_info "No $SMB_TARGET in this clone, so the Samba symlink was left as it is."
 fi
