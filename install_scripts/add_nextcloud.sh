@@ -126,7 +126,8 @@ while [ $# -gt 0 ]; do
         --data-dir)      need_value "$1" "${2:-}"; DATA_DIR="$2"; shift 2 ;;
         --port)          need_value "$1" "${2:-}"; PORT="$2"; shift 2 ;;
         --public-host)   need_value "$1" "${2:-}"; PUBLIC_HOST="$2"; shift 2 ;;
-        --trusted-proxy) need_value "$1" "${2:-}"; TRUSTED_PROXY="$2"; shift 2 ;;
+        # May repeat: a proxy machine that will change address (a drive swap).
+        --trusted-proxy) need_value "$1" "${2:-}"; TRUSTED_PROXY="${TRUSTED_PROXY:+$TRUSTED_PROXY }$2"; shift 2 ;;
         --no-office)     OFFICE=0; shift ;;
         --update)        UPDATE=1; shift ;;
         --dump-at)       need_value "$1" "${2:-}"; DUMP_AT="$2"; shift 2 ;;
@@ -158,6 +159,9 @@ if ! [[ "$PORT" =~ ^[0-9]+$ ]] || [ "$PORT" -lt 1024 ] || [ "$PORT" -gt 65535 ];
 elif ss -lnt 2>/dev/null | grep -qE "[:.]${PORT} " && ! is_up nextcloud-front; then
     ERRORS+=("Something else already listens on port $PORT. Find it: sudo ss -lntp | grep :$PORT")
 fi
+for p in $TRUSTED_PROXY; do
+    [[ "$p" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || ERRORS+=("--trusted-proxy '$p' is not an IPv4 address")
+done
 if [ -n "$PUBLIC_HOST" ] && [ -z "$TRUSTED_PROXY" ]; then
     ERRORS+=("--public-host needs --trusted-proxy: the address of the machine whose proxy serves it")
 fi
@@ -248,7 +252,7 @@ chmod 0400 "$JWT_FILE"
 
 TRUSTED_BLOCK=""
 [ -n "$TRUSTED_PROXY" ] && TRUSTED_BLOCK="    servers {
-        trusted_proxies static ${TRUSTED_PROXY}/32
+        trusted_proxies static $(printf '%s/32 ' $TRUSTED_PROXY)
     }"
 OFFICE_ROUTE=""
 [ "$OFFICE" -eq 1 ] && OFFICE_ROUTE="    route /eurooffice/* {
