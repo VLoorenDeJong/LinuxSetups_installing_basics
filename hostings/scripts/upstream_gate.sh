@@ -32,6 +32,11 @@ for _a in "$@"; do
 done
 set -- ${_dbg_args+"${_dbg_args[@]}"}
 unset _a _dbg_args
+# The console reaches this through sudo; its trace would show voters' addresses.
+if [ "$DEBUG_MODE" = "1" ] && [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ] \
+   && ! id -nG "$SUDO_USER" 2>/dev/null | grep -qw sudo; then
+    DEBUG_MODE=0
+fi
 [ "$DEBUG_MODE" = "1" ] && set -x
 
 
@@ -70,7 +75,8 @@ packages() {
         [ -f "$r" ] && basename "$(dirname "$r")"
     done
 }
-known_package() { [ -f "$REPO_ROOT/hostings/upstream/$1/recipe.conf" ]; }
+# The name builds root-written paths, so nothing but a plain word gets that far.
+known_package() { [[ "$1" =~ ^[a-z0-9_-]+$ ]] && [ -f "$REPO_ROOT/hostings/upstream/$1/recipe.conf" ]; }
 
 # --- State: /var/lib/upstream/<name>/gate/ ------------------------------------
 #   round    "<version> <opened epoch>"
@@ -115,6 +121,7 @@ email_of() { bash "$USERS_SH" --email-of "$1" 2>/dev/null | head -n1; }
 send_notice() {  # <to> <subject> <text>
     local sendmail from
     [ -n "$1" ] || return 0
+    case "$1$2" in *$'\n'*|*$'\r'*) print_error "Refused a mail header with a line break in it."; return 0 ;; esac
     sendmail="$(command -v sendmail 2>/dev/null || echo /usr/sbin/sendmail)"
     [ -x "$sendmail" ] || { print_action "No sendmail, so '$2' was not mailed to $1."; return 0; }
     from="$(conf_get NOTIFY_FROM "noreply@$(conf_get BASE_DOMAIN "$(hostname)")")"
@@ -186,6 +193,7 @@ tick_one() {  # <name>
 vote() {  # <name> <user> <vote>
     local name="$1" user="$2" v="$3" dir version u
     case "$v" in urgent|up|neutral|down) ;; *) print_error "A vote is urgent, up, neutral or down, not '$v'."; exit 2 ;; esac
+    [[ "$user" =~ ^[A-Za-z0-9._-]+$ ]] || { print_error "'$user' is not a username."; exit 1; }
     voters | grep -qxF "$user" || { print_error "'$user' is not a console user who may vote."; exit 1; }
     dir="$(gate_dir "$name")"
     version="$(sync_round "$name")"

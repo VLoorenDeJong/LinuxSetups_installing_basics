@@ -57,6 +57,7 @@ row_in_env() {
 
 NAME="${1:-}" ENV_NAME="${2:-}" WANT="${3:-}"
 [ -n "$NAME" ] || { print_error "Usage: $0 <name> [<env> <version|previous>]"; exit 2; }
+[[ "$NAME" =~ ^[a-z0-9_-]+$ ]] || { print_error "'$NAME' is not a package name."; exit 2; }
 
 [ "$EUID" -eq 0 ] || { print_error "This needs root: it retags images and restarts units."; print_action "sudo bash $0 $*"; exit 2; }
 
