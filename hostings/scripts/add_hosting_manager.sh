@@ -231,6 +231,9 @@ MAILCLIENT="/usr/local/sbin/mail_client_settings.sh"
 PERSONENTRY="/usr/local/sbin/person_entry.sh"
 # Read only: the console audit trail from the journal, for the Audit tab.
 READAUDIT="/usr/local/sbin/read_audit.sh"
+# The upgrade gate. A wrapper, because the gate reads its siblings and the
+# recipes beside the root-owned pipeline copy it runs.
+UPGATE="/usr/local/sbin/upstream_gate.sh"
 # No .sh: it is the command the code page and the SSH banner tell you to type.
 OTP="/usr/local/sbin/console_otp"
 OTP_MOTD="/etc/update-motd.d/61-console-otp"
@@ -649,6 +652,12 @@ install -m 0700 -o root -g root "$SRC_PERSONENTRY" "$PERSONENTRY"
 print_success "Installed $PERSONENTRY"
 install -m 0700 -o root -g root "$SRC_READAUDIT" "$READAUDIT"
 print_success "Installed $READAUDIT"
+cat > "$UPGATE" <<'EOF'
+#!/bin/sh
+exec /bin/bash /usr/local/lib/linuxbasics/hostings/scripts/upstream_gate.sh "$@"
+EOF
+chown root:root "$UPGATE"; chmod 0700 "$UPGATE"
+print_success "Installed $UPGATE"
 
 # Root only and NOT in the sudoers grant below: it mints a console login, so
 # only a sudo user over SSH may run it, never the page or the manageserver menu.
@@ -773,7 +782,7 @@ TMP_SUDOERS="$(mktemp)"
     # shows arguments to every account on the machine. It refuses dkim, refuses
     # anything under eight characters, and rebuilds and re-checks the maildir
     # path the same way manage_mail.sh does.
-    echo "${PAGE_USER} ALL=(root) NOPASSWD: ${PUBLISHER}, ${CHECKER}, ${APPLIER}, ${UPDATER}, ${REBOOTER} \"\", ${PROVISIONER}, ${PROVISIONER} --create, ${PROVISIONER} --step *, ${DOMAINS}, ${JOBSTATUS}, ${JOBSTATUS} --history *, ${JOBSTATUS} --stages *, ${JOBLOG} *, ${SITEJOB} *, ${DEPLOYEDSHA} *, ${AUTHUSERS} --list, ${AUTHUSERS} --add *, ${AUTHUSERS} --password *, ${AUTHUSERS} --self-password *, ${AUTHUSERS} --disable *, ${AUTHUSERS} --enable *, ${AUTHUSERS} --delete *, ${AUTHUSERS} --meta *, ${AUTHUSERS} --role-of *, ${AUTHUSERS} --email-of *, ${AUTHUSERS} --role-holders, ${REQUESTS} --list, ${REQUESTS} --add *, ${REQUESTS} --get *, ${REQUESTS} --approve *, ${REQUESTS} --decline *, ${REQUESTS} --seen *, ${REQUESTS} --withdraw *, ${CHECKDOMAIN} *, ${PROMOTE} *, ${MAILSET} --read *, ${MAILSET} --write *, ${SVCCTL} *, ${FASTAPPLY}, ${GOLIVE}, ${GOLIVE} --check, ${PUBSMB}, ${RELOADSMB}, ${LISTDIRS}, ${LISTDIRS} *, ${LISTREPOS}, ${LISTPROJECTS} *, ${LISTBRANCHES} *, ${READSETTINGS} *, ${MANAGEREPO} --archive *, ${MANAGEREPO} --delete *, ${SHAREACL} --check *, ${SHAREACL} --set *, ${MANAGEMAIL} --check *, ${MANAGEMAIL} --forward *, ${MANAGEMAIL} --retire *, ${MANAGEMAIL} --unforward *, ${MANAGEMAIL} --purge *, ${MAILPW} --check *, ${MAILPW} --set *, ${MAILCLIENT} *, ${PERSONENTRY} --share *, ${PERSONENTRY} --share-mailbox *, ${PERSONENTRY} --recovery *, ${READAUDIT}"
+    echo "${PAGE_USER} ALL=(root) NOPASSWD: ${PUBLISHER}, ${CHECKER}, ${APPLIER}, ${UPDATER}, ${REBOOTER} \"\", ${PROVISIONER}, ${PROVISIONER} --create, ${PROVISIONER} --step *, ${DOMAINS}, ${JOBSTATUS}, ${JOBSTATUS} --history *, ${JOBSTATUS} --stages *, ${JOBLOG} *, ${SITEJOB} *, ${DEPLOYEDSHA} *, ${AUTHUSERS} --list, ${AUTHUSERS} --add *, ${AUTHUSERS} --password *, ${AUTHUSERS} --self-password *, ${AUTHUSERS} --disable *, ${AUTHUSERS} --enable *, ${AUTHUSERS} --delete *, ${AUTHUSERS} --meta *, ${AUTHUSERS} --role-of *, ${AUTHUSERS} --email-of *, ${AUTHUSERS} --role-holders, ${REQUESTS} --list, ${REQUESTS} --add *, ${REQUESTS} --get *, ${REQUESTS} --approve *, ${REQUESTS} --decline *, ${REQUESTS} --seen *, ${REQUESTS} --withdraw *, ${CHECKDOMAIN} *, ${PROMOTE} *, ${MAILSET} --read *, ${MAILSET} --write *, ${SVCCTL} *, ${FASTAPPLY}, ${GOLIVE}, ${GOLIVE} --check, ${PUBSMB}, ${RELOADSMB}, ${LISTDIRS}, ${LISTDIRS} *, ${LISTREPOS}, ${LISTPROJECTS} *, ${LISTBRANCHES} *, ${READSETTINGS} *, ${MANAGEREPO} --archive *, ${MANAGEREPO} --delete *, ${SHAREACL} --check *, ${SHAREACL} --set *, ${MANAGEMAIL} --check *, ${MANAGEMAIL} --forward *, ${MANAGEMAIL} --retire *, ${MANAGEMAIL} --unforward *, ${MANAGEMAIL} --purge *, ${MAILPW} --check *, ${MAILPW} --set *, ${MAILCLIENT} *, ${PERSONENTRY} --share *, ${PERSONENTRY} --share-mailbox *, ${PERSONENTRY} --recovery *, ${READAUDIT}, ${UPGATE} list, ${UPGATE} vote *, ${UPGATE} pause *, ${UPGATE} resume *, ${UPGATE} publish *"
 } > "$TMP_SUDOERS"
 
 if ! visudo -cf "$TMP_SUDOERS" >/dev/null 2>&1; then

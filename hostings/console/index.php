@@ -63,6 +63,7 @@ const UPDATE      = '/usr/local/sbin/trigger_update.sh';
 const REBOOT      = '/usr/local/sbin/reboot_machine.sh';
 const PROVISION   = '/usr/local/sbin/provision_repo.sh';
 const READAUDIT   = '/usr/local/sbin/read_audit.sh';
+const UPGATE      = '/usr/local/sbin/upstream_gate.sh';
 const DOMAINS     = '/usr/local/sbin/fetch_domains.sh';
 const DOMAINFILE  = '/var/lib/hosting-manager/owned-domains';
 const JOBSTATUS   = '/usr/local/sbin/jenkins_job_status.sh';
@@ -663,6 +664,9 @@ function ownsRow(string $who, string $row): bool {
 // that: it refuses to mark read or withdraw anything filed by somebody else.
 // Approving and declining are not here, so they stay a full access admin's.
 const ROLE_MAY_POST = ['redeploy', 'request', 'reqseen', 'reqwithdraw',
+                       // Every console user votes on a new upstream version;
+                       // pausing and publishing stay a full access admin's.
+                       'upgradevote',
                        // The ordinary save. A limited admin reaches it like
                        // anybody else, and every DIFFERENCE they post is
                        // checked by limitedSaveProblem() below.
@@ -2642,6 +2646,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $messageClass = $rc === 0 ? 'good' : 'bad';
     }
 
+    // The upgrade gate. The voter is the signed-in name, never a form field.
+    if (in_array($action, ['upgradevote', 'upgradepause', 'upgraderesume', 'upgradepublish'], true)) {
+        $pkg  = (string) ($_POST['pkg'] ?? '');
+        $vote = (string) ($_POST['vote'] ?? '');
+        if (!preg_match('/^[a-z0-9_-]+$/', $pkg)
+            || ($action === 'upgradevote' && !in_array($vote, ['urgent', 'up', 'neutral', 'down'], true))) {
+            $rc = 2;
+            $lines = ['That is not a package and a vote.'];
+        } elseif ($action === 'upgradevote') {
+            exec('sudo ' . UPGATE . ' vote ' . escapeshellarg($pkg) . ' ' . escapeshellarg($me)
+                 . ' ' . escapeshellarg($vote) . ' 2>&1', $lines, $rc);
+        } else {
+            exec('sudo ' . UPGATE . ' ' . substr($action, 7) . ' ' . escapeshellarg($pkg) . ' 2>&1', $lines, $rc);
+        }
+        $output = strip_ansi(implode("\n", $lines));
+        $message = $rc === 0 ? 'Done.' : 'The upgrade gate refused. Its answer is below.';
+        $messageClass = $rc === 0 ? 'good' : 'bad';
+    }
+
     if ($action === 'promote') {
         // Every refusal lives in the script, not here: it runs as root and is
         // the thing that must not be talked past.
@@ -2787,7 +2810,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     //
     // The message travels as a code, never as text. A message put in the query
     // string is a message an attacker can choose.
-    $changed = ['save', 'save_apply', 'save_fast', 'savesmb', 'reloadsmb', 'setaccess', 'apply', 'fixdrift', 'setmailpw', 'provision', 'provision_create', 'promote', 'testcert', 'update', 'reboot', 'rerunstep'];
+    $changed = ['save', 'save_apply', 'save_fast', 'savesmb', 'reloadsmb', 'setaccess', 'apply', 'fixdrift', 'setmailpw', 'provision', 'provision_create', 'promote', 'testcert', 'update', 'reboot', 'rerunstep', 'upgradevote', 'upgradepause', 'upgraderesume', 'upgradepublish'];
     // Written before the redirect, because the redirect is what throws the
     // message away. A failed save used to skip the redirect entirely, so F5
     // re-POSTed the form and replayed ops that had already run.
@@ -2851,6 +2874,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'update'           => 'updating',
             'reboot'           => 'rebooting',
             'rerunstep'        => 'steprerun',
+            'upgradevote'      => 'voted',
+            'upgradepause'     => 'upgpaused',
+            'upgraderesume'    => 'upgresumed',
+            'upgradepublish'   => 'upgpublished',
         ];
         // Only ever a number, and only for the apply: the dialog uses it to
         // tell a job that has not started from one that is over.
@@ -2903,6 +2930,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['done'])) {
         'updating'    => 'Update job started.',
         'rebooting'   => 'Rebooting. Every site is down for about a minute; this page comes back on its own.',
         'steprerun'   => 'That step ran again. The list below says how it went.',
+        'voted'        => 'Your vote is in. You can change it until the version goes live.',
+        'upgpaused'    => 'Paused: this version stays on test until you resume it.',
+        'upgresumed'   => 'Resumed: the votes decide again.',
+        'upgpublished' => 'Published: live now runs the version test ran.',
         'checked'     => 'Checked. Nothing was written and nothing was pushed.',
         'checkfailed' => 'The check failed. The report below says why.',
     ];
@@ -3860,6 +3891,41 @@ if ($myRole !== 'full') {
   <div class="msg running" id="job-banner" hidden>
     <span class="spin" aria-hidden="true"></span><span id="job-banner-text"></span>
   </div>
+
+  <?php /* The upgrade gate: a new upstream version on test, waiting for votes. */
+    $gateLines = [];
+    exec('sudo ' . UPGATE . ' list 2>/dev/null', $gateLines);
+    foreach ($gateLines as $gl):
+        $g = explode("\t", $gl);
+        if (count($g) < 6) continue;
+        [$gPkg, $gVer, $gLive, $gDays, $gPaused, $gVotes] = $g;
+        $gMine = '';
+        foreach (array_filter(explode(',', $gVotes)) as $uv) {
+            [$u, $v] = array_pad(explode(':', $uv, 2), 2, '');
+            if ($u === $me) $gMine = $v;
+        } ?>
+    <div class="msg running upgrade-banner">
+      <strong><?= htmlspecialchars("$gPkg $gVer") ?></strong>
+      is on test (live runs <?= htmlspecialchars($gLive) ?>, open <?= (int) $gDays ?> day(s)<?= $gPaused === '1' ? ', paused' : '' ?>). Please test it, then vote:
+      <?php foreach (['urgent' => '⏩ Urgent', 'up' => '👍 Works', 'neutral' => '😐 Neutral', 'down' => '👎 Broken'] as $gv => $gLabel): ?>
+        <form method="post" style="display:inline">
+          <input type="hidden" name="action" value="upgradevote">
+          <input type="hidden" name="pkg" value="<?= htmlspecialchars($gPkg) ?>">
+          <input type="hidden" name="vote" value="<?= $gv ?>">
+          <button type="submit"<?= $gMine === $gv ? ' aria-pressed="true" style="font-weight:bold"' : '' ?>><?= $gLabel ?></button>
+        </form>
+      <?php endforeach; ?>
+      <?php if ($myRole === 'full'): ?>
+        <?php foreach ([$gPaused === '1' ? 'upgraderesume' : 'upgradepause' => $gPaused === '1' ? 'Resume' : 'Pause', 'upgradepublish' => 'Publish now'] as $ga => $gLabel): ?>
+          <form method="post" style="display:inline">
+            <input type="hidden" name="action" value="<?= $ga ?>">
+            <input type="hidden" name="pkg" value="<?= htmlspecialchars($gPkg) ?>">
+            <button type="submit"><?= $gLabel ?></button>
+          </form>
+        <?php endforeach; ?>
+      <?php endif; ?>
+    </div>
+  <?php endforeach; ?>
 
   <?php if ($message !== ''): ?>
     <div class="msg <?= htmlspecialchars($messageClass) ?>"><?= htmlspecialchars($message) ?></div>

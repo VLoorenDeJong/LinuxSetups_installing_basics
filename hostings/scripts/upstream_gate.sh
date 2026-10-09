@@ -9,6 +9,7 @@
 #   upstream_gate.sh vote <name> <user> <urgent|up|neutral|down>
 #   upstream_gate.sh pause|resume|publish <name>     the owner's buttons
 #   upstream_gate.sh tick                            daily, by upstream-gate.timer
+#   upstream_gate.sh list                            open rounds, tab separated, for the console
 #
 # A round is the version test runs while live runs another. Rules, per round:
 #   down    blocks until the next stable release starts a new round
@@ -218,6 +219,19 @@ case "$ACTION" in
         else
             for p in $(packages); do report "$p"; done
         fi
+        ;;
+    list)
+        # For the console, one line per open round, tab separated:
+        # name, version, live version, days open, paused 0/1, user:vote,...
+        for p in $(packages); do
+            v="$(sync_round "$p")"
+            [ -n "$v" ] || continue
+            d="$(gate_dir "$p")"
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$p" "$v" "$(running "$p" "$LIVE_ENV")" \
+                "$(( (NOW - $(cut -d' ' -f2 "$d/round")) / DAY ))" \
+                "$([ -f "$d/paused" ] && echo 1 || echo 0)" \
+                "$(current_votes "$d" | awk '{ printf "%s%s:%s", (NR > 1 ? "," : ""), $1, $2 }')"
+        done
         ;;
     tick)
         rc=0
