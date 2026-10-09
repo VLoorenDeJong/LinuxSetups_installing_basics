@@ -554,7 +554,10 @@ function paintAppMem() {
   document.getElementById('appmem-select').innerHTML = opts.map(o =>
     `<option value="${esc(o.v)}"${o.v === appMemDraft ? ' selected' : ''}>${esc(o.l)}</option>`).join('');
 }
-document.getElementById('appmem-select').addEventListener('change', e => { appMemDraft = e.target.value; });
+document.getElementById('appmem-select').addEventListener('change', e => {
+  appMemDraft = e.target.value;
+  checkDrawer();
+});
 
 function commitAppMem(fields) {
   const f = fields || draft;
@@ -2874,7 +2877,7 @@ function drawerState() {
   const progOn = (prog && !prog.hidden && document.getElementById('prog-on'))
     ? (document.getElementById('prog-on').checked ? 1 : 0) : null;
 
-  return JSON.stringify({ f: readDrawer(), p: p, pw: pwLen, mbx: mbx, prog: progOn });
+  return JSON.stringify({ f: readDrawer(), p: p, pw: pwLen, mbx: mbx, prog: progOn, mem: appMemDraft });
 }
 
 // A machine page renders through the same element but is not built from `draft`,
