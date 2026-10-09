@@ -42,6 +42,8 @@ unset _a _dbg_args
 #   add_nextcloud.sh --no-office                     # Nextcloud alone
 #   add_nextcloud.sh --update                        # pull newer images
 #   add_nextcloud.sh --dump-at 01:30                 # nightly DB dump, default 02:30
+#   add_nextcloud.sh --drop-folder /srv/cloudberry   # a host folder every user
+#                     sees as /cloudberry; share it over Samba to drop files in
 #
 # Exit codes:
 #   0  Nextcloud (and the editor) answer through the front port
@@ -113,6 +115,7 @@ TRUSTED_PROXY=""
 OFFICE=1
 UPDATE=0
 DUMP_AT="02:30"
+DROP_DIR=""
 NC_IMAGE="nextcloud:34-apache"
 EO_IMAGE="ghcr.io/euro-office/documentserver:latest"
 DB_IMAGE="postgres:17-alpine"
@@ -131,6 +134,7 @@ while [ $# -gt 0 ]; do
         --no-office)     OFFICE=0; shift ;;
         --update)        UPDATE=1; shift ;;
         --dump-at)       need_value "$1" "${2:-}"; DUMP_AT="$2"; shift 2 ;;
+        --drop-folder)   need_value "$1" "${2:-}"; DROP_DIR="${2%/}"; shift 2 ;;
         -h|--help)       sed -n '/^# Nextcloud with/,/^#   2  bad usage/p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *)               print_error "Unknown argument: $1"; exit 2 ;;
     esac
@@ -158,6 +162,13 @@ if ! [[ "$PORT" =~ ^[0-9]+$ ]] || [ "$PORT" -lt 1024 ] || [ "$PORT" -gt 65535 ];
     ERRORS+=("--port must be a number between 1024 and 65535, not '$PORT'")
 elif ss -lnt 2>/dev/null | grep -qE "[:.]${PORT} " && ! is_up nextcloud-front; then
     ERRORS+=("Something else already listens on port $PORT. Find it: sudo ss -lntp | grep :$PORT")
+fi
+# Handed to www-data and the container, so one plain level under /srv only:
+# /etc would be chowned.
+if [ -n "$DROP_DIR" ] && [[ ! "$DROP_DIR" =~ ^/srv/[A-Za-z0-9_-]+$ ]]; then
+    ERRORS+=("--drop-folder '$DROP_DIR' must be /srv/<name>, letters, digits, _ and - only")
+elif [ -n "$DROP_DIR" ] && [ -e "$DROP_DIR" ] && [ "$(stat -c %u "$DROP_DIR")" != "33" ]; then
+    ERRORS+=("--drop-folder $DROP_DIR already exists and is not www-data's; pick a new folder")
 fi
 for p in $TRUSTED_PROXY; do
     [[ "$p" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || ERRORS+=("--trusted-proxy '$p' is not an IPv4 address")
@@ -326,7 +337,8 @@ services:
       APACHE_DISABLE_REWRITE_IP: \"1\"
       PHP_UPLOAD_LIMIT: 10G
     volumes:
-      - ./html:/var/www/html
+      - ./html:/var/www/html${DROP_DIR:+
+      - ${DROP_DIR}:/drop}
     networks: [nextcloud]
 ${OFFICE_SERVICE}
   front:
@@ -354,6 +366,9 @@ write_if_changed() {
         print_success "Wrote $file"
     fi
 }
+# Owned by www-data (33, the same id inside the container), group-sticky so
+# files Samba writes as www-data stay readable to Nextcloud.
+[ -n "$DROP_DIR" ] && install -d -o 33 -g 33 -m 2770 "$DROP_DIR"
 write_if_changed "$DATA_DIR/Caddyfile" "$NEW_CADDY"
 write_if_changed "$DATA_DIR/docker-compose.yml" "$NEW_COMPOSE"
 
@@ -548,6 +563,22 @@ if [ "$OFFICE" -eq 1 ]; then
         exit 1
     fi
     print_success "Connector set: editor at /eurooffice/, internal calls container to container."
+fi
+
+# --- The drop folder ---------------------------------------------------------
+# External storage, type Local: Nextcloud looks at the folder on every visit,
+# so a file put in over Samba shows up and can be shared by link.
+if [ -n "$DROP_DIR" ]; then
+    DROP_NAME="/$(basename "$DROP_DIR")"
+    occ app:enable files_external >/dev/null
+    if occ files_external:list --output=json 2>/dev/null | tr -d '\\' | grep -qF "\"mount_point\":\"${DROP_NAME}\""; then
+        print_success "Drop folder already shown as $DROP_NAME."
+    else
+        MOUNT_ID="$(occ files_external:create "$DROP_NAME" local null::null -c datadir=/drop 2>&1 | grep -oE '[0-9]+' | tail -n1)"
+        [ -n "$MOUNT_ID" ] || { print_error "Nextcloud did not create the $DROP_NAME folder."; exit 1; }
+        occ files_external:option "$MOUNT_ID" filesystem_check_changes 1 >/dev/null
+        print_success "Drop folder $DROP_DIR shown to every user as $DROP_NAME."
+    fi
 fi
 
 # --- Nightly database dump ---------------------------------------------------
