@@ -253,6 +253,8 @@ Wants=docker.service
 Type=oneshot
 Environment=RESTIC_PASSWORD_FILE=${PASSWORD_FILE}
 Environment=RESTIC_REPOSITORY=${BACKUP_REPO}
+# systemd gives no HOME, so without this restic runs uncached and says so nightly.
+Environment=RESTIC_CACHE_DIR=/var/cache/restic
 ExecStart=/usr/bin/restic backup --quiet --tag docker-volumes \\
     --exclude backingFsBlockDev ${SOURCES[*]}
 ExecStart=/usr/bin/restic forget --quiet --tag docker-volumes \\
