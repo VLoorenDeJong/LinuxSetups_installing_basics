@@ -639,7 +639,13 @@ NEEDS_RELOAD=0
 #
 # A number changed here applies at daemon-reload; no app restarts for it.
 # =============================================================================
-valid_memory() { [[ "$1" =~ ^[0-9]+[KMG]?$ ]]; }
+# At least 64M: 0 makes the kernel kill every app at once, and docker refuses under 6M.
+valid_memory() {
+    [[ "$1" =~ ^[1-9][0-9]*([KMG]?)$ ]] || return 1
+    local n="${1%[KMG]}" u="${BASH_REMATCH[1]}"
+    case "$u" in G) n=$((n * 1024)) ;; K) n=$((n / 1024)) ;; "") n=$((n / 1048576)) ;; esac
+    [ "$n" -ge 64 ]
+}
 valid_cores()  { [[ "$1" =~ ^[0-9]+(\.[0-9]+)?$ ]] && awk -v c="$1" 'BEGIN { exit !(c > 0) }'; }
 
 # A typo would make systemd ignore the line and leave the app unlimited.
@@ -1117,7 +1123,8 @@ if [ "$(cat "$UNIT_DIR/watchdog-apps.service" 2>/dev/null)" != "$WATCHDOG_UNIT" 
    || [ "$(cat "$UNIT_DIR/watchdog-apps.timer" 2>/dev/null)" != "$WATCHDOG_TIMER" ]; then
     printf '%s\n' "$WATCHDOG_UNIT"  > "$UNIT_DIR/watchdog-apps.service"
     printf '%s\n' "$WATCHDOG_TIMER" > "$UNIT_DIR/watchdog-apps.timer"
-    systemctl daemon-reload
+    chmod 644 "$UNIT_DIR/watchdog-apps.service" "$UNIT_DIR/watchdog-apps.timer"
+    show_spinner_watch_only "Reloading systemd" systemctl daemon-reload
 fi
 systemctl enable --now watchdog-apps.timer >/dev/null 2>&1 \
     || FAILED+=("watchdog-apps.timer (could not enable)")

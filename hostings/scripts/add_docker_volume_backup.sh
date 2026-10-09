@@ -227,7 +227,7 @@ print_info "$VOLUME_COUNT named volume(s) on this machine right now."
 # directory and the backup would then be quietly copying nothing.
 SOURCES=("$VOLUME_DIR")
 # Made now rather than by the first docker row, so it is in the unit from the start.
-install -d -m 750 "$DOCKER_DATA_ROOT"
+[ "$DRY_RUN" -eq 1 ] || install -d -m 750 "$DOCKER_DATA_ROOT"
 for p in $EXTRA_PATHS; do
     if [ -d "$p" ]; then
         SOURCES+=("$p")

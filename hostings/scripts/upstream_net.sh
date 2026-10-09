@@ -29,7 +29,7 @@ SUBNET="172.30.0.0/24"
 # Every upstream unit runs this at the same moment on boot. Unlocked, the
 # check-then-insert doubles rules and the clean-up below deletes them all.
 exec 9>/run/lock/upstream_net.lock
-flock 9
+flock -w 60 9 || { print_error "Another upstream_net.sh run has held the lock for 60 s."; exit 1; }
 
 docker network inspect "$NET" >/dev/null 2>&1 \
     || docker network create --driver bridge --subnet "$SUBNET" "$NET" >/dev/null
