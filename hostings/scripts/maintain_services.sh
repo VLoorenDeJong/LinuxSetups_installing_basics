@@ -800,7 +800,9 @@ if [ "$PRUNE" -eq 1 ] && [ -d "$JENKINS_JOBS_DIR" ]; then
     done
 fi
 
-if [ "${#HEAL_ROWS[@]}" -gt 0 ]; then
+# An empty ONLY_ROWS with rows changed already means every row; adding the
+# healed ones to it would narrow the run to them alone.
+if [ "${#HEAL_ROWS[@]}" -gt 0 ] && { [ -n "$ONLY_ROWS" ] || [ "$NO_ROWS_CHANGED" -eq 1 ]; }; then
     # Union, not replacement: the diff may name rows this scan does not.
     for _h in "${HEAL_ROWS[@]}"; do
         case ",${ONLY_ROWS}," in
