@@ -142,6 +142,10 @@ conf_get() {
 
 VOLUME_DIR="/var/lib/docker/volumes"
 EXTRA_PATHS="$(conf_get DOCKER_BACKUP_PATHS '/opt/portainer/data')"
+# Where docker rows keep their /data. Always copied, so a config list that
+# forgets it cannot leave the apps' own files out of the backup.
+DOCKER_DATA_ROOT="$(conf_get DOCKER_DATA_ROOT /srv/docker_apps)"
+case " $EXTRA_PATHS " in *" $DOCKER_DATA_ROOT "*) ;; *) EXTRA_PATHS="$EXTRA_PATHS $DOCKER_DATA_ROOT" ;; esac
 BACKUP_REPO="${ARG_REPO:-$(conf_get DOCKER_BACKUP_REPO '')}"
 BACKUP_AT="${ARG_TIME:-$(conf_get DOCKER_BACKUP_AT '03:00')}"
 PASSWORD_FILE="$(conf_get DOCKER_BACKUP_PASSWORD_FILE /root/.docker_backup_password)"
@@ -222,6 +226,8 @@ print_info "$VOLUME_COUNT named volume(s) on this machine right now."
 # unit every night. It is reported, because the usual cause is a renamed data
 # directory and the backup would then be quietly copying nothing.
 SOURCES=("$VOLUME_DIR")
+# Made now rather than by the first docker row, so it is in the unit from the start.
+install -d -m 750 "$DOCKER_DATA_ROOT"
 for p in $EXTRA_PATHS; do
     if [ -d "$p" ]; then
         SOURCES+=("$p")
