@@ -672,6 +672,9 @@ if [ -f "$SMB_TARGET" ]; then
         | grep -iE 'Unknown parameter|No path in service|^ERROR|Rejecting|Invalid' || true)"
     if [ "$(readlink -f "$SMB_LINK" 2>/dev/null)" = "$SMB_TARGET" ]; then
         print_success "Samba already reads $SMB_TARGET"
+    elif ! command -v smbd >/dev/null 2>&1 || [ ! -d "$(dirname "$SMB_LINK")" ]; then
+        print_info "Samba is not installed yet, so it was not linked to $SMB_TARGET."
+        print_action "Install Samba before the console, or run this again after it."
     elif [ -n "$smb_faults" ]; then
         print_error "$SMB_TARGET fails testparm, so Samba was left reading $SMB_LINK."
         printf '%s\n' "$smb_faults" | head -n 10
