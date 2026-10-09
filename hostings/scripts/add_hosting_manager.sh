@@ -673,11 +673,14 @@ if [ -f "$SMB_TARGET" ]; then
         ln -sfn "$SMB_TARGET" "$SMB_LINK"
         print_success "Samba now reads $SMB_TARGET"
     else
-        # A real file, not a link. Someone put it there on purpose, or the
-        # package did; replacing it silently would throw away a hand edit.
-        print_action "$SMB_LINK is a real file, so it was left alone."
-        print_info "The console publishes to $SMB_TARGET, which Samba is not reading."
+        # Usually the package's own file. Kept beside it, in case it was a hand edit.
+        smb_backup="$SMB_LINK.bak-$(date +%Y%m%d-%H%M%S)"
+        mv "$SMB_LINK" "$smb_backup"
+        ln -sfn "$SMB_TARGET" "$SMB_LINK"
+        print_success "Samba now reads $SMB_TARGET"
+        print_info "The file it replaced is $smb_backup"
     fi
+    systemctl reload smbd 2>/dev/null || true
 else
     print_info "No $SMB_TARGET in this clone, so the Samba symlink was left as it is."
 fi
