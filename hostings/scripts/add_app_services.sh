@@ -799,6 +799,18 @@ while IFS='|' read -r type name port path subdomain datasource options auth repo
                 sandbox=""
                 # Every container gets /data, kept outside it so a rebuild keeps it.
                 docker_data="${data_dir:-${DOCKER_DATA_ROOT%/}/${name}/${env}}"
+                # The container runs as root: / mounted at /data is the machine.
+                # So only a plain path inside DOCKER_DATA_ROOT, resolved first.
+                docker_data="$(realpath -m -- "$docker_data")"
+                case "$docker_data/" in
+                    "$(realpath -m -- "$DOCKER_DATA_ROOT")"/?*/) ;;
+                    *) docker_data="" ;;
+                esac
+                if [[ ! "$docker_data" =~ ^/[A-Za-z0-9._/-]+$ ]]; then
+                    print_error "Row '$name' ($env): its data folder must be a plain path inside $DOCKER_DATA_ROOT."
+                    FAILED+=("$name/$env (data folder outside $DOCKER_DATA_ROOT)")
+                    continue
+                fi
                 install -d -m 750 "$docker_data"
                 exec_start="/usr/bin/docker run --rm --name ${image} -p 127.0.0.1:${env_port}:8080 --cgroup-parent ${slice} --memory ${app_memory} -v ${docker_data}:/data -e ASPNETCORE_ENVIRONMENT=Production ${image}:latest"
                 # The marker comment is how prune_orphans.sh finds it again.

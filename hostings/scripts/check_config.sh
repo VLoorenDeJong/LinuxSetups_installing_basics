@@ -672,6 +672,17 @@ while IFS='|' read -r c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c11 c12 c13 c14 c15 c16 c17
     fi
 
     if [ -n "$datasource" ]; then
+        # A container runs as root, so its folder may not be anywhere else.
+        case "$runtime" in
+            docker|docker_*)
+                droot="$(conf_get DOCKER_DATA_ROOT /srv/docker_apps)"
+                dpath="$(realpath -m -- "${datasource#=}")"
+                case "$datasource|$dpath/" in
+                    =*"|$(realpath -m -- "$droot")"/?*/) [[ "$dpath" =~ ^/[A-Za-z0-9._/-]+$ ]] \
+                        || err "$label: DataSource '$datasource' must be a plain path inside $droot" ;;
+                    *) err "$label: a Docker application's DataSource must be =<a folder inside $droot>" ;;
+                esac ;;
+        esac
         case "$datasource" in
             =*) ;;
             "$name") err "$label: lists itself as its own DataSource" ;;

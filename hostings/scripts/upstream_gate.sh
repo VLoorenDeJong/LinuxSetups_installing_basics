@@ -66,6 +66,9 @@ LIVE_ENV="live"
 DAY=86400
 URGENT_DAYS="$(conf_get UPGRADE_URGENT_DAYS 3)"
 LAZY_DAYS="$(conf_get UPGRADE_LAZY_DAYS 7)"
+# Digits only: these go into $(( )), which runs anything else as root.
+[[ "$URGENT_DAYS" =~ ^[0-9]{1,3}$ ]] || URGENT_DAYS=3
+[[ "$LAZY_DAYS"   =~ ^[0-9]{1,3}$ ]] || LAZY_DAYS=7
 USERS_SH="$SCRIPT_DIR/manage_auth_users.sh"
 NOW="$(date +%s)"
 
