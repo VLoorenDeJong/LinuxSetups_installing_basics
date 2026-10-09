@@ -2061,7 +2061,8 @@ function serialise() {
   // Untouched, the line is left as the file has it.
   if (appMemText() !== APPMEMWAS) {
     const mem = Object.keys(APPMEM).sort().filter(n => alive.has(n)).map(n => n + ':' + APPMEM[n]);
-    setEnv('APP_MEMORY_ROWS', mem.join(', '));
+    if (mem.length) setEnv('APP_MEMORY_ROWS', mem.join(', '));
+    else out.forEach((l, i) => { if (l !== null && /^[ \t]*APP_MEMORY_ROWS[ \t]*=/.test(l)) out[i] = null; });
   }
 
   // PANELS_OFF, rewritten in place from what the tick boxes hold. A page that
