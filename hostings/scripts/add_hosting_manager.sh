@@ -220,6 +220,7 @@ LISTPROJECTS="/usr/local/sbin/list_startup_projects.sh"
 LISTBRANCHES="/usr/local/sbin/list_repo_branches.sh"
 MANAGEREPO="/usr/local/sbin/manage_repo.sh"
 SHAREACL="/usr/local/sbin/set_share_access.sh"
+SHAREWIN="/usr/local/sbin/share_window.sh"
 MANAGEMAIL="/usr/local/sbin/manage_mail.sh"
 MAILPW="/usr/local/sbin/set_mail_password.sh"
 # Read only: it reports what to type into Outlook, from what Dovecot and Postfix
@@ -254,7 +255,7 @@ SRC_PAGE="$SRC_DIR/index.php"
 # added to the page without being added here fails pre-flight instead of
 # reaching the browser as a 404 and a blank table.
 # The same list as CONSOLE_FILES in add_pipeline_scripts.sh. Change both.
-SRC_ASSETS=(style.css i18n.js cells.js drawer.js chrome.js apply.js smb.js bulk.js users.js requests.js audit.js boot.js second_factor.php recovery_cli.php forgot.php)
+SRC_ASSETS=(style.css i18n.js cells.js drawer.js chrome.js apply.js smb.js sharewindow.js bulk.js users.js requests.js audit.js boot.js second_factor.php recovery_cli.php forgot.php)
 SRC_PUBLISHER="$SCRIPT_DIR/publish_hostings.sh"
 SRC_UPDATER="$SCRIPT_DIR/trigger_update.sh"
 SRC_REBOOTER="$SCRIPT_DIR/reboot_machine.sh"
@@ -284,6 +285,7 @@ SRC_LISTPROJECTS="$SCRIPT_DIR/list_startup_projects.sh"
 SRC_LISTBRANCHES="$SCRIPT_DIR/list_repo_branches.sh"
 SRC_MANAGEREPO="$SCRIPT_DIR/manage_repo.sh"
 SRC_SHAREACL="$SCRIPT_DIR/set_share_access.sh"
+SRC_SHAREWIN="$SCRIPT_DIR/share_window.sh"
 SRC_MANAGEMAIL="$SCRIPT_DIR/manage_mail.sh"
 SRC_MAILPW="$SCRIPT_DIR/set_mail_password.sh"
 SRC_MAILCLIENT="$SCRIPT_DIR/mail_client_settings.sh"
@@ -639,6 +641,9 @@ print_success "Installed $MANAGEREPO"
 install -m 0700 -o root -g root "$SRC_SHAREACL" "$SHAREACL"
 print_success "Installed $SHAREACL"
 
+install -m 0700 -o root -g root "$SRC_SHAREWIN" "$SHAREWIN"
+print_success "Installed $SHAREWIN"
+
 install -m 0700 -o root -g root "$SRC_MANAGEMAIL" "$MANAGEMAIL"
 print_success "Installed $MANAGEMAIL"
 
@@ -763,6 +768,10 @@ TMP_SUDOERS="$(mktemp)"
     #
     # list_folders.sh reports directory NAMES only, never files, never contents.
     #
+    # share_window.sh takes no path at all: the minutes are one of six fixed
+    # values, each granted by name, and the folders come from the running
+    # smb.conf with the same refusals as set_share_access.sh.
+    #
     # set_share_access.sh adds two refusals of its own: it never touches
     # "other", and it refuses a folder owned by a system account. A share
     # pointed at the Dovecot mail store on 2026-08-26 would otherwise have
@@ -782,7 +791,7 @@ TMP_SUDOERS="$(mktemp)"
     # shows arguments to every account on the machine. It refuses dkim, refuses
     # anything under eight characters, and rebuilds and re-checks the maildir
     # path the same way manage_mail.sh does.
-    echo "${PAGE_USER} ALL=(root) NOPASSWD: ${PUBLISHER}, ${CHECKER}, ${APPLIER}, ${UPDATER}, ${REBOOTER} \"\", ${PROVISIONER}, ${PROVISIONER} --create, ${PROVISIONER} --step *, ${DOMAINS}, ${JOBSTATUS}, ${JOBSTATUS} --history *, ${JOBSTATUS} --stages *, ${JOBLOG} *, ${SITEJOB} *, ${DEPLOYEDSHA} *, ${AUTHUSERS} --list, ${AUTHUSERS} --add *, ${AUTHUSERS} --password *, ${AUTHUSERS} --self-password *, ${AUTHUSERS} --disable *, ${AUTHUSERS} --enable *, ${AUTHUSERS} --delete *, ${AUTHUSERS} --meta *, ${AUTHUSERS} --role-of *, ${AUTHUSERS} --email-of *, ${AUTHUSERS} --role-holders, ${REQUESTS} --list, ${REQUESTS} --add *, ${REQUESTS} --get *, ${REQUESTS} --approve *, ${REQUESTS} --decline *, ${REQUESTS} --seen *, ${REQUESTS} --withdraw *, ${CHECKDOMAIN} *, ${PROMOTE} *, ${MAILSET} --read *, ${MAILSET} --write *, ${SVCCTL} *, ${FASTAPPLY}, ${GOLIVE}, ${GOLIVE} --check, ${PUBSMB}, ${RELOADSMB}, ${LISTDIRS}, ${LISTDIRS} *, ${LISTREPOS}, ${LISTPROJECTS} *, ${LISTBRANCHES} *, ${READSETTINGS} *, ${MANAGEREPO} --archive *, ${MANAGEREPO} --delete *, ${SHAREACL} --check *, ${SHAREACL} --set *, ${MANAGEMAIL} --check *, ${MANAGEMAIL} --forward *, ${MANAGEMAIL} --retire *, ${MANAGEMAIL} --unforward *, ${MANAGEMAIL} --purge *, ${MAILPW} --check *, ${MAILPW} --set *, ${MAILCLIENT} *, ${PERSONENTRY} --share *, ${PERSONENTRY} --share-mailbox *, ${PERSONENTRY} --recovery *, ${READAUDIT}, ${UPGATE} list, ${UPGATE} vote *, ${UPGATE} pause *, ${UPGATE} resume *, ${UPGATE} publish *"
+    echo "${PAGE_USER} ALL=(root) NOPASSWD: ${PUBLISHER}, ${CHECKER}, ${APPLIER}, ${UPDATER}, ${REBOOTER} \"\", ${PROVISIONER}, ${PROVISIONER} --create, ${PROVISIONER} --step *, ${DOMAINS}, ${JOBSTATUS}, ${JOBSTATUS} --history *, ${JOBSTATUS} --stages *, ${JOBLOG} *, ${SITEJOB} *, ${DEPLOYEDSHA} *, ${AUTHUSERS} --list, ${AUTHUSERS} --add *, ${AUTHUSERS} --password *, ${AUTHUSERS} --self-password *, ${AUTHUSERS} --disable *, ${AUTHUSERS} --enable *, ${AUTHUSERS} --delete *, ${AUTHUSERS} --meta *, ${AUTHUSERS} --role-of *, ${AUTHUSERS} --email-of *, ${AUTHUSERS} --role-holders, ${REQUESTS} --list, ${REQUESTS} --add *, ${REQUESTS} --get *, ${REQUESTS} --approve *, ${REQUESTS} --decline *, ${REQUESTS} --seen *, ${REQUESTS} --withdraw *, ${CHECKDOMAIN} *, ${PROMOTE} *, ${MAILSET} --read *, ${MAILSET} --write *, ${SVCCTL} *, ${FASTAPPLY}, ${GOLIVE}, ${GOLIVE} --check, ${PUBSMB}, ${RELOADSMB}, ${LISTDIRS}, ${LISTDIRS} *, ${LISTREPOS}, ${LISTPROJECTS} *, ${LISTBRANCHES} *, ${READSETTINGS} *, ${MANAGEREPO} --archive *, ${MANAGEREPO} --delete *, ${SHAREACL} --check *, ${SHAREACL} --set *, ${SHAREWIN} open 5, ${SHAREWIN} open 10, ${SHAREWIN} open 15, ${SHAREWIN} open 60, ${SHAREWIN} open 120, ${SHAREWIN} open 240, ${SHAREWIN} close, ${SHAREWIN} status, ${MANAGEMAIL} --check *, ${MANAGEMAIL} --forward *, ${MANAGEMAIL} --retire *, ${MANAGEMAIL} --unforward *, ${MANAGEMAIL} --purge *, ${MAILPW} --check *, ${MAILPW} --set *, ${MAILCLIENT} *, ${PERSONENTRY} --share *, ${PERSONENTRY} --share-mailbox *, ${PERSONENTRY} --recovery *, ${READAUDIT}, ${UPGATE} list, ${UPGATE} vote *, ${UPGATE} pause *, ${UPGATE} resume *, ${UPGATE} publish *"
 } > "$TMP_SUDOERS"
 
 if ! visudo -cf "$TMP_SUDOERS" >/dev/null 2>&1; then

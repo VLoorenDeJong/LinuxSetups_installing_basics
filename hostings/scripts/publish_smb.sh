@@ -152,6 +152,13 @@ CANDIDATE="$(mktemp)"
 trap 'rm -f "$CANDIDATE"' EXIT
 tr -d '\r' < "$STAGING" > "$CANDIDATE"
 
+# share_window.sh's override only wins as the last thing Samba reads, and a
+# share added on the page lands after it, so the include is moved to the end.
+WINDOW_INCLUDE="include = /etc/samba/share-window.conf"
+grep -vxF "$WINDOW_INCLUDE" "$CANDIDATE" > "$CANDIDATE.body" || true
+{ cat "$CANDIDATE.body"; echo "$WINDOW_INCLUDE"; } > "$CANDIDATE"
+rm -f "$CANDIDATE.body"
+
 if cmp -s "$CANDIDATE" "$TRACKED"; then
     print_success "No change: smb.conf already matches what was submitted."
     hook post "$SAVED_BY" "Edit smb.conf from the hosting manager" \

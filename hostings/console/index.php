@@ -113,6 +113,9 @@ const PUBSMB      = '/usr/local/sbin/publish_smb.sh';
 const RELOADSMB   = '/usr/local/sbin/reload_samba.sh';
 const LISTDIRS    = '/usr/local/sbin/list_folders.sh';
 const SHAREACL    = '/usr/local/sbin/set_share_access.sh';
+const SHAREWIN    = '/usr/local/sbin/share_window.sh';
+const SHAREWIN_MINUTES = ['5' => '5 minutes', '10' => '10 minutes', '15' => '15 minutes',
+                          '60' => '1 hour', '120' => '2 hours', '240' => '4 hours'];
 const MANAGEMAIL  = '/usr/local/sbin/manage_mail.sh';
 const MANAGEREPO  = '/usr/local/sbin/manage_repo.sh';
 
@@ -2531,6 +2534,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // share that is saved is a share that can be read. Its own action rather
     // than part of savesmb: changing a mode and changing a config are two
     // different things to undo.
+    // The share write window opens every share to the whole LAN, so full role
+    // only. The minutes are checked here and again by the script and sudo.
+    if (in_array($action, ['sharewindow', 'sharewindowclose'], true)) {
+        $mins = (string) ($_POST['minutes'] ?? '');
+        if ($myRole !== 'full') {
+            $rc = 2;
+            $lines = ['Only a full administrator can open the shares.'];
+        } elseif ($action === 'sharewindowclose') {
+            exec('sudo ' . SHAREWIN . ' close 2>&1', $lines, $rc);
+        } elseif (!array_key_exists($mins, SHAREWIN_MINUTES)) {
+            $rc = 2;
+            $lines = ['Pick a time from the list.'];
+        } else {
+            exec('sudo ' . SHAREWIN . ' open ' . $mins . ' 2>&1', $lines, $rc);
+        }
+        $output = strip_ansi(implode("\n", $lines));
+        $message = $rc === 0 ? 'Done.' : 'The share window refused. Its answer is below.';
+        $messageClass = $rc === 0 ? 'good' : 'bad';
+    }
+
     if ($action === 'setaccess') {
         $path = (string) ($_POST['path'] ?? '');
         $rwx  = (string) ($_POST['rwx'] ?? '');
@@ -2810,7 +2833,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     //
     // The message travels as a code, never as text. A message put in the query
     // string is a message an attacker can choose.
-    $changed = ['save', 'save_apply', 'save_fast', 'savesmb', 'reloadsmb', 'setaccess', 'apply', 'fixdrift', 'setmailpw', 'provision', 'provision_create', 'promote', 'testcert', 'update', 'reboot', 'rerunstep', 'upgradevote', 'upgradepause', 'upgraderesume', 'upgradepublish'];
+    $changed = ['save', 'save_apply', 'save_fast', 'savesmb', 'reloadsmb', 'setaccess', 'apply', 'fixdrift', 'setmailpw', 'provision', 'provision_create', 'promote', 'testcert', 'update', 'reboot', 'rerunstep', 'upgradevote', 'upgradepause', 'upgraderesume', 'upgradepublish', 'sharewindow', 'sharewindowclose'];
     // Written before the redirect, because the redirect is what throws the
     // message away. A failed save used to skip the redirect entirely, so F5
     // re-POSTed the form and replayed ops that had already run.
@@ -2878,6 +2901,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'upgradepause'     => 'upgpaused',
             'upgraderesume'    => 'upgresumed',
             'upgradepublish'   => 'upgpublished',
+            'sharewindow'      => 'shareopen',
+            'sharewindowclose' => 'shareclosed',
         ];
         // Only ever a number, and only for the apply: the dialog uses it to
         // tell a job that has not started from one that is over.
@@ -2934,6 +2959,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['done'])) {
         'upgpaused'    => 'Paused: this version stays on test until you resume it.',
         'upgresumed'   => 'Resumed: the votes decide again.',
         'upgpublished' => 'Published: live now runs the version test ran.',
+        'shareopen'    => 'The shares are writable without a password until the timer runs out.',
+        'shareclosed'  => 'The shares are back to their own settings.',
         'checked'     => 'Checked. Nothing was written and nothing was pushed.',
         'checkfailed' => 'The check failed. The report below says why.',
     ];
@@ -3926,6 +3953,41 @@ if ($myRole !== 'full') {
       <?php endif; ?>
     </div>
   <?php endforeach; ?>
+
+  <?php /* The share write window: every share writable without a password for a
+           chosen time. share-write-window-decisions.md. */
+    if ($myRole === 'full'):
+      $swLines = [];
+      exec('sudo ' . SHAREWIN . ' status 2>/dev/null', $swLines);
+      $sw = json_decode(implode('', $swLines), true) ?: [];
+      $swOpen  = !empty($sw['open']);
+      $swStuck = !empty($sw['stuck']); ?>
+    <div class="msg share-window<?= $swOpen ? ' running' : '' ?><?= $swStuck ? ' bad' : '' ?>" id="share-window">
+      <form method="post" style="display:inline">
+        <input type="hidden" name="action" value="sharewindow">
+        📂 Shares writable without a password:
+        <?php if ($swOpen): ?>
+          <strong id="share-window-left" data-ends="<?= (int) $sw['ends'] ?>"></strong> left.
+        <?php elseif ($swStuck): ?>
+          <strong>still open after its time ran out.</strong> Press Close now.
+        <?php else: ?>
+          off.
+        <?php endif; ?>
+        <select name="minutes" aria-label="For how long">
+          <?php foreach (SHAREWIN_MINUTES as $swMin => $swLabel): ?>
+            <option value="<?= $swMin ?>"<?= $swMin === '60' ? ' selected' : '' ?>><?= $swLabel ?></option>
+          <?php endforeach; ?>
+        </select>
+        <button type="submit"><?= $swOpen ? 'Restart timer' : 'Open' ?></button>
+      </form>
+      <?php if ($swOpen || $swStuck): ?>
+        <form method="post" style="display:inline">
+          <input type="hidden" name="action" value="sharewindowclose">
+          <button type="submit">Close now</button>
+        </form>
+      <?php endif; ?>
+    </div>
+  <?php endif; ?>
 
   <?php if ($message !== ''): ?>
     <div class="msg <?= htmlspecialchars($messageClass) ?>"><?= htmlspecialchars($message) ?></div>
@@ -5539,6 +5601,7 @@ const BOOT = {
 <script src="<?= asset('chrome.js') ?>"></script>
 <script src="<?= asset('apply.js') ?>"></script>
 <script src="<?= asset('smb.js') ?>"></script>
+<script src="<?= asset('sharewindow.js') ?>"></script>
 <script src="<?= asset('bulk.js') ?>"></script>
 <script src="<?= asset('users.js') ?>"></script>
 <script src="<?= asset('requests.js') ?>"></script>
