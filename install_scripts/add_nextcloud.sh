@@ -91,6 +91,46 @@ run_watched() {
     return $rc
 }
 
+# Docker prints no percentage without a terminal, but it names every layer, so
+# the bar counts layers: half for downloading, half for unpacking.
+pull_bar() {
+    local log="$1" total have down unpacked pct filled bar
+    [ -s "$log" ] || { echo ""; return; }
+    total="$(grep -c ': Pulling fs layer' "$log" 2>/dev/null)"
+    down="$(grep -c -E ': (Download complete|Already exists)' "$log" 2>/dev/null)"
+    unpacked="$(grep -c -E ': (Pull complete|Already exists)' "$log" 2>/dev/null)"
+    have="$(grep -c ": Already exists" "$log" 2>/dev/null)"
+    total=$(( ${total:-0} + ${have:-0} ))
+    [ "$total" -gt 0 ] || { echo ""; return; }
+    pct=$(( (${down:-0} + ${unpacked:-0}) * 50 / total ))
+    [ "$pct" -gt 100 ] && pct=100
+    filled=$(( pct / 5 ))
+    printf -v bar '%*s' "$filled" ''; bar="${bar// /#}"
+    printf -v bar '%-20s' "$bar"; bar="${bar// /-}"
+    echo " [${bar}] ${pct}%, layers downloaded ${down:-0}/${total}, unpacked ${unpacked:-0}/${total}"
+}
+
+# Watch-only like run_watched, with the layer bar on the spinner line.
+run_pull() {
+    local img="$1"
+    if [ "$DEBUG_MODE" = "1" ]; then docker pull "$img"; return; fi
+    local log; log="$(mktemp)"
+    docker pull "$img" >"$log" 2>&1 &
+    local pid=$!
+    while kill -0 "$pid" 2>/dev/null; do spin_tick "Pulling $img$(pull_bar "$log")"; done
+    local rc=0
+    wait "$pid" || rc=$?
+    printf '\r\033[K'
+    if [ "$rc" -ne 0 ]; then
+        print_error "Pulling $img failed (exit $rc)"
+        tail -n 20 "$log" >&2
+        print_info "Full log: $log"
+    else
+        rm -f "$log"
+    fi
+    return $rc
+}
+
 need_value() { [ -n "$2" ] || { print_error "$1 needs a value."; exit 2; }; }
 
 read_secret() {
@@ -232,7 +272,7 @@ IMAGES=("$NC_IMAGE" "$DB_IMAGE" "$REDIS_IMAGE" "$CADDY_IMAGE")
 [ "$OFFICE" -eq 1 ] && IMAGES+=("$EO_IMAGE")
 for img in "${IMAGES[@]}"; do
     if [ "$UPDATE" -eq 1 ] || ! docker image inspect "$img" >/dev/null 2>&1; then
-        run_watched "Pulling $img" docker pull "$img" || exit 1
+        run_pull "$img" || exit 1
         print_success "Pulled $img"
     fi
 done
