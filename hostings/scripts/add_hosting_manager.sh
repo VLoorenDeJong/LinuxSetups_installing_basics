@@ -643,6 +643,15 @@ print_success "Installed $SHAREACL"
 
 install -m 0700 -o root -g root "$SRC_SHAREWIN" "$SHAREWIN"
 print_success "Installed $SHAREWIN"
+# The share unlock button opens folders with ACLs; a minimal image has no setfacl.
+if ! command -v setfacl >/dev/null 2>&1; then
+    if apt-get install -y -qq acl >/dev/null 2>&1; then
+        print_success "Installed acl, which the share unlock button needs."
+    else
+        print_error "Could not install acl, so the share unlock button will refuse."
+        print_action "Install it by hand: sudo apt-get install -y acl"
+    fi
+fi
 
 install -m 0700 -o root -g root "$SRC_MANAGEMAIL" "$MANAGEMAIL"
 print_success "Installed $MANAGEMAIL"
