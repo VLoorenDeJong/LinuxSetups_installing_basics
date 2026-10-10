@@ -537,28 +537,32 @@ function paintPortMap() {
       byRow.get(e.row).cells[e.env] = e;
     }));
 
-  if (!byRow.size) { el.innerHTML = `<tr><td class="note">${esc(t.portsNone)}</td></tr>`; return; }
+  // No rows still has machine pages: an early return here left both tables
+  // below empty on a machine with pages and no sites.
+  if (!byRow.size) {
+    el.innerHTML = `<tr><td class="note">${esc(t.portsNone)}</td></tr>`;
+  } else {
+    const cell = e => {
+      if (!e) return '<td><span class="dash">&mdash;</span></td>';
+      const label = esc(String(e.port)) + (e.addr ? ' ' + esc(e.addr) : '');
+      // Only a row with a preview port has somewhere to send a click today.
+      if (!e.preview) return `<td class="port">${label}</td>`;
+      return `<td class="port"><a href="http://${esc(location.hostname)}:${esc(e.preview)}/"
+        target="_blank" rel="noopener">${label}</a></td>`;
+    };
 
-  const cell = e => {
-    if (!e) return '<td><span class="dash">&mdash;</span></td>';
-    const label = esc(String(e.port)) + (e.addr ? ' ' + esc(e.addr) : '');
-    // Only a row with a preview port has somewhere to send a click today.
-    if (!e.preview) return `<td class="port">${label}</td>`;
-    return `<td class="port"><a href="http://${esc(location.hostname)}:${esc(e.preview)}/"
-      target="_blank" rel="noopener">${label}</a></td>`;
-  };
+    const head = '<tr><th>' + esc(t.bandRange) + '</th>'
+               + bands.map(b => `<th>${bandOf(b)}&ndash;${bandOf(b) + 999}</th>`).join('')
+               + '</tr>';
 
-  const head = '<tr><th>' + esc(t.bandRange) + '</th>'
-             + bands.map(b => `<th>${bandOf(b)}&ndash;${bandOf(b) + 999}</th>`).join('')
-             + '</tr>';
+    const body = [...byRow.values()]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map(r => `<tr><td class="name">${esc(r.name)}</td>`
+              + bands.map(b => cell(r.cells[b])).join('') + '</tr>')
+      .join('');
 
-  const body = [...byRow.values()]
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .map(r => `<tr><td class="name">${esc(r.name)}</td>`
-            + bands.map(b => cell(r.cells[b])).join('') + '</tr>')
-    .join('');
-
-  el.innerHTML = head + body;
+    el.innerHTML = head + body;
+  }
 
   // Preview ports, by ENVIRONMENT rather than by band. A website row carries no
   // port of its own, so it was absent from the map above and its previews, which
