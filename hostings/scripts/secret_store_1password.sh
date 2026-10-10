@@ -476,8 +476,11 @@ _op_preflight() {
         || { echo "op is not installed. Run: sudo bash add_1password.sh"; bad=1; }
     [ -n "$_OP_VAULT" ] \
         || { echo "No OP_VAULT in ${SITES_CONF:-hostings.conf}."; bad=1; }
-    [ -r "$_OP_TOKEN_FILE" ] \
-        || { echo "Cannot read the token at $_OP_TOKEN_FILE. It is root-only: run as root."; bad=1; }
+    if [ "$EUID" -eq 0 ] && [ ! -e "$_OP_TOKEN_FILE" ]; then
+        echo "No token at $_OP_TOKEN_FILE yet. Run: sudo bash add_1password.sh"; bad=1
+    elif [ ! -r "$_OP_TOKEN_FILE" ]; then
+        echo "Cannot read the token at $_OP_TOKEN_FILE. It is root-only: run as root."; bad=1
+    fi
     [ "$bad" = 0 ] || return 1
     local v
     while IFS= read -r v; do
