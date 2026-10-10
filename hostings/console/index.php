@@ -4257,12 +4257,6 @@ if ($myRole !== 'full') {
     </div>
 
     <div class="row-actions" style="margin:.6rem 0 .85rem;display:none" data-pane="smb">
-      <!-- Not a save. It makes Samba serve what is already published, which is
-           the state a save leaves behind when its push succeeds and the pull
-           into the live tree does not. -->
-      <button type="submit" name="action" value="reloadsmb" class="svc-all smb"
-              id="btn-smb-reload">Reload Samba</button>
-      <button type="button" class="add-btn smb" id="add-smb" data-kind="smb">Add a shared folder</button>
       <?php if ($myRole === 'full'): ?>
         <span class="share-window<?= $swOpen ? ' running' : '' ?><?= $swStuck ? ' bad' : '' ?>" id="share-window">
           <details class="sw-menu">
@@ -4283,6 +4277,12 @@ if ($myRole !== 'full') {
           <?php endif; ?>
         </span>
       <?php endif; ?>
+      <!-- Not a save. It makes Samba serve what is already published, which is
+           the state a save leaves behind when its push succeeds and the pull
+           into the live tree does not. -->
+      <button type="submit" name="action" value="reloadsmb" class="svc-all smb"
+              id="btn-smb-reload">Reload Samba</button>
+      <button type="button" class="add-btn smb" id="add-smb" data-kind="smb">Add a shared folder</button>
     </div>
 
     <!-- Two views of the same rows, not two sets of rows. The owner, 2026-09-10:
