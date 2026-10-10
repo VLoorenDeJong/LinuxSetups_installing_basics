@@ -3954,41 +3954,6 @@ if ($myRole !== 'full') {
     </div>
   <?php endforeach; ?>
 
-  <?php /* The share write window: every share writable without a password for a
-           chosen time. share-write-window-decisions.md. */
-    if ($myRole === 'full'):
-      $swLines = [];
-      exec('sudo ' . SHAREWIN . ' status 2>/dev/null', $swLines);
-      $sw = json_decode(implode('', $swLines), true) ?: [];
-      $swOpen  = !empty($sw['open']);
-      $swStuck = !empty($sw['stuck']); ?>
-    <div class="msg share-window<?= $swOpen ? ' running' : '' ?><?= $swStuck ? ' bad' : '' ?>" id="share-window">
-      <form method="post" style="display:inline">
-        <input type="hidden" name="action" value="sharewindow">
-        📂 Shares writable without a password:
-        <?php if ($swOpen): ?>
-          <strong id="share-window-left" data-ends="<?= (int) $sw['ends'] ?>"></strong> left.
-        <?php elseif ($swStuck): ?>
-          <strong>still open after its time ran out.</strong> Press Close now.
-        <?php else: ?>
-          off.
-        <?php endif; ?>
-        <select name="minutes" aria-label="For how long">
-          <?php foreach (SHAREWIN_MINUTES as $swMin => $swLabel): ?>
-            <option value="<?= $swMin ?>"<?= $swMin === '60' ? ' selected' : '' ?>><?= $swLabel ?></option>
-          <?php endforeach; ?>
-        </select>
-        <button type="submit"><?= $swOpen ? 'Restart timer' : 'Open' ?></button>
-      </form>
-      <?php if ($swOpen || $swStuck): ?>
-        <form method="post" style="display:inline">
-          <input type="hidden" name="action" value="sharewindowclose">
-          <button type="submit">Close now</button>
-        </form>
-      <?php endif; ?>
-    </div>
-  <?php endif; ?>
-
   <?php if ($message !== ''): ?>
     <div class="msg <?= htmlspecialchars($messageClass) ?>"><?= htmlspecialchars($message) ?></div>
   <?php endif; ?>
@@ -4095,6 +4060,20 @@ if ($myRole !== 'full') {
   </div>
   <?php endif; ?>
 
+  <?php /* The share write window: every share writable without a password for a
+           chosen time. Its buttons sit in the Shared folders tab, inside
+           rows-form, so they reach these two forms through form="".
+           share-write-window-decisions.md. */
+    $swOpen = $swStuck = false;
+    if ($myRole === 'full'):
+      $swLines = [];
+      exec('sudo ' . SHAREWIN . ' status 2>/dev/null', $swLines);
+      $sw = json_decode(implode('', $swLines), true) ?: [];
+      $swOpen  = !empty($sw['open']);
+      $swStuck = !empty($sw['stuck']); ?>
+    <form method="post" id="share-window-open" hidden><input type="hidden" name="action" value="sharewindow"></form>
+    <form method="post" id="share-window-close" hidden><input type="hidden" name="action" value="sharewindowclose"></form>
+  <?php endif; ?>
   <form method="post" class="card" id="rows-form">
     <h2 style="font-size:1.05rem;margin:.1rem 0 .75rem" data-i18n="servesH">What this machine serves</h2>
 
@@ -4284,6 +4263,26 @@ if ($myRole !== 'full') {
       <button type="submit" name="action" value="reloadsmb" class="svc-all smb"
               id="btn-smb-reload">Reload Samba</button>
       <button type="button" class="add-btn smb" id="add-smb" data-kind="smb">Add a shared folder</button>
+      <?php if ($myRole === 'full'): ?>
+        <span class="share-window<?= $swOpen ? ' running' : '' ?><?= $swStuck ? ' bad' : '' ?>" id="share-window">
+          <details class="sw-menu">
+            <summary class="svc-all smb">🔓 <?= $swOpen ? 'Restart timer' : 'Open without password' ?> ▾</summary>
+            <div class="sw-list">
+              <?php foreach (SHAREWIN_MINUTES as $swMin => $swLabel): ?>
+                <button type="submit" form="share-window-open" name="minutes" value="<?= $swMin ?>"><?= $swLabel ?></button>
+              <?php endforeach; ?>
+            </div>
+          </details>
+          <?php if ($swOpen): ?>
+            Writable without a password: <strong id="share-window-left" data-ends="<?= (int) $sw['ends'] ?>"></strong> left.
+          <?php elseif ($swStuck): ?>
+            <strong>Still open after its time ran out.</strong>
+          <?php endif; ?>
+          <?php if ($swOpen || $swStuck): ?>
+            <button type="submit" form="share-window-close">Close now</button>
+          <?php endif; ?>
+        </span>
+      <?php endif; ?>
     </div>
 
     <!-- Two views of the same rows, not two sets of rows. The owner, 2026-09-10:

@@ -1083,3 +1083,21 @@ input.bad, select.bad {
     table[data-table="mailboxes"] td:is(.local, .at-col, :nth-child(4)) { flex: 0 0 auto; gap: 0; }
     table[data-table="mailboxes"] td:is(.local, .at-col, :nth-child(4))::before { content: none; }
   }
+
+/* The share write window: one button, its times folded inside it. */
+.share-window { display: inline-flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.share-window.bad { color: var(--bad); }
+.sw-menu { position: relative; }
+.sw-menu > summary { list-style: none; }
+.sw-menu > summary::-webkit-details-marker { display: none; }
+.sw-list {
+  position: absolute; z-index: 20; top: calc(100% + .2rem); left: 0;
+  display: flex; flex-direction: column; min-width: 100%;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.18); overflow: hidden;
+}
+.sw-list button {
+  font: inherit; cursor: pointer; text-align: left; white-space: nowrap;
+  padding: .4rem .8rem; border: 0; background: none; color: var(--fg);
+}
+.sw-list button:hover, .sw-list button:focus-visible { background: var(--k-bg, rgba(127,127,127,.15)); }

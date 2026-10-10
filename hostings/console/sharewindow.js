@@ -1,6 +1,11 @@
 // The share write window's countdown. The end time comes from the server, so
 // a slow page or a sleeping laptop never shows more time than is left.
 (function () {
+  // The times menu folds again on a click anywhere else, like any dropdown.
+  const menu = document.querySelector('.sw-menu');
+  if (menu) {
+    document.addEventListener('click', e => { if (!menu.contains(e.target)) menu.open = false; });
+  }
   const el = document.getElementById('share-window-left');
   if (!el) return;
   const ends = Number(el.dataset.ends) * 1000;
