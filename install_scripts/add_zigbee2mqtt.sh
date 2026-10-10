@@ -43,6 +43,7 @@ unset _a _dbg_args
 #   add_zigbee2mqtt.sh --coordinator 192.168.1.50
 #   add_zigbee2mqtt.sh --coordinator 192.168.1.50:6638 --adapter zstack
 #   add_zigbee2mqtt.sh --update                     # pull a newer image
+#   add_zigbee2mqtt.sh --new-network                # no saved network: start one, no question
 #
 # --adapter: ember for Silicon Labs chips (SLZB-06M, -06Mg24, -06Mg26, the
 # default), zstack for Texas Instruments ones (SLZB-06, -06p7, -06p10).
@@ -181,6 +182,7 @@ BROKER_IMAGE="eclipse-mosquitto:2"
 BROKER_UID="1883"
 MQTT_USER="zigbee2mqtt"
 UPDATE=0
+NEW_NETWORK=0
 
 need_value() { [ -n "$2" ] || { print_error "$1 needs a value."; exit 2; }; }
 
@@ -197,7 +199,8 @@ while [ $# -gt 0 ]; do
         --mosquitto-dir) need_value "$1" "${2:-}"; MOSQUITTO_DIR="$2"; shift 2 ;;
         --image)         need_value "$1" "${2:-}"; IMAGE="$2"; shift 2 ;;
         --update)        UPDATE=1; shift ;;
-        -h|--help)       sed -n '18,53p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --new-network)   NEW_NETWORK=1; shift ;;
+        -h|--help)       sed -n '18,54p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *)               print_error "Unknown argument: $1"; exit 2 ;;
     esac
 done
@@ -347,6 +350,29 @@ prompt_got "Coordinator answers on ${COORD_HOST}:${COORD_PORT}."
 if ! ensure_image "$BROKER_IMAGE" || ! ensure_image "$IMAGE"; then
     print_error "Pre-flight failed, nothing was changed: an image could not be pulled."
     exit 1
+fi
+
+# No saved network here means Zigbee2MQTT forms a new one on first start, and
+# makes the coordinator LEAVE whatever network it held: every device unpaired.
+# It cannot be seen from outside whether the coordinator holds one, so ask.
+if [ ! -f "$DATA_DIR/data/configuration.yaml" ] && [ ! -f "$DATA_DIR/data/coordinator_backup.json" ] \
+   && [ "$NEW_NETWORK" -eq 0 ]; then
+    if ! { : < /dev/tty; } 2>/dev/null; then
+        print_error "Pre-flight failed, nothing was changed: no saved Zigbee network in $DATA_DIR/data."
+        print_action "Restore $DATA_DIR first, or start a new network on purpose: --new-network"
+        exit 1
+    fi
+    print_action "NEEDED: was this coordinator in use before?"
+    print_hint "No saved network here, so starting now makes a NEW one and every paired device must pair again."
+    print_hint "Rebuilding? Stop here and put ${HL}$DATA_DIR${NC} back from your backup first."
+    prompt_ask "Type new to start a new network, Enter to stop:"
+    read -r _answer < /dev/tty || _answer=""
+    if [ "${_answer,,}" != "new" ]; then
+        print_error "Stopped before Zigbee2MQTT started, nothing was changed."
+        print_action "Restore $DATA_DIR, then run this again."
+        exit 1
+    fi
+    prompt_got "A new Zigbee network will be formed."
 fi
 
 print_status "Coordinator: tcp://${COORD_HOST}:${COORD_PORT}, adapter ${ADAPTER}"
