@@ -276,12 +276,13 @@ if [ -n "$BACKUP_DIR" ]; then
 set -u
 mapfile -d '' -t NEW < <(find "$BACKUP_DIR" -maxdepth 1 -type f -name '*.tar' ! -user root -print0)
 [ \${#NEW[@]} -gt 0 ] || exit 0
-# Wait for the copy to finish: the sizes stop changing, ten minutes at most.
-prev=""
-for _ in \$(seq 1 120); do
-    now="\$(stat -c '%s' -- "\${NEW[@]}" | tr '\n' ' ')"
-    [ "\$now" = "\$prev" ] && break
-    prev="\$now"; sleep 5
+# Wait for the copy to finish however long it takes: sizes unchanged for 30 s,
+# so a short network stall does not count as done.
+prev=""; still=0
+while [ "\$still" -lt 6 ]; do
+    sleep 5
+    now="\$(stat -c '%s' -- "\${NEW[@]}" 2>/dev/null | tr '\n' ' ')"
+    if [ "\$now" = "\$prev" ]; then still=\$((still + 1)); else still=0; prev="\$now"; fi
 done
 chown root:root -- "\${NEW[@]}"
 echo "Imported \${NEW[*]##*/}, restarting Home Assistant so it lists them."
