@@ -444,6 +444,7 @@ LAN_CIDR="$(lan_cidr)"
 # the first write.
 # =============================================================================
 ERRORS=()
+NOT_YET=()
 SERVED_IDS=()
 SERVED_PORTS=()
 NEEDS_LOGIN=0
@@ -494,8 +495,12 @@ while IFS= read -r line; do
 
     case "$P_KIND" in
         folder)
-            [ -d "$P_TARGET" ] || \
-                ERRORS+=("Page '$P_ID' serves the folder $P_TARGET, which does not exist.")
+            # Not an error: the module that installs it may run later (webmail
+            # comes with Mail, which reruns this script after Roundcube).
+            if [ ! -d "$P_TARGET" ]; then
+                NOT_YET+=("$P_ID ($P_TARGET)")
+                continue
+            fi
             ;;
         service)
             case "$P_TARGET" in
@@ -615,6 +620,7 @@ while IFS= read -r line; do
     fi
 
     printf '%s\n' "${PANEL_KINDS[@]}" | grep -qx "$P_KIND" || continue
+    [ "$P_KIND" = "folder" ] && [ ! -d "$P_TARGET" ] && continue
 
     vhost_file="$AVAILABLE_DIR/${PANEL_PREFIX}${P_ID}.conf"
     new_vhost="$("vhost_for_$P_KIND")"
@@ -740,6 +746,7 @@ for p in ${UPDATED+"${UPDATED[@]}"}; do print_success "Updated $p"; done
 [ ${#UNCHANGED[@]} -gt 0 ] && print_info "${#UNCHANGED[@]} page(s) already correct: ${UNCHANGED[*]}"
 [ ${#SELF_SERVED[@]} -gt 0 ] && print_info "${#SELF_SERVED[@]} page(s) served by their own installer: ${SELF_SERVED[*]}"
 [ ${#SWITCHED_OFF[@]} -gt 0 ] && print_info "${#SWITCHED_OFF[@]} page(s) switched off in PANELS_OFF: ${SWITCHED_OFF[*]}"
+[ ${#NOT_YET[@]} -gt 0 ] && print_info "${#NOT_YET[@]} page(s) skipped until their folder is installed: ${NOT_YET[*]}"
 
 if [ ${#ORPHANS[@]} -gt 0 ] && [ "$PRUNE" != "1" ]; then
     for o in "${ORPHANS[@]}"; do
