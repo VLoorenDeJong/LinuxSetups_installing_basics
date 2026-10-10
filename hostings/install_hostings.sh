@@ -252,7 +252,11 @@ for s in "${RUN[@]}"; do
     arg=""; [ "$s" != "${s%%:*}" ] && arg="${s#*:}"
     print_header "[$n/${#RUN[@]}] ${s%%:*}${arg:+ $arg}"
     if ! bash "$path" ${arg:+"$arg"}; then
-        print_error "${s%%:*} failed. Steps 1 to $((n - 1)) are done."
+        if [ "$n" -gt 1 ]; then
+            print_error "${s%%:*} failed. Steps 1 to $((n - 1)) are done."
+        else
+            print_error "${s%%:*} failed. It was the first step, so nothing is done yet."
+        fi
         print_action "Fix what it said, then run this again: it carries on from here."
         exit 1
     fi

@@ -291,25 +291,26 @@ setup_token() {
         new="$current"
     elif [ "$TEST_ONLY" = "0" ]; then
         print_action "NEEDED: $label token → Vault: ${OR}${item_vault:-?}${YL} → Item: ${OR}${item:-? (set OP_TOKEN_ITEM in $(basename "$conf"))}${YL}"
-        if [ -n "$current" ]; then
-            read_secret "   Credential [now $(masked "$current"), Enter keeps it]: "
-        else
-            read_secret "   Credential: "
-        fi
-        # Quotes and backticks ride along when a token is copied out of a
-        # command or a note; no token contains one.
-        new="$(printf '%s' "$SECRET" | tr -d "[:space:]\`\"'")"
-        unset SECRET
-        [ -z "$new" ] && new="$current"
-        if [ -z "$new" ]; then
-            print_error "No $label token given and none stored, so nothing was saved."
-            FAILED=1; return 0
-        fi
-        case "$new" in
-            ops_*) ;;
-            *) print_error "That is not a service account token: they start with ops_. Nothing was saved."
-               FAILED=1; return 0 ;;
-        esac
+        # A wrong paste asks again; Enter alone keeps the stored token or stops.
+        while :; do
+            if [ -n "$current" ]; then
+                read_secret "   Credential [now $(masked "$current"), Enter keeps it]: "
+            else
+                read_secret "   Credential [Enter alone stops]: "
+            fi
+            # Quotes and backticks ride along when a token is copied out of a
+            # command or a note; no token contains one.
+            new="$(printf '%s' "$SECRET" | tr -d "[:space:]\`\"'")"
+            unset SECRET
+            [ -z "$new" ] && new="$current"
+            if [ -z "$new" ]; then
+                print_error "No $label token given and none stored, so nothing was saved."
+                FAILED=1; return 0
+            fi
+            case "$new" in ops_*) break ;; esac
+            print_error "That is not a service account token: they start with ops_, this one starts with $(printf '%q' "${new:0:6}")."
+            print_info "Copy only the credential field of the item, then paste it again."
+        done
         prompt_got "$label token $(masked "$new")"
     else
         new="$current"
