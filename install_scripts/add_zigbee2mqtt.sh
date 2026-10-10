@@ -190,12 +190,14 @@ fi
 # --- The coordinator's address -----------------------------------------------
 CURRENT="$(env_get COORDINATOR)"
 
-# Assumes a /24 LAN. All probes run at once, so the sweep takes under a second.
+# Assumes a /24 LAN: the first three numbers of this machine's own address.
+LAN_SRC="$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p')"
+LAN_NET="${LAN_SRC%.*}"
+
+# All probes run at once, so the sweep takes under a second.
 scan_for_coordinators() {
-    local src net i
-    src="$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p')"
-    [ -n "$src" ] || return 0
-    net="${src%.*}"
+    local net="$LAN_NET" i
+    [ -n "$LAN_SRC" ] || return 0
     {
         for i in $(seq 1 254); do
             timeout 0.5 bash -c '</dev/tcp/$1/6638' _ "$net.$i" 2>/dev/null && echo "$net.$i" &
@@ -217,6 +219,7 @@ if [ -z "$COORDINATOR" ] && [ -n "$CURRENT" ]; then
     fi
 fi
 
+FOUND=()
 if [ -z "$COORDINATOR" ] && [ -z "$CURRENT" ]; then
     print_status "Looking for a coordinator on this network (port 6638)..."
     mapfile -t FOUND < <(scan_for_coordinators)
@@ -235,8 +238,22 @@ if [ -z "$COORDINATOR" ] && [ "$HAVE_TTY" -eq 1 ]; then
     print_hint "if you do not have it already:"
     print_hint "  open your router's list of connected devices and look for ${HL}SLZB${NC}"
     print_hint "  give it a fixed address there, so this never changes"
-    prompt_ask "Coordinator address" "[e.g. 192.168.1.50]: "
+    # Enter takes the first one found; a bare last number gets this LAN's prefix.
+    SUGGEST="${FOUND[0]:-}"
+    if [ -n "$SUGGEST" ]; then
+        prompt_ask "Coordinator address" "[Enter = ${SUGGEST}]: "
+    elif [ -n "$LAN_SRC" ]; then
+        prompt_ask "Coordinator address" "[${LAN_NET}.<last number>, or a full address]: "
+    else
+        prompt_ask "Coordinator address" "[e.g. 192.168.1.50]: "
+    fi
     read -r COORDINATOR < /dev/tty || COORDINATOR=""
+    COORDINATOR="${COORDINATOR//[[:space:]]/}"
+    if [ -z "$COORDINATOR" ]; then
+        COORDINATOR="$SUGGEST"
+    elif [ -n "$LAN_SRC" ] && [[ "$COORDINATOR" =~ ^[0-9]{1,3}$ ]]; then
+        COORDINATOR="${LAN_NET}.${COORDINATOR}"
+    fi
 fi
 COORDINATOR="${COORDINATOR:-$CURRENT}"
 COORD_HOST="${COORDINATOR%%:*}"
