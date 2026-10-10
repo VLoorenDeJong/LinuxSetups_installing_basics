@@ -781,6 +781,10 @@ fi
 if ! [[ "$SMB_LOGIN" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; then
     print_error "'$SMB_LOGIN' is not a valid login name (lower case, digits, - and _)."
     SMB_LOGIN=""
+elif id "$SMB_LOGIN" >/dev/null 2>&1 && [ "$(id -u "$SMB_LOGIN")" -lt 1000 ]; then
+    # root, www-data, nobody: a system account would become a writable login.
+    print_error "'$SMB_LOGIN' is a system account, so it cannot be the Samba login."
+    SMB_LOGIN=""
 elif ! id "$SMB_LOGIN" >/dev/null 2>&1; then
     # No own group: Ubuntu's sudoers gives %admin root, and a user-private
     # group named admin would match it. No shell, so it opens shares only.
