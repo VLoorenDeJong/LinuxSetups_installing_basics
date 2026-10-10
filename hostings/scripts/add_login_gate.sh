@@ -182,6 +182,8 @@ NEW_JAIL="$(cat <<'EOF'
 [login-gate]
 enabled  = true
 filter   = apache-auth
+# Debian defaults to the systemd backend, which ignores logpath.
+backend  = auto
 logpath  = /var/log/apache2/*error.log
 port     = 80,443,10000:11999
 ignoreip = 127.0.0.1/8 ::1
