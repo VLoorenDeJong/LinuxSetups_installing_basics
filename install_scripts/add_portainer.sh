@@ -238,7 +238,7 @@ for cand in "${SECRET_ASK_SH:-}" "$SCRIPT_DIR/../hostings/scripts/secret_ask.sh"
     [ -n "$cand" ] && [ -f "$cand" ] || continue
     # shellcheck source=/dev/null
     . "$cand" 2>/dev/null || true
-    [ "${SECRET_READY:-0}" = "1" ] && STORE=1
+    [ "${SECRET_READY:-0}" = "1" ] && secret_preflight >/dev/null 2>&1 && STORE=1
     break
 done
 
