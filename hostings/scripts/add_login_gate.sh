@@ -49,6 +49,36 @@ print_success() { printf "\033[32m✅ %s\033[0m\n" "$1"; }
 print_action()  { printf "\033[33m👉 %s\033[0m\n" "$1"; }
 print_error()   { printf "\033[31m❌ %s\033[0m\n" "$1"; }
 
+
+SPIN_FRAMES=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+SPIN_TICK=0
+spin_tick() {
+    printf '\r\033[K\033[34m%s %s\033[0m' "${SPIN_FRAMES[SPIN_TICK % 10]}" "$1"
+    SPIN_TICK=$((SPIN_TICK + 1))
+    sleep 0.2
+}
+
+# Watch-only: apt killed halfway leaves dpkg locked.
+run_watched() {
+    local message="$1"; shift
+    if [ "${DEBUG_MODE:-0}" = "1" ]; then "$@"; return; fi
+    local log; log="$(mktemp)"
+    "$@" >"$log" 2>&1 &
+    local pid=$!
+    while kill -0 "$pid" 2>/dev/null; do spin_tick "$message"; done
+    local rc=0
+    wait "$pid" || rc=$?
+    printf '\r\033[K'
+    if [ "$rc" -ne 0 ]; then
+        print_error "$message failed (exit $rc)"
+        tail -n 20 "$log" >&2
+        print_info "Full log: $log"
+    else
+        rm -f "$log"
+    fi
+    return $rc
+}
+
 case "${1:-}" in
     "") ;;
     -h|--help) sed -n '19,38p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -196,7 +226,7 @@ bantime.maxtime   = 1d
 EOF
 )"
 if ! command -v fail2ban-client >/dev/null 2>&1; then
-    if apt-get install -y -qq fail2ban >/dev/null 2>&1; then
+    if run_watched "Installing fail2ban" apt-get install -y -qq fail2ban; then
         print_success "Installed fail2ban for the failed-login throttle."
     else
         print_error "Could not install fail2ban, so wrong passwords are not slowed down."
