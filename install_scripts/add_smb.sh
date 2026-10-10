@@ -762,35 +762,53 @@ else
     SHARE_INFO=()
 fi
 
-# A SAMBA LOGIN FOR THE INSTALLING USER. A share that says
+# A SAMBA LOGIN, ASKED BY NAME. A share that says
 # `write list = @smbwriters` is read-only to guests and writable with this
 # login, so an anonymous device on the LAN cannot write into code that runs.
 # Trace off for the whole block: -d would otherwise print the password.
 { _xt=$-; set +x; } 2>/dev/null
 SMB_WRITERS="smbwriters"
 getent group "$SMB_WRITERS" >/dev/null || groupadd "$SMB_WRITERS"
-if [ "$ACTUAL_USER" = "root" ]; then
-    print_info "Run as root rather than through sudo, so no Samba login was made."
-    print_action "Run it from your own account: sudo bash $0"
-elif pdbedit -L 2>/dev/null | cut -d: -f1 | grep -qxF -- "$ACTUAL_USER"; then
-    usermod -aG "$SMB_WRITERS" "$ACTUAL_USER"
-    print_info "Samba login '$ACTUAL_USER' already exists."
-    print_hint "To change it: sudo smbpasswd $ACTUAL_USER, and the vault item samba-$ACTUAL_USER if there is one."
+
+# The share login is asked every run, default admin, the same on every machine.
+SMB_LOGIN="admin"
+if { : < /dev/tty; } 2>/dev/null; then
+    prompt_ask "Samba login name [Enter = admin]:" > /dev/tty
+    read -r _smb_name < /dev/tty || _smb_name=""
+    _smb_name="${_smb_name//[[:space:]]/}"
+    [ -n "$_smb_name" ] && SMB_LOGIN="$_smb_name"
+fi
+if ! [[ "$SMB_LOGIN" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; then
+    print_error "'$SMB_LOGIN' is not a valid login name (lower case, digits, - and _)."
+    SMB_LOGIN=""
+elif ! id "$SMB_LOGIN" >/dev/null 2>&1; then
+    # No own group: Ubuntu's sudoers gives %admin root, and a user-private
+    # group named admin would match it. No shell, so it opens shares only.
+    useradd --no-user-group -g users -M -s /usr/sbin/nologin "$SMB_LOGIN"
+    print_success "Made the account '$SMB_LOGIN': no shell, no password, group users."
+fi
+
+if [ -z "$SMB_LOGIN" ]; then
+    print_action "Create it later: sudo bash $0, and give a valid name"
+elif pdbedit -L 2>/dev/null | cut -d: -f1 | grep -qxF -- "$SMB_LOGIN"; then
+    usermod -aG "$SMB_WRITERS" "$SMB_LOGIN"
+    print_info "Samba login '$SMB_LOGIN' already exists."
+    print_hint "To change it: sudo smbpasswd $SMB_LOGIN, and the vault item samba-$SMB_LOGIN if there is one."
 else
-    usermod -aG "$SMB_WRITERS" "$ACTUAL_USER"
+    usermod -aG "$SMB_WRITERS" "$SMB_LOGIN"
     smb_pw=""
     _secret_ask="$(dirname "${BASH_SOURCE[0]}")/../hostings/scripts/secret_ask.sh"
     if [ -f "$_secret_ask" ]; then
         # shellcheck source=/dev/null
         . "$_secret_ask"
-        smb_pw="$(secret_ask "samba-$ACTUAL_USER" \
-            --label "a password for the shared folders (Samba login '$ACTUAL_USER')" \
+        smb_pw="$(secret_ask "samba-$SMB_LOGIN" \
+            --label "a password for the shared folders (Samba login '$SMB_LOGIN')" \
             --hint "typed in Windows Explorer when writing to a share; reading needs none")" || smb_pw=""
     elif ! { : < /dev/tty; } 2>/dev/null; then
         print_error "No terminal to ask the Samba password at."
     else
         for _try in 1 2 3; do
-            print_action "NEEDED: a password for the shared folders (Samba login '$ACTUAL_USER')"
+            print_action "NEEDED: a password for the shared folders (Samba login '$SMB_LOGIN')"
             print_hint "typed in Windows Explorer when writing to a share; reading needs none"
             prompt_ask "Password:" > /dev/tty
             smb_pw="$(read_masked)"
@@ -801,11 +819,11 @@ else
         done
     fi
 
-    if [ -n "$smb_pw" ] && printf '%s\n%s\n' "$smb_pw" "$smb_pw" | smbpasswd -s -a "$ACTUAL_USER" >/dev/null; then
-        print_success "Samba login '$ACTUAL_USER' created, in group $SMB_WRITERS"
+    if [ -n "$smb_pw" ] && printf '%s\n%s\n' "$smb_pw" "$smb_pw" | smbpasswd -s -a "$SMB_LOGIN" >/dev/null; then
+        print_success "Samba login '$SMB_LOGIN' created, in group $SMB_WRITERS"
     else
         print_error "No Samba login was created, so shares with a write list stay read-only for everyone."
-        print_action "Create it later: sudo smbpasswd -a $ACTUAL_USER"
+        print_action "Create it later: sudo smbpasswd -a $SMB_LOGIN"
     fi
     unset smb_pw
 fi
