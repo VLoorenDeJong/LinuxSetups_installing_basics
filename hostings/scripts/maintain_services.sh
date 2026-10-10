@@ -727,6 +727,19 @@ unit_state_differs() {
     return 1
 }
 
+# True when the row has a unit in at least one environment it runs in. A
+# test-only row has no live unit, so looking for app-<name>.service alone
+# healed it on every apply.
+row_has_unit() {
+    local name="$1" envs="$2" e sfx
+    for e in $(conf_get ENVS live | tr ',' ' '); do
+        row_in_env "$envs" "$e" || continue
+        sfx="$(conf_get "${e^^}_UNIT_SUFFIX" "")"
+        [ -f "/etc/systemd/system/app-${name}${sfx}.service" ] && return 0
+    done
+    return 1
+}
+
 NEED_JOBS=0
 NEED_GRANT=0
 JENKINS_JOBS_DIR="${JENKINS_JOBS_DIR:-/var/lib/jenkins/jobs}"
@@ -740,7 +753,7 @@ while IFS='|' read -r _t _n _p _pa _su _ds _op _au _repo _br _envs _aus _rm _rt 
     [ -z "$_n" ] && continue
     case "$_t" in *=*) continue ;; esac
 
-    if [ "$_t" = "app" ] && [ ! -f "/etc/systemd/system/app-${_n}.service" ]; then
+    if [ "$_t" = "app" ] && ! row_has_unit "$_n" "$_envs"; then
         HEAL_ROWS+=("$_n")
         NEED_GRANT=1
         print_info "$_n has no unit on this machine, so it is written whatever the diff said."
