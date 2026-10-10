@@ -355,6 +355,8 @@ if [ "$INITIALISED" -eq 0 ]; then
         fi
     fi
     ( umask 077; printf '%s' "$PASSWORD" > "$SECRET_FILE" )
+    # Kept until the environment is named: a typed password exists only now.
+    NAME_PW="$PASSWORD"
     unset PASSWORD
     write_compose yes || true
 else
@@ -406,9 +408,12 @@ fi
 name_environment() {
     local api="http://127.0.0.1:${PORT}/api" host pw jwt id
     host="$(hostname)"
-    pw="$(entry_password 2>/dev/null)" || pw=""
+    { _xt=$-; set +x; } 2>/dev/null
+    pw="${NAME_PW:-}"
+    if [ -z "$pw" ] && [ "$STORE" -eq 1 ]; then pw="$(entry_password 2>/dev/null)" || pw=""; fi
     if [ -z "$pw" ]; then
-        print_info "No admin password in the secret store, so the environment keeps its name."
+        [[ $_xt == *x* ]] && set -x
+        print_info "No admin password at hand (typed only on the first install), so the environment keeps its name."
         return 0
     fi
     # A typed password may hold a quote or a backslash, so a JSON encoder
@@ -418,6 +423,7 @@ name_environment() {
         | curl -s -H 'Content-Type: application/json' --data @- "$api/auth" \
         | sed -n 's/.*"jwt":"\([^"]*\)".*/\1/p')"
     unset pw
+    [[ $_xt == *x* ]] && set -x
     if [ -z "$jwt" ]; then
         print_error "Portainer refused the stored admin password, so the environment keeps its name."
         return 0
@@ -441,7 +447,8 @@ name_environment() {
             || print_error "Portainer refused to add this machine's Docker; add it on the first page visit."
     fi
 }
-[ "$STORE" -eq 1 ] && name_environment
+name_environment
+unset NAME_PW
 
 echo ""
 print_success "Portainer is up on http://127.0.0.1:${PORT} (loopback only)."
