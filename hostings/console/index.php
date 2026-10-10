@@ -4130,7 +4130,7 @@ if ($myRole !== 'full') {
          The two hidden ones are the halves it drives: the dialog presses them.
          Keeping them as real submits means the form still posts its config the
          one way it always did. -->
-    <div class="row-actions" style="margin-top:.5rem">
+    <div class="row-actions" style="margin-top:.5rem;margin-bottom:1rem">
       <button type="submit" name="action" value="recheck" id="btn-check" hidden></button>
       <button type="submit" name="action" value="save_apply" id="btn-save-apply" hidden></button>
       <button type="submit" name="action" value="save_fast" id="btn-save-fast" hidden></button>
