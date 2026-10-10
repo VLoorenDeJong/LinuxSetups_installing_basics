@@ -78,6 +78,75 @@ run_watched() {
     return $rc
 }
 
+# Docker prints no percentage without a terminal, but it names every layer, so
+# the bar counts layers: half for downloading, half for unpacking.
+BAR_WIDTH=28
+
+# Prints "<percent> <done>/<total>" once the log names a layer, else nothing.
+pull_progress() {
+    local log="$1" total have down unpacked pct
+    [ -s "$log" ] || return 0
+    total="$(grep -c ': Pulling fs layer' "$log" 2>/dev/null)"
+    down="$(grep -c -E ': (Download complete|Already exists)' "$log" 2>/dev/null)"
+    unpacked="$(grep -c -E ': (Pull complete|Already exists)' "$log" 2>/dev/null)"
+    have="$(grep -c ": Already exists" "$log" 2>/dev/null)"
+    total=$(( ${total:-0} + ${have:-0} ))
+    [ "$total" -gt 0 ] || return 0
+    pct=$(( (${down:-0} + ${unpacked:-0}) * 50 / total ))
+    [ "$pct" -gt 100 ] && pct=100
+    echo "$pct ${unpacked:-0}/${total}"
+}
+
+# [████░░░░] ⠸  52%  layers 3/8: filled by percent, or a sliding block before
+# the first figure (the indeterminate bar).
+draw_bar() {
+    local pct="$1" detail="$2" filled bar i pos
+    bar=""
+    if [ -n "$pct" ]; then
+        filled=$(( pct * BAR_WIDTH / 100 ))
+        for ((i = 0; i < BAR_WIDTH; i++)); do
+            [ "$i" -lt "$filled" ] && bar+="█" || bar+="░"
+        done
+        printf '\r\033[K[%s] %s %3d%%  %s' "$bar" "${SPIN_FRAMES[SPIN_TICK % 10]}" "$pct" "$detail"
+    else
+        pos=$(( SPIN_TICK % BAR_WIDTH ))
+        for ((i = 0; i < BAR_WIDTH; i++)); do
+            [ "$i" -ge "$pos" ] && [ "$i" -lt $((pos + 4)) ] && bar+="█" || bar+="░"
+        done
+        printf '\r\033[K[%s] %s  %s' "$bar" "${SPIN_FRAMES[SPIN_TICK % 10]}" "$detail"
+    fi
+    SPIN_TICK=$((SPIN_TICK + 1))
+    sleep 0.2
+}
+
+# Watch-only like run_watched, with a bar counting layers downloaded and unpacked.
+run_pull() {
+    local img="$1" p
+    if [ "$DEBUG_MODE" = "1" ]; then docker pull "$img"; return; fi
+    local log; log="$(mktemp)"
+    docker pull "$img" >"$log" 2>&1 &
+    local pid=$!
+    while kill -0 "$pid" 2>/dev/null; do
+        p="$(pull_progress "$log")"
+        if [ -n "$p" ]; then
+            draw_bar "${p%% *}" "layers ${p##* }  ${img##*/}"
+        else
+            draw_bar "" "${img##*/}"
+        fi
+    done
+    local rc=0
+    wait "$pid" || rc=$?
+    printf '\r\033[K'
+    if [ "$rc" -ne 0 ]; then
+        print_error "Pulling $img failed (exit $rc)"
+        tail -n 20 "$log" >&2
+        print_info "Full log: $log"
+    else
+        rm -f "$log"
+    fi
+    return $rc
+}
+
 need_value() { [ -n "$2" ] || { print_error "$1 needs a value."; exit 2; }; }
 
 # --- Arguments ---------------------------------------------------------------
@@ -130,7 +199,7 @@ fi
 
 # Pulled only when missing or with --update, so a re-run never jumps a version.
 if [ "$UPDATE" -eq 1 ] || ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-    if ! run_watched "Pulling $IMAGE" docker pull "$IMAGE"; then
+    if ! run_pull "$IMAGE"; then
         print_error "Pre-flight failed, nothing was changed: could not pull $IMAGE."
         exit 1
     fi
