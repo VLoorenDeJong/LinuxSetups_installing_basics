@@ -399,6 +399,50 @@ if [ "$INITIALISED" -eq 0 ]; then
     print_success "Admin account 'admin' made; the password file is deleted."
 fi
 
+# --- This machine's Docker, named after the machine --------------------------
+# Portainer calls it "local" on every machine, which says nothing once two
+# machines' environments sit side by side. Made here when missing, so the
+# first page visit also skips Portainer's "Get started" wizard.
+name_environment() {
+    local api="http://127.0.0.1:${PORT}/api" host pw jwt id
+    host="$(hostname)"
+    pw="$(entry_password 2>/dev/null)" || pw=""
+    if [ -z "$pw" ]; then
+        print_info "No admin password in the secret store, so the environment keeps its name."
+        return 0
+    fi
+    # A typed password may hold a quote or a backslash, so a JSON encoder
+    # writes the sign-in, never printf.
+    jwt="$(printf '%s' "$pw" \
+        | python3 -c 'import json, sys; print(json.dumps({"username": "admin", "password": sys.stdin.read()}))' \
+        | curl -s -H 'Content-Type: application/json' --data @- "$api/auth" \
+        | sed -n 's/.*"jwt":"\([^"]*\)".*/\1/p')"
+    unset pw
+    if [ -z "$jwt" ]; then
+        print_error "Portainer refused the stored admin password, so the environment keeps its name."
+        return 0
+    fi
+    if curl -s -H "Authorization: Bearer $jwt" "$api/endpoints?name=$host" | grep -q '"Id":'; then
+        print_success "Docker environment already named $host."
+        return 0
+    fi
+    id="$(curl -s -H "Authorization: Bearer $jwt" "$api/endpoints?name=local" \
+        | grep -o '"Id":[0-9]*' | head -n1 | cut -d: -f2)"
+    if [ -n "$id" ]; then
+        curl -s -o /dev/null -w '%{http_code}' -X PUT -H "Authorization: Bearer $jwt" \
+            -H 'Content-Type: application/json' --data "{\"Name\":\"$host\"}" \
+            "$api/endpoints/$id" | grep -q '^200$' \
+            && print_success "Docker environment renamed from local to $host." \
+            || print_error "Portainer refused the rename; the environment is still called local."
+    else
+        curl -s -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $jwt" \
+            -F "Name=$host" -F "EndpointCreationType=1" "$api/endpoints" | grep -q '^200$' \
+            && print_success "Docker environment $host added." \
+            || print_error "Portainer refused to add this machine's Docker; add it on the first page visit."
+    fi
+}
+[ "$STORE" -eq 1 ] && name_environment
+
 echo ""
 print_success "Portainer is up on http://127.0.0.1:${PORT} (loopback only)."
 print_info "Reach it from the LAN through a reverse proxy, or over a tunnel:"
