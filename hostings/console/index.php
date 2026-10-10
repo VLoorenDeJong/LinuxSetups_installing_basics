@@ -4259,6 +4259,11 @@ if ($myRole !== 'full') {
     <div class="row-actions" style="margin:.6rem 0 .85rem;display:none" data-pane="smb">
       <?php if ($myRole === 'full'): ?>
         <span class="share-window<?= $swOpen ? ' running' : '' ?><?= $swStuck ? ' bad' : '' ?>" id="share-window">
+          <?php if ($swOpen): ?>
+            <span>Writable without a password: <strong id="share-window-left" data-ends="<?= (int) $sw['ends'] ?>"></strong> left.</span>
+          <?php elseif ($swStuck): ?>
+            <strong>Still open after its time ran out.</strong>
+          <?php endif; ?>
           <details class="sw-menu">
             <summary class="svc-all smb">🔓 <?= $swOpen ? 'Restart timer' : 'Open without password' ?> ▾</summary>
             <div class="sw-list">
@@ -4267,11 +4272,6 @@ if ($myRole !== 'full') {
               <?php endforeach; ?>
             </div>
           </details>
-          <?php if ($swOpen): ?>
-            Writable without a password: <strong id="share-window-left" data-ends="<?= (int) $sw['ends'] ?>"></strong> left.
-          <?php elseif ($swStuck): ?>
-            <strong>Still open after its time ran out.</strong>
-          <?php endif; ?>
           <?php if ($swOpen || $swStuck): ?>
             <button type="submit" form="share-window-close">Close now</button>
           <?php endif; ?>
