@@ -292,6 +292,31 @@ fi
 
 export ONLY_ROWS
 
+# A machine page only: the config differs from the last applied copy in PANEL
+# lines alone, so only the script that serves the pages runs. No copy yet, or
+# anything else differs, and the full apply below runs as before.
+APPLIED_COPY="/var/lib/hosting-manager/last-applied.conf"
+non_panel() { grep -vE '^[[:space:]]*(#|$|PANEL[[:space:]]*=)' "$1" 2>/dev/null || true; }
+save_applied_copy() {
+    [ -d /var/lib/hosting-manager ] || return 0
+    install -m 0644 -o root -g root "$SITES_CONF" "$APPLIED_COPY" 2>/dev/null || true
+}
+if [ "$CHANGED_ONLY" -eq 1 ] && [ -r "$APPLIED_COPY" ] \
+   && ! cmp -s "$SITES_CONF" "$APPLIED_COPY" \
+   && [ "$(non_panel "$SITES_CONF")" = "$(non_panel "$APPLIED_COPY")" ]; then
+    print_info "Only machine pages changed, so only add_panel_vhosts.sh runs."
+    _panel_args=()
+    [ "$PRUNE" -eq 1 ] && _panel_args=(--prune)
+    print_header "add_panel_vhosts.sh"
+    if ! bash "$SCRIPT_DIR/add_panel_vhosts.sh" "${_panel_args[@]}"; then
+        print_error "add_panel_vhosts.sh failed, so the machine pages may not match $SITES_CONF."
+        exit 1
+    fi
+    save_applied_copy
+    print_success "Machine pages match $SITES_CONF"
+    exit 0
+fi
+
 # -----------------------------------------------------------------------------
 # Config readers. Duplicated verbatim rather than sourced, so this script stays
 # runnable on its own on a machine that has only this file copied to it.
@@ -1121,6 +1146,7 @@ if [ -d /var/lib/hosting-manager ]; then
         rm -f /var/lib/hosting-manager/last-applied-commit.tmp
     fi
     unset _head
+    save_applied_copy
 fi
 
 # 3 means "applied, but a site did not answer", which is the whole reason the
