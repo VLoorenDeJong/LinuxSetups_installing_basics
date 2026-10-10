@@ -93,31 +93,60 @@ run_watched() {
 
 # Docker prints no percentage without a terminal, but it names every layer, so
 # the bar counts layers: half for downloading, half for unpacking.
-pull_bar() {
-    local log="$1" total have down unpacked pct filled bar
-    [ -s "$log" ] || { echo ""; return; }
+BAR_WIDTH=28
+
+# Prints "<percent> <done>/<total>" once the log names a layer, else nothing.
+pull_progress() {
+    local log="$1" total have down unpacked pct
+    [ -s "$log" ] || return 0
     total="$(grep -c ': Pulling fs layer' "$log" 2>/dev/null)"
     down="$(grep -c -E ': (Download complete|Already exists)' "$log" 2>/dev/null)"
     unpacked="$(grep -c -E ': (Pull complete|Already exists)' "$log" 2>/dev/null)"
     have="$(grep -c ": Already exists" "$log" 2>/dev/null)"
     total=$(( ${total:-0} + ${have:-0} ))
-    [ "$total" -gt 0 ] || { echo ""; return; }
+    [ "$total" -gt 0 ] || return 0
     pct=$(( (${down:-0} + ${unpacked:-0}) * 50 / total ))
     [ "$pct" -gt 100 ] && pct=100
-    filled=$(( pct / 5 ))
-    printf -v bar '%*s' "$filled" ''; bar="${bar// /#}"
-    printf -v bar '%-20s' "$bar"; bar="${bar// /-}"
-    echo " [${bar}] ${pct}%, layers downloaded ${down:-0}/${total}, unpacked ${unpacked:-0}/${total}"
+    echo "$pct ${unpacked:-0}/${total}"
 }
 
-# Watch-only like run_watched, with the layer bar on the spinner line.
+# [████░░░░] ⠸  52%  layers 3/8: filled by percent, or a sliding block before
+# the first figure (the indeterminate bar).
+draw_bar() {
+    local pct="$1" detail="$2" filled bar i pos
+    bar=""
+    if [ -n "$pct" ]; then
+        filled=$(( pct * BAR_WIDTH / 100 ))
+        for ((i = 0; i < BAR_WIDTH; i++)); do
+            [ "$i" -lt "$filled" ] && bar+="█" || bar+="░"
+        done
+        printf '\r\033[K[%s] %s %3d%%  %s' "$bar" "${SPIN_FRAMES[SPIN_TICK % 10]}" "$pct" "$detail"
+    else
+        pos=$(( SPIN_TICK % BAR_WIDTH ))
+        for ((i = 0; i < BAR_WIDTH; i++)); do
+            [ "$i" -ge "$pos" ] && [ "$i" -lt $((pos + 4)) ] && bar+="█" || bar+="░"
+        done
+        printf '\r\033[K[%s] %s  %s' "$bar" "${SPIN_FRAMES[SPIN_TICK % 10]}" "$detail"
+    fi
+    SPIN_TICK=$((SPIN_TICK + 1))
+    sleep 0.2
+}
+
+# Watch-only like run_watched, with a bar counting layers downloaded and unpacked.
 run_pull() {
-    local img="$1"
+    local img="$1" p
     if [ "$DEBUG_MODE" = "1" ]; then docker pull "$img"; return; fi
     local log; log="$(mktemp)"
     docker pull "$img" >"$log" 2>&1 &
     local pid=$!
-    while kill -0 "$pid" 2>/dev/null; do spin_tick "Pulling $img$(pull_bar "$log")"; done
+    while kill -0 "$pid" 2>/dev/null; do
+        p="$(pull_progress "$log")"
+        if [ -n "$p" ]; then
+            draw_bar "${p%% *}" "layers ${p##* }  ${img##*/}"
+        else
+            draw_bar "" "${img##*/}"
+        fi
+    done
     local rc=0
     wait "$pid" || rc=$?
     printf '\r\033[K'
