@@ -172,7 +172,7 @@ read_secret() {
 read_password_twice() {
     local p1 p2
     while true; do
-        read_secret "   Portainer admin password: " || return 1
+        read_secret "   Password for Portainer admin: " || return 1
         p1="$SECRET"; unset SECRET
         if [ ${#p1} -lt 12 ]; then
             printf "   \033[33mAt least 12 characters: Portainer refuses shorter ones.\033[0m\n" > /dev/tty

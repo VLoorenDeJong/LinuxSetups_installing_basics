@@ -814,9 +814,9 @@ else
         for _try in 1 2 3; do
             print_action "NEEDED: a password for the shared folders (Samba login '$SMB_LOGIN')"
             print_hint "typed in Windows Explorer when writing to a share; reading needs none"
-            prompt_ask "Password:" > /dev/tty
+            prompt_ask "Password for $SMB_LOGIN:" > /dev/tty
             smb_pw="$(read_masked)"
-            prompt_ask "Password, once more:" > /dev/tty
+            prompt_ask "Again:" > /dev/tty
             [ -n "$smb_pw" ] && [ "$smb_pw" = "$(read_masked)" ] && break
             print_error "Empty, or the two did not match."
             smb_pw=""

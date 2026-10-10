@@ -188,7 +188,7 @@ secret_ask() {
             # Nothing checks a typed value that has no validator, and it is
             # about to become the vault's truth. So it is typed twice.
             if [ -z "$validate" ] && [ "$save" -eq 1 ] && [ "$multiline" -eq 0 ]; then
-                _sa_prompt "$label, once more:"
+                _sa_prompt "Again:"
                 again="$(_sa_read_masked)"
                 if [ "$value" != "$again" ]; then
                     value=""

@@ -540,7 +540,7 @@ else
         echo ""
         print_action "NEEDED: a password for Nextcloud's 'admin' account"
         while true; do
-            read_secret "   Nextcloud admin password: "; p1="$SECRET"; unset SECRET
+            read_secret "   Password for Nextcloud admin: "; p1="$SECRET"; unset SECRET
             if [ ${#p1} -lt 12 ]; then
                 printf "   \033[33mAt least 12 characters.\033[0m\n" > /dev/tty; continue
             fi
