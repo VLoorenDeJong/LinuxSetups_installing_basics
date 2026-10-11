@@ -114,6 +114,7 @@ const RELOADSMB   = '/usr/local/sbin/reload_samba.sh';
 const LISTDIRS    = '/usr/local/sbin/list_folders.sh';
 const SHAREACL    = '/usr/local/sbin/set_share_access.sh';
 const SHAREWIN    = '/usr/local/sbin/share_window.sh';
+const BACKUPNOW   = '/usr/local/sbin/backup_now.sh';
 const SHAREWIN_MINUTES = ['5' => '5 minutes', '10' => '10 minutes', '15' => '15 minutes',
                           '60' => '1 hour', '120' => '2 hours', '240' => '4 hours'];
 const MANAGEMAIL  = '/usr/local/sbin/manage_mail.sh';
@@ -2815,6 +2816,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $messageClass = $rc === 0 ? 'good' : 'bad';
     }
 
+    // Runs the installed backup unit once; the script chooses nothing else.
+    if ($action === 'backupnow') {
+        exec('sudo ' . BACKUPNOW . ' start 2>&1', $lines, $rc);
+        $output = strip_ansi(implode("\n", $lines));
+        $message = $rc === 0 ? 'Backup started.' : 'The backup did not start. Its answer is below.';
+        $messageClass = $rc === 0 ? 'good' : 'bad';
+    }
+
     if ($action === 'reboot') {
         // The script refuses unless an update asked for it and Jenkins is idle.
         exec('sudo ' . REBOOT . ' 2>&1', $lines, $rc);
@@ -2837,7 +2846,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     //
     // The message travels as a code, never as text. A message put in the query
     // string is a message an attacker can choose.
-    $changed = ['save', 'save_apply', 'save_fast', 'savesmb', 'reloadsmb', 'setaccess', 'apply', 'fixdrift', 'setmailpw', 'provision', 'provision_create', 'promote', 'testcert', 'update', 'reboot', 'rerunstep', 'upgradevote', 'upgradepause', 'upgraderesume', 'upgradepublish', 'sharewindow', 'sharewindowclose'];
+    $changed = ['save', 'save_apply', 'save_fast', 'savesmb', 'reloadsmb', 'setaccess', 'apply', 'fixdrift', 'setmailpw', 'provision', 'provision_create', 'promote', 'testcert', 'update', 'reboot', 'rerunstep', 'upgradevote', 'upgradepause', 'upgraderesume', 'upgradepublish', 'sharewindow', 'sharewindowclose', 'backupnow'];
     // Written before the redirect, because the redirect is what throws the
     // message away. A failed save used to skip the redirect entirely, so F5
     // re-POSTed the form and replayed ops that had already run.
@@ -2907,6 +2916,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'upgradepublish'   => 'upgpublished',
             'sharewindow'      => 'shareopen',
             'sharewindowclose' => 'shareclosed',
+            'backupnow'        => 'backupstarted',
         ];
         // Only ever a number, and only for the apply: the dialog uses it to
         // tell a job that has not started from one that is over.
@@ -2965,6 +2975,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['done'])) {
         'upgpublished' => 'Published: live now runs the version test ran.',
         'shareopen'    => 'The shares are writable without a password until the timer runs out.',
         'shareclosed'  => 'The shares are back to their own settings.',
+        'backupstarted' => 'Backup started. It takes a minute or two; the time beside the button updates when it is done.',
         'checked'     => 'Checked. Nothing was written and nothing was pushed.',
         'checkfailed' => 'The check failed. The report below says why.',
     ];
@@ -4078,6 +4089,25 @@ if ($myRole !== 'full') {
     <form method="post" id="share-window-open" hidden><input type="hidden" name="action" value="sharewindow"></form>
     <form method="post" id="share-window-close" hidden><input type="hidden" name="action" value="sharewindowclose"></form>
   <?php endif; ?>
+  <?php /* Back up now: in every tab whose data the backup copies, and only on a
+           machine where the backup unit is installed. One form, many buttons. */
+    $bnLines = [];
+    exec('sudo ' . BACKUPNOW . ' status 2>/dev/null', $bnLines);
+    $bn = json_decode(implode('', $bnLines), true) ?: [];
+    $bnHtml = '';
+    if (!empty($bn['installed'])):
+      $bnLast = (int) ($bn['last'] ?? 0);
+      $bnWhen = $bnLast > 0 ? date('j M H:i', $bnLast) : 'never';
+      $bnBad  = $bnLast > 0 && ($bn['result'] ?? '') !== 'success';
+      $bnHtml = '<span class="backup-now' . ($bnBad ? ' bad' : '') . '">'
+              . (!empty($bn['running'])
+                  ? '<span>Backup running…</span>'
+                  : '<span>Last backup: <strong>' . htmlspecialchars($bnWhen, ENT_QUOTES) . '</strong>'
+                    . ($bnBad ? ' (failed)' : '') . '</span>'
+                    . '<button type="submit" form="backup-now-form" class="svc-all">💾 Back up now</button>')
+              . '</span>'; ?>
+    <form method="post" id="backup-now-form" hidden><input type="hidden" name="action" value="backupnow"></form>
+  <?php endif; ?>
   <form method="post" class="card" id="rows-form">
     <h2 style="font-size:1.05rem;margin:.1rem 0 .75rem" data-i18n="servesH">What this machine serves</h2>
 
@@ -4223,6 +4253,7 @@ if ($myRole !== 'full') {
               id="svc-start-all">Start all</button>
       <button type="button" class="svc-all danger" data-svcpane="stop"
               id="svc-stop-all">Stop all</button>
+      <?= $bnHtml ?>
       <button type="button" class="add-btn app" data-kind="app">Add an application</button>
     </div>
 
@@ -4239,6 +4270,7 @@ if ($myRole !== 'full') {
     </div>
 
     <div class="row-actions" style="margin:.6rem 0 .85rem;display:none" data-pane="machine">
+      <?= $bnHtml ?>
       <button type="button" class="add-btn panel" id="add-panel" data-kind="panel">Add a page</button>
     </div>
 
@@ -4286,6 +4318,7 @@ if ($myRole !== 'full') {
            into the live tree does not. -->
       <button type="submit" name="action" value="reloadsmb" class="svc-all smb"
               id="btn-smb-reload">Reload Samba</button>
+      <?= $bnHtml ?>
       <button type="button" class="add-btn smb" id="add-smb" data-kind="smb">Add a shared folder</button>
     </div>
 

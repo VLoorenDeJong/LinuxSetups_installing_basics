@@ -221,6 +221,7 @@ LISTBRANCHES="/usr/local/sbin/list_repo_branches.sh"
 MANAGEREPO="/usr/local/sbin/manage_repo.sh"
 SHAREACL="/usr/local/sbin/set_share_access.sh"
 SHAREWIN="/usr/local/sbin/share_window.sh"
+BACKUPNOW="/usr/local/sbin/backup_now.sh"
 MANAGEMAIL="/usr/local/sbin/manage_mail.sh"
 MAILPW="/usr/local/sbin/set_mail_password.sh"
 # Read only: it reports what to type into Outlook, from what Dovecot and Postfix
@@ -286,6 +287,7 @@ SRC_LISTBRANCHES="$SCRIPT_DIR/list_repo_branches.sh"
 SRC_MANAGEREPO="$SCRIPT_DIR/manage_repo.sh"
 SRC_SHAREACL="$SCRIPT_DIR/set_share_access.sh"
 SRC_SHAREWIN="$SCRIPT_DIR/share_window.sh"
+SRC_BACKUPNOW="$SCRIPT_DIR/backup_now.sh"
 SRC_MANAGEMAIL="$SCRIPT_DIR/manage_mail.sh"
 SRC_MAILPW="$SCRIPT_DIR/set_mail_password.sh"
 SRC_MAILCLIENT="$SCRIPT_DIR/mail_client_settings.sh"
@@ -643,6 +645,8 @@ print_success "Installed $SHAREACL"
 
 install -m 0700 -o root -g root "$SRC_SHAREWIN" "$SHAREWIN"
 print_success "Installed $SHAREWIN"
+install -m 0700 -o root -g root "$SRC_BACKUPNOW" "$BACKUPNOW"
+print_success "Installed $BACKUPNOW"
 install -m 0700 -o root -g root "$SRC_MANAGEMAIL" "$MANAGEMAIL"
 print_success "Installed $MANAGEMAIL"
 
@@ -767,6 +771,8 @@ TMP_SUDOERS="$(mktemp)"
     #
     # list_folders.sh reports directory NAMES only, never files, never contents.
     #
+    # backup_now.sh takes two fixed words and starts one fixed unit.
+    #
     # share_window.sh takes no path at all: the minutes are one of six fixed
     # values, each granted by name, and the folders come from the running
     # smb.conf with the same refusals as set_share_access.sh.
@@ -790,7 +796,7 @@ TMP_SUDOERS="$(mktemp)"
     # shows arguments to every account on the machine. It refuses dkim, refuses
     # anything under eight characters, and rebuilds and re-checks the maildir
     # path the same way manage_mail.sh does.
-    echo "${PAGE_USER} ALL=(root) NOPASSWD: ${PUBLISHER}, ${CHECKER}, ${APPLIER}, ${UPDATER}, ${REBOOTER} \"\", ${PROVISIONER}, ${PROVISIONER} --create, ${PROVISIONER} --step *, ${DOMAINS}, ${JOBSTATUS}, ${JOBSTATUS} --history *, ${JOBSTATUS} --stages *, ${JOBLOG} *, ${SITEJOB} *, ${DEPLOYEDSHA} *, ${AUTHUSERS} --list, ${AUTHUSERS} --add *, ${AUTHUSERS} --password *, ${AUTHUSERS} --self-password *, ${AUTHUSERS} --disable *, ${AUTHUSERS} --enable *, ${AUTHUSERS} --delete *, ${AUTHUSERS} --meta *, ${AUTHUSERS} --role-of *, ${AUTHUSERS} --email-of *, ${AUTHUSERS} --role-holders, ${REQUESTS} --list, ${REQUESTS} --add *, ${REQUESTS} --get *, ${REQUESTS} --approve *, ${REQUESTS} --decline *, ${REQUESTS} --seen *, ${REQUESTS} --withdraw *, ${CHECKDOMAIN} *, ${PROMOTE} *, ${MAILSET} --read *, ${MAILSET} --write *, ${SVCCTL} *, ${FASTAPPLY}, ${GOLIVE}, ${GOLIVE} --check, ${PUBSMB}, ${RELOADSMB}, ${LISTDIRS}, ${LISTDIRS} *, ${LISTREPOS}, ${LISTPROJECTS} *, ${LISTBRANCHES} *, ${READSETTINGS} *, ${MANAGEREPO} --archive *, ${MANAGEREPO} --delete *, ${SHAREACL} --check *, ${SHAREACL} --set *, ${SHAREWIN} open 5, ${SHAREWIN} open 10, ${SHAREWIN} open 15, ${SHAREWIN} open 60, ${SHAREWIN} open 120, ${SHAREWIN} open 240, ${SHAREWIN} close, ${SHAREWIN} status, ${MANAGEMAIL} --check *, ${MANAGEMAIL} --forward *, ${MANAGEMAIL} --retire *, ${MANAGEMAIL} --unforward *, ${MANAGEMAIL} --purge *, ${MAILPW} --check *, ${MAILPW} --set *, ${MAILCLIENT} *, ${PERSONENTRY} --share *, ${PERSONENTRY} --share-mailbox *, ${PERSONENTRY} --recovery *, ${READAUDIT}, ${UPGATE} list, ${UPGATE} vote *, ${UPGATE} pause *, ${UPGATE} resume *, ${UPGATE} publish *"
+    echo "${PAGE_USER} ALL=(root) NOPASSWD: ${PUBLISHER}, ${CHECKER}, ${APPLIER}, ${UPDATER}, ${REBOOTER} \"\", ${PROVISIONER}, ${PROVISIONER} --create, ${PROVISIONER} --step *, ${DOMAINS}, ${JOBSTATUS}, ${JOBSTATUS} --history *, ${JOBSTATUS} --stages *, ${JOBLOG} *, ${SITEJOB} *, ${DEPLOYEDSHA} *, ${AUTHUSERS} --list, ${AUTHUSERS} --add *, ${AUTHUSERS} --password *, ${AUTHUSERS} --self-password *, ${AUTHUSERS} --disable *, ${AUTHUSERS} --enable *, ${AUTHUSERS} --delete *, ${AUTHUSERS} --meta *, ${AUTHUSERS} --role-of *, ${AUTHUSERS} --email-of *, ${AUTHUSERS} --role-holders, ${REQUESTS} --list, ${REQUESTS} --add *, ${REQUESTS} --get *, ${REQUESTS} --approve *, ${REQUESTS} --decline *, ${REQUESTS} --seen *, ${REQUESTS} --withdraw *, ${CHECKDOMAIN} *, ${PROMOTE} *, ${MAILSET} --read *, ${MAILSET} --write *, ${SVCCTL} *, ${FASTAPPLY}, ${GOLIVE}, ${GOLIVE} --check, ${PUBSMB}, ${RELOADSMB}, ${LISTDIRS}, ${LISTDIRS} *, ${LISTREPOS}, ${LISTPROJECTS} *, ${LISTBRANCHES} *, ${READSETTINGS} *, ${MANAGEREPO} --archive *, ${MANAGEREPO} --delete *, ${SHAREACL} --check *, ${SHAREACL} --set *, ${SHAREWIN} open 5, ${SHAREWIN} open 10, ${SHAREWIN} open 15, ${SHAREWIN} open 60, ${SHAREWIN} open 120, ${SHAREWIN} open 240, ${SHAREWIN} close, ${SHAREWIN} status, ${BACKUPNOW} start, ${BACKUPNOW} status, ${MANAGEMAIL} --check *, ${MANAGEMAIL} --forward *, ${MANAGEMAIL} --retire *, ${MANAGEMAIL} --unforward *, ${MANAGEMAIL} --purge *, ${MAILPW} --check *, ${MAILPW} --set *, ${MAILCLIENT} *, ${PERSONENTRY} --share *, ${PERSONENTRY} --share-mailbox *, ${PERSONENTRY} --recovery *, ${READAUDIT}, ${UPGATE} list, ${UPGATE} vote *, ${UPGATE} pause *, ${UPGATE} resume *, ${UPGATE} publish *"
 } > "$TMP_SUDOERS"
 
 if ! visudo -cf "$TMP_SUDOERS" >/dev/null 2>&1; then

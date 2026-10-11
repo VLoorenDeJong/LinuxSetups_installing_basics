@@ -1087,6 +1087,8 @@ input.bad, select.bad {
 /* The share write window: one button, its times folded inside it. */
 .share-window { display: inline-flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
 .share-window.bad { color: var(--bad); }
+.backup-now { display: inline-flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.backup-now.bad { color: var(--bad); }
 .sw-menu { position: relative; }
 .sw-menu > summary { list-style: none; }
 .sw-menu > summary::-webkit-details-marker { display: none; }
