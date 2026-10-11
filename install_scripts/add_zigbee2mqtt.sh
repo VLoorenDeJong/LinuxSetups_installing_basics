@@ -43,13 +43,18 @@ unset _a _dbg_args
 #   add_zigbee2mqtt.sh --coordinator 192.168.1.50
 #   add_zigbee2mqtt.sh --coordinator 192.168.1.50:6638 --adapter zstack
 #   add_zigbee2mqtt.sh --update                     # pull a newer image
-#   add_zigbee2mqtt.sh --new-network                # no saved network: start one, no question
+#   add_zigbee2mqtt.sh --new-network                # no saved network: form one, no question
+#   add_zigbee2mqtt.sh --wait-for-restore           # no saved network: wait, no question
+#
+# NO SAVED NETWORK: asks new or restore later. Restore later makes the container
+# but does NOT start it, so the coordinator keeps its old network; the console's
+# Restore puts the data back and /etc/restore-now.d/zigbee2mqtt starts it.
 #
 # --adapter: ember for Silicon Labs chips (SLZB-06M, -06Mg24, -06Mg26, the
 # default), zstack for Texas Instruments ones (SLZB-06, -06p7, -06p10).
 #
 # Exit codes:
-#   0  Zigbee2MQTT is up and connected
+#   0  Zigbee2MQTT is up and connected, or made and waiting for a restore
 #   1  something needed for the run is missing or failed
 #   2  bad usage
 # =============================================================================
@@ -183,6 +188,7 @@ BROKER_UID="1883"
 MQTT_USER="zigbee2mqtt"
 UPDATE=0
 NEW_NETWORK=0
+WAIT_REQUESTED=0
 
 need_value() { [ -n "$2" ] || { print_error "$1 needs a value."; exit 2; }; }
 
@@ -200,7 +206,8 @@ while [ $# -gt 0 ]; do
         --image)         need_value "$1" "${2:-}"; IMAGE="$2"; shift 2 ;;
         --update)        UPDATE=1; shift ;;
         --new-network)   NEW_NETWORK=1; shift ;;
-        -h|--help)       sed -n '18,54p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --wait-for-restore) WAIT_REQUESTED=1; shift ;;
+        -h|--help)       sed -n '18,59p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *)               print_error "Unknown argument: $1"; exit 2 ;;
     esac
 done
@@ -355,24 +362,22 @@ fi
 # No saved network here means Zigbee2MQTT forms a new one on first start, and
 # makes the coordinator LEAVE whatever network it held: every device unpaired.
 # It cannot be seen from outside whether the coordinator holds one, so ask.
-if [ ! -f "$DATA_DIR/data/configuration.yaml" ] && [ ! -f "$DATA_DIR/data/coordinator_backup.json" ] \
-   && [ "$NEW_NETWORK" -eq 0 ]; then
-    if ! { : < /dev/tty; } 2>/dev/null; then
-        print_error "Pre-flight failed, nothing was changed: no saved Zigbee network in $DATA_DIR/data."
-        print_action "Restore $DATA_DIR first, or start a new network on purpose: --new-network"
-        exit 1
+# Without a keyboard or a flag it waits: waiting destroys nothing.
+WAIT_FOR_RESTORE=0
+if [ ! -f "$DATA_DIR/data/configuration.yaml" ] && [ ! -f "$DATA_DIR/data/coordinator_backup.json" ]; then
+    if [ "$NEW_NETWORK" -eq 1 ]; then
+        :
+    elif [ "$WAIT_REQUESTED" -eq 1 ] || ! { : < /dev/tty; } 2>/dev/null; then
+        WAIT_FOR_RESTORE=1
+    else
+        print_action "NEEDED: no saved Zigbee network here. New, or restore from a backup later?"
+        print_hint "1  New network: every device paired before must pair again"
+        print_hint "2  Restore later: Zigbee2MQTT waits, the console's Restore starts it on the old network"
+        prompt_ask "Type 1 or 2, Enter for 2:"
+        read -r _answer < /dev/tty || _answer=""
+        if [ "$_answer" = "1" ]; then prompt_got "A new Zigbee network will be formed."
+        else WAIT_FOR_RESTORE=1; prompt_got "Zigbee2MQTT waits for a restore."; fi
     fi
-    print_action "NEEDED: was this coordinator in use before?"
-    print_hint "No saved network here, so starting now makes a NEW one and every paired device must pair again."
-    print_hint "Rebuilding? Stop here and put ${HL}$DATA_DIR${NC} back from your backup first."
-    prompt_ask "Type new to start a new network, Enter to stop:"
-    read -r _answer < /dev/tty || _answer=""
-    if [ "${_answer,,}" != "new" ]; then
-        print_error "Stopped before Zigbee2MQTT started, nothing was changed."
-        print_action "Restore $DATA_DIR, then run this again."
-        exit 1
-    fi
-    prompt_got "A new Zigbee network will be formed."
 fi
 
 print_status "Coordinator: tcp://${COORD_HOST}:${COORD_PORT}, adapter ${ADAPTER}"
@@ -423,6 +428,9 @@ unset LINE
 CONFIG_YAML="$DATA_DIR/data/configuration.yaml"
 if [ -f "$CONFIG_YAML" ]; then
     print_success "configuration.yaml exists and is Zigbee2MQTT's; left alone."
+elif [ "$WAIT_FOR_RESTORE" -eq 1 ]; then
+    # Written now, it would read as a saved network on the next run.
+    print_status "configuration.yaml not written: the restore brings the real one."
 else
     cat > "$CONFIG_YAML" <<'EOF'
 # Created once by add_zigbee2mqtt.sh, then owned by Zigbee2MQTT.
@@ -473,6 +481,35 @@ else
     printf '%s\n' "$NEW_COMPOSE" > "$COMPOSE_FILE"
     chmod 0644 "$COMPOSE_FILE"
     print_success "Wrote $COMPOSE_FILE"
+fi
+
+# --- After a restore ---------------------------------------------------------
+# Run by the console's Restore (restore_now.sh) once every folder is back.
+HOOK="/etc/restore-now.d/zigbee2mqtt"
+install -d -m 0755 /etc/restore-now.d
+cat > "$HOOK" <<EOF
+#!/usr/bin/env bash
+# Written by add_zigbee2mqtt.sh: start Zigbee2MQTT once a restore brought its network back.
+D="$DATA_DIR"
+if [ ! -f "\$D/data/configuration.yaml" ] && [ ! -f "\$D/data/coordinator_backup.json" ]; then
+    echo "Zigbee2MQTT: the restore held no Zigbee network, left stopped."
+    exit 0
+fi
+[ "\$(docker inspect -f '{{.State.Running}}' zigbee2mqtt 2>/dev/null)" = "true" ] && exit 0
+docker compose --project-directory "\$D" up -d
+EOF
+chmod 0755 "$HOOK"
+
+if [ "$WAIT_FOR_RESTORE" -eq 1 ]; then
+    if ! run_watched "Making the Zigbee2MQTT container, not starting it" docker compose --project-directory "$DATA_DIR" up --no-start; then
+        print_error "Could not make the Zigbee2MQTT container. Logs: sudo docker compose --project-directory $DATA_DIR up --no-start"
+        exit 1
+    fi
+    echo ""
+    print_success "Zigbee2MQTT is made and waiting; the coordinator was not touched."
+    print_action "Restore the backup in the console (Restore button): Zigbee2MQTT starts on its old network."
+    print_hint "Really a new coordinator? sudo bash $0 --new-network"
+    exit 0
 fi
 
 # --- Start it ----------------------------------------------------------------
