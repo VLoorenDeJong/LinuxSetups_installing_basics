@@ -35,9 +35,15 @@ unset _a _dbg_args
 #      generated when missing, and a metrics key "Uptime Kuma API key"
 #   2. the keyboard for the password; the API key is then made on the page
 #
+# THE MONITOR SYNC SIGNS IN WITH A TOKEN, never the password: /etc/uptime-kuma/
+# token, root only. It opens Kuma and nothing else, and a new admin password
+# makes it worthless. Written whenever the password is at hand; --renew-token
+# asks for the password to write a new one.
+#
 # Usage:
 #   add_uptime_kuma.sh
 #   add_uptime_kuma.sh --port 3001 --data-dir /opt/uptime-kuma
+#   add_uptime_kuma.sh --renew-token
 #
 # Exit codes:
 #   0  Kuma is up, with an admin account
@@ -194,13 +200,16 @@ PORT="3001"
 DATA_DIR="/opt/uptime-kuma"
 IMAGE="louislam/uptime-kuma:2"
 KEY_NAME="metrics, read only"
+TOKEN_FILE="/etc/uptime-kuma/token"
+RENEW_TOKEN=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --port)     PORT="$2"; shift 2 ;;
         --data-dir) DATA_DIR="$2"; shift 2 ;;
         --image)    IMAGE="$2"; shift 2 ;;
-        -h|--help)  sed -n '18,46p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --renew-token) RENEW_TOKEN=1; shift ;;
+        -h|--help)  sed -n '18,52p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *)          print_error "Unknown argument: $1"; exit 2 ;;
     esac
 done
@@ -346,6 +355,7 @@ s.on("connect", () => {
     if (a.action === "setup") return s.emit("setup", a.user, a.pass, (r) => done(r.ok ? 0 : 1, r.ok ? "" : r.msg));
     s.emit("login", { username: a.user, password: a.pass, token: "" }, (r) => {
         if (!r.ok) return done(1, "sign-in refused: " + r.msg);
+        if (a.action === "token") return done(0, r.token);
         s.emit("getAPIKeyList", () => {
             if (keys.some((k) => k.name === a.name)) return done(0, "EXISTS");
             s.emit("addAPIKey", { name: a.name, expires: null, active: 1 }, (r) => done(r.ok ? 0 : 1, r.ok ? r.key : r.msg));
@@ -378,9 +388,18 @@ if _is_kuma; then NEED="$(kuma_call "$(kuma_request needSetup)")" || NEED="yes";
 if [ "$NEED" = "no" ]; then BIND="0.0.0.0"; else BIND="127.0.0.1"; fi
 start_kuma "$BIND"
 
+# The page answers before the socket takes commands, on a first start by minutes.
 if [ "$NEED" != "no" ]; then
-    NEED="$(kuma_call "$(kuma_request needSetup)")" || {
-        print_error "Could not ask Kuma whether it has an admin: $NEED"; exit 1; }
+    asked=0
+    until NEED="$(kuma_call "$(kuma_request needSetup)")"; do
+        asked=$((asked + 1))
+        if [ "$asked" -ge 6 ]; then
+            print_error "Could not ask Kuma whether it has an admin: $NEED"; exit 1
+        fi
+        print_status "Kuma is still starting; asking again ($asked of 5)."
+        sleep 5
+    done
+    unset asked
 fi
 
 ENTRY="Uptime Kuma admin"
@@ -433,6 +452,35 @@ if [ "$NEED" = "yes" ]; then
         exit 1
     fi
     print_success "Admin account 'admin' made."
+fi
+
+# --- Sign-in token for the monitor sync --------------------------------------
+if [ -z "$PASSWORD" ] && [ "$STORE" -eq 1 ]; then PASSWORD="$(entry_password)" || PASSWORD=""; fi
+if [ -z "$PASSWORD" ] && [ "$RENEW_TOKEN" -eq 1 ]; then
+    if ! { true > /dev/tty; } 2>/dev/null; then
+        print_error "--renew-token needs a terminal to ask the admin password."
+        exit 1
+    fi
+    print_action "NEEDED: Uptime Kuma's admin password, for a new sign-in token"
+    read_secret "   Password for admin: " || true
+    PASSWORD="${SECRET:-}"; unset SECRET
+fi
+if [ -n "$PASSWORD" ]; then
+    tok=""
+    if tok="$(kuma_call "$(kuma_request token admin "$PASSWORD")")" && [ -n "$tok" ]; then
+        install -d -m 0700 -o root -g root "$(dirname "$TOKEN_FILE")"
+        ( umask 077; printf '%s\n' "$tok" > "$TOKEN_FILE.new" )
+        mv -f "$TOKEN_FILE.new" "$TOKEN_FILE"
+        print_success "Sign-in token for the monitor sync written to $TOKEN_FILE."
+    else
+        print_error "Kuma gave no sign-in token${tok:+: $tok}"
+        [ "$RENEW_TOKEN" -eq 0 ] || exit 1
+    fi
+    unset tok
+elif [ ! -s "$TOKEN_FILE" ]; then
+    print_action "NEEDED: a sign-in token for the monitor sync. Run: sudo $0 --renew-token"
+else
+    print_info "Sign-in token for the monitor sync already in $TOKEN_FILE."
 fi
 [[ $_xt == *x* ]] && set -x
 
