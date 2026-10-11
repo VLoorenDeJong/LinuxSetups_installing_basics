@@ -18,7 +18,7 @@ unset _a _dbg_args
 # =============================================================================
 # Runs on the machine with Uptime Kuma and PULLS what to watch from git:
 #
-#   GitHub (LinuxSetups) → git fetch → <branch>:<config> → list_served_hostnames.sh
+#   git remote (the config repository) → git fetch → <branch>:<config> → list_served_hostnames.sh
 #        → probe each hostname → Kuma on this machine (monitor.sh)
 #
 # One MONITOR_SOURCE line per watched config, in this machine's hostings.conf:
@@ -128,10 +128,10 @@ for s in "${SOURCES[@]}"; do
     SEEN[$label]=1
 done
 
-# The config clone's origin is the checkout that talks to GitHub.
-REPO="$(conf_get MONITOR_REPO "$(git -C /usr/local/lib/linuxsetups remote get-url origin 2>/dev/null || true)")"
+# A checkout whose origin holds the watched branches.
+REPO="$(conf_get MONITOR_REPO "")"
 [ -n "$REPO" ] && git -C "$REPO" rev-parse --git-dir >/dev/null 2>&1 \
-    || ERRORS+=("No LinuxSetups checkout to read from: set MONITOR_REPO in $SITES_CONF.")
+    || ERRORS+=("MONITOR_REPO in $SITES_CONF names no git checkout of the config repository.")
 
 if [ ${#ERRORS[@]} -gt 0 ]; then
     for e in "${ERRORS[@]}"; do print_error "$e"; done
