@@ -24,8 +24,9 @@ unset _a _dbg_args
 # THE COPY IS DROPPED IN, NEVER CHOSEN BY THE PAGE: a folder named `restore`
 # beside the backup repository (the docker-volume-backup unit's
 # RESTIC_REPOSITORY), holding a copy of that repository at any depth up to 3.
-# It must open with this machine's backup password, the unit's
-# RESTIC_PASSWORD_FILE, so a foreign copy is refused rather than restored.
+# It must open with this machine's backup password, the one from
+# restic_password.sh, so a foreign copy is refused rather than
+# restored.
 #
 # WHAT A RESTORE DOES: stops every running container, moves each folder the
 # snapshot holds aside as <folder>.before-restore-<time>, restores it, starts
@@ -55,7 +56,8 @@ unit_env() {
         | tr ' ' '\n' | sed -n "s/^$1=//p" | head -n 1
 }
 LIVE_REPO="$(unit_env RESTIC_REPOSITORY)"
-PASSWORD_FILE="$(unit_env RESTIC_PASSWORD_FILE)"
+PASSWORD_HELPER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/restic_password.sh"
+PASSWORD_CMD="/bin/bash $PASSWORD_HELPER get docker-backup-password"
 DROP_DIR=""
 [ -n "$LIVE_REPO" ] && DROP_DIR="$(dirname "$LIVE_REPO")/restore"
 
@@ -67,7 +69,7 @@ find_copy() {
         | while read -r c; do [ -d "$(dirname "$c")/keys" ] && { dirname "$c"; break; }; done)"
     [ -n "$cfg" ] && printf '%s' "$cfg"
 }
-restic_copy() { restic -r "$COPY" --password-file "$PASSWORD_FILE" --no-cache "$@"; }
+restic_copy() { restic -r "$COPY" --password-command "$PASSWORD_CMD" --no-cache "$@"; }
 running() {
     local s; s="$(systemctl show "$RESTORE_UNIT" -p ActiveState --value 2>/dev/null)"
     [ "$s" = "active" ] || [ "$s" = "activating" ]
@@ -76,7 +78,7 @@ running() {
 case "${1:-}" in
     status)
         last="$(cat "$STATE_DIR/last.json" 2>/dev/null || echo 'null')"
-        if [ -z "$LIVE_REPO" ] || [ -z "$PASSWORD_FILE" ] || ! command -v restic >/dev/null 2>&1; then
+        if [ -z "$LIVE_REPO" ] || [ ! -f "$PASSWORD_HELPER" ] || ! command -v restic >/dev/null 2>&1; then
             echo '{"installed":false}'; exit 0
         fi
         run="$(running && echo true || echo false)"
