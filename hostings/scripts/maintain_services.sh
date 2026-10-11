@@ -1149,6 +1149,13 @@ if [ -d /var/lib/hosting-manager ]; then
     save_applied_copy
 fi
 
+# Monitors follow the hostnames. A monitor that cannot be reached is no reason
+# to call an apply failed.
+if [ -f "$SCRIPT_DIR/sync_monitors.sh" ] && [ -n "$(conf_get MONITOR_URL "")" ]; then
+    bash "$SCRIPT_DIR/sync_monitors.sh" \
+        || print_error "Monitors not synced; the sites themselves are applied. Rerun: sudo bash $SCRIPT_DIR/sync_monitors.sh"
+fi
+
 # 3 means "applied, but a site did not answer", which is the whole reason the
 # Jenkins job used to run a second, unscoped verify stage after this one. A
 # distinct code says it here, so the job can mark itself UNSTABLE without asking
