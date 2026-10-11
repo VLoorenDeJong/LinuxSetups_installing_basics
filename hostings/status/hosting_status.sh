@@ -100,6 +100,45 @@ PORTS_JSON='null'
 LISTENERS_JSON='null'
 SERVICES_JSON='null'
 
+# Uptime Kuma's verdict per hostname this machine serves, through monitor.sh in
+# the pipeline tree. null when the machine has no MONITOR_URL: not a fault.
+# The provider caches its API key, so the vault is read once, not every minute.
+MONITORS_JSON='null'
+MON_LIB="${MON_LIB:-/usr/local/lib/linuxbasics/hostings/scripts}"
+
+# Not in a $( ): the provider's key cache has to survive between calls, and a
+# subshell would throw it away. set -u is off around code this file does not own,
+# because an unbound variable in it would end the whole publisher.
+collect_monitors() {
+    local out="" name state prefix tmp rc=0
+    MONITORS_JSON='null'
+    set +u
+    if [ "${MONITOR_READY:-0}" != "1" ] && [ -f "$MON_LIB/monitor.sh" ]; then
+        if [ -z "${SITES_CONF:-}" ] && . "$MON_LIB/config.sh" 2>/dev/null; then
+            SITES_CONF="$(conf_active /etc/hostings)"
+            export SITES_CONF
+        fi
+        # shellcheck source=/dev/null
+        . "$MON_LIB/monitor.sh" >/dev/null 2>&1
+    fi
+    if [ "${MONITOR_READY:-0}" != "1" ]; then set -u; return 0; fi
+    tmp="$OUT_DIR/.monitors"
+    monitor_states > "$tmp" 2>/dev/null || rc=$?
+    set -u
+    if [ "$rc" -ne 0 ]; then
+        rm -f "$tmp"
+        add_error "The uptime monitor at ${MONITOR_URL:-?} could not be read."
+        return 0
+    fi
+    prefix="$(hostname) "
+    while IFS=$'\t' read -r name state; do
+        case "$name" in "$prefix"*) ;; *) continue ;; esac
+        out="$out,\"$(json_escape "${name#"$prefix"}")\":\"$(json_escape "$state")\""
+    done < "$tmp"
+    rm -f "$tmp"
+    MONITORS_JSON="{${out#,}}"
+}
+
 # The services the page's non-app rows depend on. Reported only when the
 # unit exists: a machine without a mail server should say nothing about mail,
 # not report it as broken.
@@ -404,6 +443,7 @@ write_status() {
   "support": $SUPPORT_JSON,
   "hostPackages": $HOSTPKG_JSON,
   "frameworks": $FRAMEWORKS_JSON,
+  "monitors": $MONITORS_JSON,
   "errors": [${ERRORS#,}]
 }
 JSON
@@ -439,6 +479,7 @@ while :; do
         collect_firewall
         collect_runtimes
         collect_support
+        collect_monitors
         CONFIG_CHECKED=$now
     fi
     write_status || true

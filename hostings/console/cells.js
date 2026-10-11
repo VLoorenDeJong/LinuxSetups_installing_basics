@@ -247,7 +247,7 @@ function entries(kind) {
 // and the page was reading a snapshot minutes old. readStatus() re-derives all
 // of it, and boot.js calls it every few seconds with a fresh file.
 let RUNTIME_OF, DOTNET_HAVE, SUPPORT, UNITS, STATUS_AGE, STATUS_FRESH,
-    SVC, CFG, FW, VHOSTS, LISTEN, CERTS;
+    SVC, CFG, FW, VHOSTS, LISTEN, CERTS, MONITORS;
 
 // A published file older than this is not trusted. The writer runs every 5
 // seconds, so a minute means it stopped, and the page must say unknown rather
@@ -337,6 +337,9 @@ function readStatus() {
   // row may be promoted to a real certificate.
   CERTS  = (STATUS && Array.isArray(STATUS.certificates))
     ? new Map(STATUS.certificates.map(c => [c.name, c])) : null;
+  // Absent when the machine has no uptime monitor: then there is no check at all.
+  MONITORS = (STATUS && STATUS.monitors && typeof STATUS.monitors === 'object')
+    ? STATUS.monitors : null;
 }
 
 readStatus();
@@ -385,6 +388,16 @@ function certCheck(t, host) {
   return out;
 }
 
+// Uptime Kuma's probe from outside this machine, so it also proves the proxy path.
+function monitorCheck(t, host) {
+  if (!host || !MONITORS) return [];
+  const state = MONITORS[host];
+  if (state === undefined) return [{ level: 'unknown', text: t.ckMonNone }];
+  if (state === 'up')      return [{ level: 'ok',      text: t.ckMonUp }];
+  if (state === 'down')    return [{ level: 'bad',     text: t.ckMonDown }];
+  return [{ level: 'warn', text: t.ckMonOther.replace('%s', state) }];
+}
+
 // Everything known about one row, as a list of checks. The pill takes the
 // worst; the tooltip shows all of them, so a red pill always says why.
 function rowChecks(t, e) {
@@ -407,6 +420,7 @@ function rowChecks(t, e) {
       out.push({ level: 'bad', text: t.ckPortExposed.replace('%d', e.port) });
     }
     out.push(...certCheck(t, e.addr));
+    out.push(...monitorCheck(t, e.addr));
   }
 
   if (e.kind === 'website' || e.kind === 'proxy') {
@@ -419,6 +433,7 @@ function rowChecks(t, e) {
       out.push({ level: 'ok', text: t.ckVhostOn });
     }
     out.push(...certCheck(t, e.addr));
+    out.push(...monitorCheck(t, e.addr));
   }
 
   if (e.kind === 'mailbox') {

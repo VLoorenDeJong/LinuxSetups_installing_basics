@@ -1315,6 +1315,10 @@ function statusFor(?array $status, string $role, string $who): ?array {
         $status['certificates'] = array_values(array_filter($status['certificates'],
             fn($c) => preg_match($certRe, (string) ($c['name'] ?? ''))));
     }
+    if (is_array($status['monitors'] ?? null)) {
+        $status['monitors'] = array_filter($status['monitors'],
+            fn($k) => preg_match($certRe, (string) $k), ARRAY_FILTER_USE_KEY);
+    }
     return $status;
 }
 
