@@ -18,7 +18,7 @@ unset _a _dbg_args
 # =============================================================================
 # Uptime Kuma 2.x: watches every site and service, and tells Home Assistant
 # when one goes down. Its monitors come from hostings.conf (sync_monitors.sh),
-# never clicked in. Design: uptime-monitor-decisions.md, on the Night-Hawk branch.
+# never clicked in.
 #
 # LAN ONLY, ON HOST NETWORKING. Docker's IPv4 publishes bypass UFW, so Kuma
 # listens on the host itself and UFW admits the LAN subnet to its port. Never
@@ -271,7 +271,7 @@ if [ ${#ERRORS[@]} -gt 0 ]; then
 fi
 
 print_info "Web page:  http://${LAN_IP:-<this machine>}:${PORT}, LAN only"
-print_info "Data:      $DATA_DIR/data (in the nightly copy of /opt)"
+print_info "Data:      $DATA_DIR/data"
 print_success "Pre-flight passed."
 
 # --- Compose file ------------------------------------------------------------
@@ -422,7 +422,7 @@ if [ "$NEED" = "yes" ]; then
         fi
         echo ""
         print_action "NEEDED: a password for Uptime Kuma's 'admin' account"
-        print_hint "keep it in 1Password as ${HL}${ENTRY}${NC}: Night-Hawk signs in with it to sync monitors."
+        print_hint "keep it in 1Password as ${HL}${ENTRY}${NC}: the monitor sync signs in with it."
         if ! read_password_twice; then
             print_error "No password given. Kuma stays on 127.0.0.1 until this runs again."
             exit 1
