@@ -115,6 +115,7 @@ const LISTDIRS    = '/usr/local/sbin/list_folders.sh';
 const SHAREACL    = '/usr/local/sbin/set_share_access.sh';
 const SHAREWIN    = '/usr/local/sbin/share_window.sh';
 const BACKUPNOW   = '/usr/local/sbin/backup_now.sh';
+const RESTORENOW  = '/usr/local/sbin/restore_now.sh';
 const SHAREWIN_MINUTES = ['5' => '5 minutes', '10' => '10 minutes', '15' => '15 minutes',
                           '60' => '1 hour', '120' => '2 hours', '240' => '4 hours'];
 const MANAGEMAIL  = '/usr/local/sbin/manage_mail.sh';
@@ -2816,6 +2817,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $messageClass = $rc === 0 ? 'good' : 'bad';
     }
 
+    // Replaces every app's data with the dropped-in copy: full role only.
+    if ($action === 'restorenow') {
+        if ($myRole !== 'full') {
+            $rc = 2;
+            $lines = ['Only a full administrator can restore a backup.'];
+        } else {
+            exec('sudo ' . RESTORENOW . ' start 2>&1', $lines, $rc);
+        }
+        $output = strip_ansi(implode("\n", $lines));
+        $message = $rc === 0 ? 'Restore started.' : 'The restore did not start. Its answer is below.';
+        $messageClass = $rc === 0 ? 'good' : 'bad';
+    }
+
     // Runs the installed backup unit once; the script chooses nothing else.
     if ($action === 'backupnow') {
         exec('sudo ' . BACKUPNOW . ' start 2>&1', $lines, $rc);
@@ -2846,7 +2860,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     //
     // The message travels as a code, never as text. A message put in the query
     // string is a message an attacker can choose.
-    $changed = ['save', 'save_apply', 'save_fast', 'savesmb', 'reloadsmb', 'setaccess', 'apply', 'fixdrift', 'setmailpw', 'provision', 'provision_create', 'promote', 'testcert', 'update', 'reboot', 'rerunstep', 'upgradevote', 'upgradepause', 'upgraderesume', 'upgradepublish', 'sharewindow', 'sharewindowclose', 'backupnow'];
+    $changed = ['save', 'save_apply', 'save_fast', 'savesmb', 'reloadsmb', 'setaccess', 'apply', 'fixdrift', 'setmailpw', 'provision', 'provision_create', 'promote', 'testcert', 'update', 'reboot', 'rerunstep', 'upgradevote', 'upgradepause', 'upgraderesume', 'upgradepublish', 'sharewindow', 'sharewindowclose', 'backupnow', 'restorenow'];
     // Written before the redirect, because the redirect is what throws the
     // message away. A failed save used to skip the redirect entirely, so F5
     // re-POSTed the form and replayed ops that had already run.
@@ -2917,6 +2931,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'sharewindow'      => 'shareopen',
             'sharewindowclose' => 'shareclosed',
             'backupnow'        => 'backupstarted',
+            'restorenow'       => 'restorestarted',
         ];
         // Only ever a number, and only for the apply: the dialog uses it to
         // tell a job that has not started from one that is over.
@@ -2976,6 +2991,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['done'])) {
         'shareopen'    => 'The shares are writable without a password until the timer runs out.',
         'shareclosed'  => 'The shares are back to their own settings.',
         'backupstarted' => 'Backup started. It takes a minute or two; the time beside the button updates when it is done.',
+        'restorestarted' => 'Restore started. Every app stops for a few minutes; refresh to see when it is done.',
         'checked'     => 'Checked. Nothing was written and nothing was pushed.',
         'checkfailed' => 'The check failed. The report below says why.',
     ];
@@ -4107,6 +4123,36 @@ if ($myRole !== 'full') {
                     . '<button type="submit" form="backup-now-form" class="svc-all">💾 Back up now</button>')
               . '</span>'; ?>
     <form method="post" id="backup-now-form" hidden><input type="hidden" name="action" value="backupnow"></form>
+  <?php endif; ?>
+  <?php /* Restore: appears beside Back up now once a copy sits in the drop
+           folder next to the backup. Full role only: it replaces every app's data. */
+    if ($myRole === 'full' && $bnHtml !== ''):
+      $rnLines = [];
+      exec('sudo ' . RESTORENOW . ' status 2>/dev/null', $rnLines);
+      $rn = json_decode(implode('', $rnLines), true) ?: [];
+      $rnLast = is_array($rn['last'] ?? null) ? $rn['last'] : null;
+      $rnHtml = '';
+      if (!empty($rn['running'])) {
+          $rnHtml = '<span>Restore running…</span>';
+      } elseif (!empty($rn['copy']) && empty($rn['opens'])) {
+          $rnHtml = '<span class="bad">A copy is waiting to restore, but it does not open with this machine\'s backup password.</span>';
+      } elseif (!empty($rn['copy'])) {
+          $rnWhen = date('j M Y H:i', (int) ($rn['when'] ?? 0));
+          $rnAsk  = 'Replace every app\'s data with the backup copy of ' . $rnWhen
+                  . '? Every app stops for a few minutes. The current data is kept beside it.';
+          $rnHtml = '<button type="submit" form="restore-now-form" class="svc-all danger" onclick="return confirm('
+                  . htmlspecialchars(json_encode($rnAsk), ENT_QUOTES) . ')">♻ Restore copy of '
+                  . htmlspecialchars($rnWhen, ENT_QUOTES) . '</button>';
+      }
+      if ($rnLast !== null && empty($rn['running'])) {
+          $rnHtml .= '<span' . (empty($rnLast['ok']) ? ' class="bad"' : '') . '>Last restore: '
+                   . htmlspecialchars(date('j M H:i', (int) ($rnLast['at'] ?? 0)), ENT_QUOTES)
+                   . (empty($rnLast['ok']) ? ' (failed)' : '') . '</span>';
+      }
+      if ($rnHtml !== '') {
+          $bnHtml = substr($bnHtml, 0, -strlen('</span>')) . $rnHtml . '</span>';
+      } ?>
+    <form method="post" id="restore-now-form" hidden><input type="hidden" name="action" value="restorenow"></form>
   <?php endif; ?>
   <form method="post" class="card" id="rows-form">
     <h2 style="font-size:1.05rem;margin:.1rem 0 .75rem" data-i18n="servesH">What this machine serves</h2>
