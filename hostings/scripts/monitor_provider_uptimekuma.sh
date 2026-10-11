@@ -6,13 +6,25 @@
 # socket.io API through the unofficial uptime-kuma-api2 wrapper, in the venv
 # add_monitor_client.sh makes. A Kuma upgrade can break that wrapper.
 #
-# Secrets come from the secret store and go to Python on stdin, never as an
-# argument or in the environment:
-#   "Uptime Kuma admin"    Login: username, password      (monitor_sync)
-#   "Uptime Kuma API key"  password                       (monitor_states)
+# Secrets go to Python and curl on stdin, never as an argument or in the
+# environment:
+#   admin login   /etc/uptime-kuma/admin on the Kuma machine (root, 0600: user,
+#                 password), else the vault item "Uptime Kuma admin" (monitor_sync)
+#   API key       the vault item "Uptime Kuma API key"           (monitor_states)
 # =============================================================================
 
 MONITOR_VENV="${MONITOR_VENV:-/opt/hosting-monitor/venv}"
+MONITOR_ADMIN_FILE="${MONITOR_ADMIN_FILE:-/etc/uptime-kuma/admin}"
+
+# username or password of the admin login: the local file wins, so the Kuma
+# machine needs no vault at all.
+_kuma_admin() {
+    if [ -r "$MONITOR_ADMIN_FILE" ]; then
+        sed -n "$([ "$1" = username ] && echo 1 || echo 2)p" "$MONITOR_ADMIN_FILE"
+    elif _kuma_secrets; then
+        _kuma_field "Uptime Kuma admin" "$1"
+    fi
+}
 
 _kuma_dir() { cd "$(dirname "${BASH_SOURCE[0]}")" && pwd; }
 
@@ -36,10 +48,8 @@ monitor_preflight() {
     if [ ! -x "$MONITOR_VENV/bin/python" ]; then
         echo "No Kuma client venv at $MONITOR_VENV: sudo bash add_monitor_client.sh"; bad=1
     fi
-    if ! _kuma_secrets; then
-        echo "The secret store is not reachable, so the Kuma login cannot be read."; bad=1
-    elif [ -z "$(_kuma_field "Uptime Kuma admin" password)" ]; then
-        echo "No 'Uptime Kuma admin' item in the vault: it is made by add_uptime_kuma.sh on the machine running Kuma."; bad=1
+    if [ -z "$(_kuma_admin password)" ]; then
+        echo "No Kuma admin login: neither $MONITOR_ADMIN_FILE nor the vault item 'Uptime Kuma admin'. add_uptime_kuma.sh writes the file."; bad=1
     fi
     if ! curl -s -o /dev/null --max-time 5 "$MONITOR_URL"; then
         echo "Kuma does not answer at $MONITOR_URL"; bad=1
@@ -51,14 +61,14 @@ monitor_preflight() {
 monitor_sync() {
     local prefix="$1" user pass rc=0 xt
     { xt=$-; set +x; } 2>/dev/null
-    if _kuma_secrets; then
-        user="$(_kuma_field "Uptime Kuma admin" username)"
-        pass="$(_kuma_field "Uptime Kuma admin" password)"
+    user="$(_kuma_admin username)"
+    pass="$(_kuma_admin password)"
+    if [ -n "$pass" ]; then
         { printf '%s\n%s\n' "$user" "$pass"; cat; } \
             | "$MONITOR_VENV/bin/python" -I "$(_kuma_dir)/monitor_uptimekuma.py" sync "$MONITOR_URL" "$prefix" \
             || rc=$?
     else
-        print_error "Secret store not reachable, so the Kuma login cannot be read."
+        print_error "No Kuma admin login to sync with."
         rc=1
     fi
     unset user pass

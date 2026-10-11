@@ -16,18 +16,26 @@ unset _a _dbg_args
 [ "$DEBUG_MODE" = "1" ] && set -x
 
 # =============================================================================
-# One uptime monitor per hostname this machine serves, kept in step with
-# hostings.conf. Monitors are named "<hostname> <served name>", so a sync only
-# ever touches this machine's own.
+# Runs on the machine with Uptime Kuma and PULLS what to watch from git:
 #
-#   hostings.conf → list_served_hostnames.sh → monitor.sh → Uptime Kuma
+#   GitHub (LinuxSetups) → git fetch → <branch>:<config> → list_served_hostnames.sh
+#        → probe each hostname → Kuma on this machine (monitor.sh)
 #
-# Until the drive swap public DNS names the live machine, so MONITOR_TARGET_IP
-# sends every probe to this machine's LAN address with the hostname as Host
-# header. Empty it at the swap and probes go through DNS.
+# One MONITOR_SOURCE line per watched config, in this machine's hostings.conf:
 #
-#   sudo bash sync_monitors.sh            sync
-#   sudo bash sync_monitors.sh --list     print what would be monitored, change nothing
+#   MONITOR_SOURCE = <label> | <branch> | <path to the config> | <LAN IP or ->
+#
+# Monitors are named "<label> <hostname>"; a source only touches its own. The
+# IP probes that machine directly with the hostname as Host header: until a
+# drive swap DNS names another machine. "-" probes through DNS.
+#
+# A NEW HOSTNAME IS ADDED ONLY ONCE IT ANSWERS (any HTTP code below 500). A row
+# saved but not applied yet would otherwise page the phone for a site that was
+# never meant to exist yet. A hostname gone from the config is removed at once.
+#
+#   sudo bash sync_monitors.sh             sync now
+#   sudo bash sync_monitors.sh --list      what would be watched, change nothing
+#   sudo bash sync_monitors.sh --install   a timer that syncs every 5 minutes
 # =============================================================================
 
 print_header()  { printf "\n\033[36m=== %s ===\033[0m\n" "$1"; }
@@ -39,11 +47,14 @@ print_error()   { printf "\033[31m❌ %s\033[0m\n" "$1"; }
 
 MODE=sync
 case "${1:-}" in
-    "")     ;;
-    --list) MODE=list ;;
-    -h|--help) sed -n '18,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    "")        ;;
+    --list)    MODE=list ;;
+    --install) MODE=install ;;
+    -h|--help) sed -n '18,39p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) print_error "Unknown option '$1'"; exit 2 ;;
 esac
+
+[ "$EUID" -eq 0 ] || { print_error "This needs root: it reads Kuma's admin login."; print_action "sudo bash $0 $*"; exit 2; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/config.sh" 2>/dev/null \
@@ -60,68 +71,144 @@ conf_get() {
     [ "$v" = "-" ] && v=""
     printf '%s' "${v:-$2}"
 }
+trim() { local v="$1"; v="${v#"${v%%[![:space:]]*}"}"; printf '%s' "${v%"${v##*[![:space:]]}"}"; }
 
 print_header "Uptime monitors"
 
 if [ -z "$(conf_get MONITOR_URL "")" ]; then
-    print_info "No MONITOR_URL in $SITES_CONF, so this machine is not monitored."
+    print_info "No MONITOR_URL in $SITES_CONF, so this machine runs no monitor sync."
     exit 0
 fi
 
-MACHINE="$(hostname)"
-TARGET_IP="$(conf_get MONITOR_TARGET_IP "")"
-if [ -n "$TARGET_IP" ] && ! [[ "$TARGET_IP" =~ ^[0-9a-fA-F.:]+$ ]]; then
-    print_error "MONITOR_TARGET_IP '$TARGET_IP' is not an IP address."
-    exit 1
-fi
+# --- Timer -------------------------------------------------------------------
+if [ "$MODE" = "install" ]; then
+    cat > /etc/systemd/system/monitor-sync.service <<UNIT
+[Unit]
+Description=Sync Uptime Kuma's monitors with the watched hostings configs
+After=network-online.target docker.service
 
-# --- What should be monitored ------------------------------------------------
-if ! hosts="$(bash "$SCRIPT_DIR/list_served_hostnames.sh")"; then
-    print_error "list_served_hostnames.sh failed, so the monitor list would be incomplete."
-    exit 1
-fi
+[Service]
+Type=oneshot
+ExecStart=/bin/bash $SCRIPT_DIR/sync_monitors.sh
+UNIT
+    cat > /etc/systemd/system/monitor-sync.timer <<'UNIT'
+[Unit]
+Description=Sync Uptime Kuma's monitors every 5 minutes
 
-wanted=""
-while IFS= read -r h; do
-    [ -n "$h" ] || continue
-    if [ -n "$TARGET_IP" ]; then
-        url="https://$TARGET_IP/"; [[ "$TARGET_IP" == *:* ]] && url="https://[$TARGET_IP]/"
-        wanted+="$MACHINE $h"$'\t'"$url"$'\t'"$h"$'\n'
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target
+UNIT
+    systemctl daemon-reload
+    if systemctl enable --now monitor-sync.timer >/dev/null 2>&1; then
+        print_success "monitor-sync.timer syncs every 5 minutes, from $SCRIPT_DIR."
     else
-        wanted+="$MACHINE $h"$'\t'"https://$h/"$'\t'$'\n'
+        print_error "Could not start monitor-sync.timer."
+        print_action "See why: systemctl status monitor-sync.timer"
+        exit 1
     fi
-done <<< "$hosts"
-
-count="$(printf '%s' "$wanted" | grep -c . || true)"
-if [ -n "$TARGET_IP" ]; then
-    print_info "$count hostnames, probed at $TARGET_IP (MONITOR_TARGET_IP) until the drive swap."
-else
-    print_info "$count hostnames, probed through DNS."
-fi
-
-if [ "$MODE" = "list" ]; then
-    printf '%s' "$wanted" | awk -F'\t' '{ printf "   %s  →  %s%s\n", $1, $2, ($3 ? "  (Host: " $3 ")" : "") }'
     exit 0
 fi
 
-# --- Sync --------------------------------------------------------------------
-# shellcheck source=/dev/null
-. "$SCRIPT_DIR/monitor.sh"
-if [ "$MONITOR_READY" != "1" ]; then
-    print_error "The monitor provider could not be loaded."
-    exit 1
-fi
-if ! reasons="$(monitor_preflight)"; then
-    print_error "This machine cannot reach its uptime monitor yet:"
-    while IFS= read -r line; do [ -n "$line" ] && print_action "  $line"; done <<< "$reasons"
+# --- Pre-flight: every source line, and the repository ------------------------
+mapfile -t SOURCES < <(sed -n 's/^[[:space:]]*MONITOR_SOURCE[[:space:]]*=//p' "$SITES_CONF" | sed 's/#.*//; s/\r//')
+ERRORS=()
+[ ${#SOURCES[@]} -gt 0 ] || ERRORS+=("No MONITOR_SOURCE line in $SITES_CONF: nothing to watch.")
+declare -A SEEN=()
+for s in "${SOURCES[@]}"; do
+    IFS='|' read -r label branch path ip _extra <<< "$s"
+    label="$(trim "$label")"; branch="$(trim "$branch")"; path="$(trim "$path")"; ip="$(trim "$ip")"
+    [[ "$label" =~ ^[A-Za-z0-9._-]+$ ]] || ERRORS+=("MONITOR_SOURCE '$s': label must be letters, digits, . _ or -.")
+    [ -n "$branch" ] && [ -n "$path" ] || ERRORS+=("MONITOR_SOURCE '$s': needs a branch and a config path.")
+    [ "$ip" = "-" ] || [ -z "$ip" ] || [[ "$ip" =~ ^[0-9a-fA-F.:]+$ ]] || ERRORS+=("MONITOR_SOURCE '$s': '$ip' is not an IP address or -.")
+    [ -z "${SEEN[$label]:-}" ] || ERRORS+=("MONITOR_SOURCE label '$label' is used twice.")
+    SEEN[$label]=1
+done
+
+# The config clone's origin is the checkout that talks to GitHub.
+REPO="$(conf_get MONITOR_REPO "$(git -C /usr/local/lib/linuxsetups remote get-url origin 2>/dev/null || true)")"
+[ -n "$REPO" ] && git -C "$REPO" rev-parse --git-dir >/dev/null 2>&1 \
+    || ERRORS+=("No LinuxSetups checkout to read from: set MONITOR_REPO in $SITES_CONF.")
+
+if [ ${#ERRORS[@]} -gt 0 ]; then
+    for e in "${ERRORS[@]}"; do print_error "$e"; done
     exit 1
 fi
 
-print_status "Syncing monitors named '$MACHINE ...' at $MONITOR_URL"
-if ! report="$(printf '%s' "$wanted" | monitor_sync "$MACHINE" 2>&1)"; then
-    print_error "Kuma refused the sync:"
-    printf '%s\n' "$report" | tail -n 20
+# Fetched as the checkout's owner: the GitHub credential is theirs, not root's.
+OWNER="$(stat -c %U "$REPO")"
+print_status "Fetching from GitHub into $REPO, as $OWNER"
+if ! fetch_out="$(sudo -u "$OWNER" git -C "$REPO" fetch -q origin 2>&1)"; then
+    print_error "git fetch failed, so the monitors stay as they are:"
+    printf '%s\n' "$fetch_out" | tail -n 5
     exit 1
 fi
-printf '%s\n' "$report" | sed 's/^/   /'
-print_success "Monitors match $SITES_CONF"
+
+# --- Per source: hostnames, probe, sync ----------------------------------------
+if [ "$MODE" = "sync" ]; then
+    # shellcheck source=/dev/null
+    . "$SCRIPT_DIR/monitor.sh"
+    [ "$MONITOR_READY" = "1" ] || { print_error "The monitor provider could not be loaded."; exit 1; }
+    if ! reasons="$(monitor_preflight)"; then
+        print_error "Kuma cannot be synced yet:"
+        while IFS= read -r line; do [ -n "$line" ] && print_action "  $line"; done <<< "$reasons"
+        exit 1
+    fi
+fi
+
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+FAILED=0
+
+for s in "${SOURCES[@]}"; do
+    IFS='|' read -r label branch path ip _extra <<< "$s"
+    label="$(trim "$label")"; branch="$(trim "$branch")"; path="$(trim "$path")"; ip="$(trim "$ip")"
+    [ "$ip" = "-" ] && ip=""
+    echo ""
+    print_status "$label: $branch:$path"
+
+    conf="$WORK/$label.conf"
+    if ! git -C "$REPO" show "origin/$branch:$path" > "$conf" 2>/dev/null; then
+        print_error "$label: origin/$branch has no $path. Its monitors are left alone."
+        FAILED=1; continue
+    fi
+    if ! hosts="$(SITES_CONF="$conf" bash "$SCRIPT_DIR/list_served_hostnames.sh" 2>"$WORK/err")"; then
+        print_error "$label: the hostname list failed, so its monitors are left alone:"
+        tail -n 5 "$WORK/err"
+        FAILED=1; continue
+    fi
+
+    wanted=""
+    while IFS= read -r h; do
+        [ -n "$h" ] || continue
+        if [ -n "$ip" ]; then
+            url="https://$ip/"; [[ "$ip" == *:* ]] && url="https://[$ip]/"
+            code="$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 --resolve "$h:443:$ip" "https://$h/" 2>/dev/null || true)"
+            hdr="$h"
+        else
+            url="https://$h/"
+            code="$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 "https://$h/" 2>/dev/null || true)"
+            hdr=""
+        fi
+        answers=0; [ "${code:-000}" != "000" ] && [ "$code" -lt 500 ] && answers=1
+        wanted+="$label $h"$'\t'"$url"$'\t'"$hdr"$'\t'"$answers"$'\n'
+    done <<< "$hosts"
+
+    if [ "$MODE" = "list" ]; then
+        printf '%s' "$wanted" | awk -F'\t' '{ printf "   %-50s %s%s\n", $1, ($4 == "1" ? "answers" : "no answer yet"), ($3 ? "  via " $2 : "") }'
+        continue
+    fi
+    if ! report="$(printf '%s' "$wanted" | monitor_sync "$label" 2>&1)"; then
+        print_error "$label: Kuma refused the sync:"
+        printf '%s\n' "$report" | tail -n 20
+        FAILED=1; continue
+    fi
+    printf '%s\n' "$report" | sed 's/^/   /'
+done
+
+echo ""
+[ "$FAILED" -eq 0 ] || exit 1
+[ "$MODE" = "list" ] || print_success "Monitors match every MONITOR_SOURCE."

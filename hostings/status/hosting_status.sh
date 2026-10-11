@@ -100,7 +100,7 @@ PORTS_JSON='null'
 LISTENERS_JSON='null'
 SERVICES_JSON='null'
 
-# Uptime Kuma's verdict per hostname this machine serves, through monitor.sh in
+# Uptime Kuma's verdict per hostname, for monitors named "<MONITOR_PREFIX> ...", through monitor.sh in
 # the pipeline tree. null when the machine has no MONITOR_URL: not a fault.
 # The provider caches its API key, so the vault is read once, not every minute.
 MONITORS_JSON='null'
@@ -130,7 +130,7 @@ collect_monitors() {
         add_error "The uptime monitor at ${MONITOR_URL:-?} could not be read."
         return 0
     fi
-    prefix="$(hostname) "
+    prefix="$(_mon_conf_get MONITOR_PREFIX "$(hostname)") "
     while IFS=$'\t' read -r name state; do
         case "$name" in "$prefix"*) ;; *) continue ;; esac
         out="$out,\"$(json_escape "${name#"$prefix"}")\":\"$(json_escape "$state")\""

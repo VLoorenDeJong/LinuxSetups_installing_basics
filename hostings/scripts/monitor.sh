@@ -4,9 +4,12 @@
 #
 #   . "$SCRIPT_DIR/monitor.sh"
 #   monitor_sync <prefix>     makes the monitors named "<prefix> ..." match the
-#                             `name<TAB>url<TAB>host_header` lines on stdin:
-#                             adds, updates, deletes. Prints a drift report.
-#                             Monitors without the prefix are never touched
+#                             `name<TAB>url<TAB>host_header<TAB>answers` lines
+#                             on stdin: adds, updates, deletes. A monitor that
+#                             does not exist yet is only added when answers is
+#                             1, so a site saved but not applied raises no
+#                             alarm. Prints a drift report. Monitors without
+#                             the prefix are never touched
 #   monitor_states            name<TAB>up|down|pending|maintenance, read-only
 #   monitor_preflight         0 if this provider can work, or one reason per
 #                             line and 1

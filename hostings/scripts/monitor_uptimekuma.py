@@ -2,7 +2,8 @@
 
     python monitor_uptimekuma.py sync <kuma-url> <prefix>   < stdin
 
-stdin: username, password, then one `name<TAB>url<TAB>host_header` per line.
+stdin: username, password, then one `name<TAB>url<TAB>host_header<TAB>answers`
+per line. A monitor that does not exist yet is added only when answers is 1.
 A host header means "probe this IP as that hostname": TLS errors are ignored,
 because the certificate names the hostname, not the IP.
 Monitors whose name lacks the prefix are never touched.
@@ -21,6 +22,7 @@ class Wanted:
     name: str
     url: str
     host: str
+    answers: bool
 
     def fields(self) -> dict:
         return {
@@ -40,8 +42,8 @@ def read_input() -> tuple[str, str, list[Wanted]]:
     for row in rows:
         if not row.strip():
             continue
-        name, url, host = (row.split("\t") + ["", ""])[:3]
-        wanted.append(Wanted(name, url, host))
+        name, url, host, answers = (row.split("\t") + ["", "", ""])[:4]
+        wanted.append(Wanted(name, url, host, answers == "1"))
     return user, password, wanted
 
 
@@ -60,13 +62,16 @@ def sync(url: str, prefix: str) -> int:
     if not prefix.strip():
         print("Refusing an empty prefix: it would claim every monitor.", file=sys.stderr)
         return 2
-    added = updated = deleted = same = 0
+    added = updated = deleted = same = waiting = 0
     with UptimeKumaApi(url, timeout=30) as api:
         api.login(user, password)
         ours = {m["name"]: m for m in api.get_monitors() if m["name"].startswith(prefix + " ")}
         for w in wanted:
             fields = w.fields()
-            if w.name not in ours:
+            if w.name not in ours and not w.answers:
+                print(f"waiting  {w.name}: does not answer yet, added once it does")
+                waiting += 1
+            elif w.name not in ours:
                 api.add_monitor(type=MonitorType.HTTP, name=w.name, interval=60, **fields)
                 print(f"added    {w.name}")
                 added += 1
@@ -82,7 +87,7 @@ def sync(url: str, prefix: str) -> int:
                 api.delete_monitor(mon["id"])
                 print(f"deleted  {name}")
                 deleted += 1
-    print(f"summary  {added} added, {updated} updated, {deleted} deleted, {same} unchanged")
+    print(f"summary  {added} added, {updated} updated, {deleted} deleted, {same} unchanged, {waiting} waiting")
     return 0
 
 
