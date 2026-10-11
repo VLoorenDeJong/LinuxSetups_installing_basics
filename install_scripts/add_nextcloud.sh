@@ -46,10 +46,11 @@ unset _a _dbg_args
 #                     sees as /cloudberry; share it over Samba to drop files in
 #   add_nextcloud.sh --default-quota 10              # GB per new user, default 5
 #
-# DISK QUOTA. Nextcloud and its backup together get 75% of the disk, always
-# leaving 40 GB for everything else; half of that is Nextcloud's. Each user gets
-# --default-quota, raised per user on Nextcloud's Users page. Refuses when the
-# quotas set add up past Nextcloud's half.
+# ITS OWN DRIVE. Nextcloud and its backup together get 75% of the disk, always
+# leaving 40 GB for everything else. Nextcloud's half is a fixed-size drive
+# (/var/lib/nextcloud/data.img on /srv/nextcloud), so it can never fill the
+# disk. Each user gets --default-quota, raised per user on Nextcloud's Users
+# page. Refuses when the quotas set add up past the drive.
 #
 # Exit codes:
 #   0  Nextcloud (and the editor) answer through the front port
@@ -216,6 +217,8 @@ DROP_DIR=""
 QUOTA_GB=5
 SHARE_PCT=75
 RESERVE_GB=40
+VOL_IMG="/var/lib/nextcloud/data.img"
+VOL_MNT="/srv/nextcloud"
 NC_IMAGE="nextcloud:34-apache"
 EO_IMAGE="ghcr.io/euro-office/documentserver:latest"
 DB_IMAGE="postgres:17-alpine"
@@ -439,7 +442,8 @@ services:
       APACHE_DISABLE_REWRITE_IP: \"1\"
       PHP_UPLOAD_LIMIT: 10G
     volumes:
-      - ./html:/var/www/html${DROP_DIR:+
+      - ./html:/var/www/html
+      - ${VOL_MNT}/data:/var/www/html/data${DROP_DIR:+
       - ${DROP_DIR}:/drop}
     networks: [nextcloud]
 ${OFFICE_SERVICE}
@@ -471,6 +475,74 @@ write_if_changed() {
 # Owned by www-data (33, the same id inside the container), group-sticky so
 # files Samba writes as www-data stay readable to Nextcloud.
 [ -n "$DROP_DIR" ] && install -d -o 33 -g 33 -m 2770 "$DROP_DIR"
+
+# --- Nextcloud's own drive -----------------------------------------------------
+# A fixed-size file formatted as ext4 and mounted on VOL_MNT: Nextcloud can never
+# fill the disk. The backup keeps a copy on the same disk, so the drive is half
+# of SHARE_PCT, always leaving RESERVE_GB. Grown, never shrunk, on a bigger disk.
+install -d -m 0700 "$(dirname "$VOL_IMG")"
+DISK_GB="$(df -BG --output=size "$(dirname "$VOL_IMG")" | tail -n 1 | tr -dc '0-9')"
+PAIR_GB=$(( DISK_GB * SHARE_PCT / 100 ))
+[ $(( DISK_GB - RESERVE_GB )) -lt "$PAIR_GB" ] && PAIR_GB=$(( DISK_GB - RESERVE_GB ))
+BUDGET_GB=$(( PAIR_GB / 2 ))
+if [ "$BUDGET_GB" -lt "$QUOTA_GB" ]; then
+    print_error "The ${DISK_GB} GB disk leaves no room for Nextcloud after ${RESERVE_GB} GB for everything else."
+    exit 1
+fi
+STAMP="$(date +%Y%m%d-%H%M%S)"
+nc_stop() { docker stop nextcloud >/dev/null 2>&1 || true; }
+# Data sitting where the drive will be mounted would be hidden by it.
+if ! mountpoint -q "$VOL_MNT" && [ -d "$VOL_MNT" ] && [ -n "$(ls -A "$VOL_MNT" 2>/dev/null)" ]; then
+    nc_stop
+    mv "$VOL_MNT" "$VOL_MNT.premount-$STAMP"
+    print_status "Moved what was in $VOL_MNT aside, to be copied into the drive."
+fi
+if [ ! -f "$VOL_IMG" ]; then
+    if ! fallocate -l "${BUDGET_GB}G" "$VOL_IMG"; then
+        rm -f "$VOL_IMG"
+        print_error "Could not reserve ${BUDGET_GB} GB for Nextcloud's drive: sudo df -h /"
+        exit 1
+    fi
+    chmod 0600 "$VOL_IMG"
+    mkfs.ext4 -q -F -m 0 -L nextcloud-data "$VOL_IMG" || { print_error "Could not format $VOL_IMG"; exit 1; }
+    print_success "Made Nextcloud's ${BUDGET_GB} GB drive: $VOL_IMG"
+fi
+FSTAB_LINE="$VOL_IMG $VOL_MNT ext4 loop,nofail,x-systemd.before=docker.service 0 2"
+if ! grep -qF "$FSTAB_LINE" /etc/fstab; then
+    grep -vF " $VOL_MNT ext4 " /etc/fstab > /etc/fstab.new && printf '%s\n' "$FSTAB_LINE" >> /etc/fstab.new
+    mv /etc/fstab.new /etc/fstab
+    systemctl daemon-reload
+fi
+install -d -m 0755 "$VOL_MNT"
+mountpoint -q "$VOL_MNT" || mount "$VOL_MNT" || { print_error "Could not mount Nextcloud's drive on $VOL_MNT"; exit 1; }
+IMG_GB=$(( $(stat -c %s "$VOL_IMG") / 1024 / 1024 / 1024 ))
+if [ "$IMG_GB" -lt "$BUDGET_GB" ]; then
+    LOOP="$(findmnt -n -o SOURCE "$VOL_MNT")"
+    if fallocate -l "${BUDGET_GB}G" "$VOL_IMG" && losetup -c "$LOOP" && resize2fs -p "$LOOP" >/dev/null 2>&1; then
+        print_success "Grew Nextcloud's drive from ${IMG_GB} GB to ${BUDGET_GB} GB."
+    else
+        print_error "Could not grow Nextcloud's drive to ${BUDGET_GB} GB; it stays ${IMG_GB} GB."
+    fi
+else
+    BUDGET_GB="$IMG_GB"
+fi
+install -d -o 33 -g 33 -m 0770 "$VOL_MNT/data"
+# Data from before the drive, or a backup made before it, is copied in once.
+if [ -z "$(ls -A "$VOL_MNT/data")" ]; then
+    for old in "$VOL_MNT.premount-$STAMP/data" "$DATA_DIR/html/data"; do
+        [ -d "$old" ] && [ -n "$(ls -A "$old" 2>/dev/null)" ] || continue
+        nc_stop
+        cp -a "$old/." "$VOL_MNT/data/" || { print_error "Copying $old into the drive failed; nothing was removed."; exit 1; }
+        # Out of html/: under the web root the old files could be served.
+        aside="$DATA_DIR/data.before-drive-$STAMP"
+        mv "$old" "$aside"
+        print_success "Copied $old into the drive. The old copy is $aside, delete it once Nextcloud works."
+        break
+    done
+fi
+install -d -o 33 -g 33 -m 0770 "$DATA_DIR/html/data"
+print_success "Nextcloud's drive: ${BUDGET_GB} GB on $VOL_MNT, $(df -h --output=used "$VOL_MNT" | tail -n 1 | tr -d ' ') used."
+
 write_if_changed "$DATA_DIR/Caddyfile" "$NEW_CADDY"
 write_if_changed "$DATA_DIR/docker-compose.yml" "$NEW_COMPOSE"
 
@@ -684,18 +756,9 @@ if [ -n "$DROP_DIR" ]; then
 fi
 
 # --- Disk quota --------------------------------------------------------------
-# The backup keeps a copy of everything on the same disk, so Nextcloud gets half
-# of its share. Every run, so a bigger disk raises the quota by itself.
-DISK_GB="$(df -BG --output=size "$DATA_DIR" | tail -n 1 | tr -dc '0-9')"
-PAIR_GB=$(( DISK_GB * SHARE_PCT / 100 ))
-[ $(( DISK_GB - RESERVE_GB )) -lt "$PAIR_GB" ] && PAIR_GB=$(( DISK_GB - RESERVE_GB ))
-BUDGET_GB=$(( PAIR_GB / 2 ))
-if [ "$BUDGET_GB" -lt "$QUOTA_GB" ]; then
-    print_error "The ${DISK_GB} GB disk leaves no room for Nextcloud after ${RESERVE_GB} GB for everything else."
-    exit 1
-fi
+# The drive is the hard limit; the quotas divide it.
 occ config:app:set files default_quota --value="${QUOTA_GB} GB" >/dev/null
-print_success "Disk ${DISK_GB} GB: Nextcloud may use ${BUDGET_GB} GB, ${QUOTA_GB} GB per user by default."
+print_success "Default quota ${QUOTA_GB} GB per user, inside the ${BUDGET_GB} GB drive."
 
 # A quota set by hand, or more users than planned, can still add up past it.
 SET_GB=0; UNLIMITED=()
@@ -766,6 +829,19 @@ cat > /etc/restore-now.d/50-nextcloud <<EOF
 #!/usr/bin/env bash
 # Generated by add_nextcloud.sh. The next run overwrites it.
 set -u
+# A backup from before the drive restores its files under html/data, where the
+# drive hides them. Copied in when the drive is empty.
+old="$DATA_DIR/html/data"
+if [ -n "\$(ls -A "\$old" 2>/dev/null)" ]; then
+    if [ -z "\$(ls -A "$VOL_MNT/data" 2>/dev/null)" ]; then
+        docker stop nextcloud >/dev/null 2>&1 || true
+        cp -a "\$old/." "$VOL_MNT/data/" && mv "\$old" "$DATA_DIR/data.before-drive-\$(date +%Y%m%d-%H%M%S)" \\
+            && install -d -o 33 -g 33 -m 0770 "\$old" && docker start nextcloud >/dev/null \\
+            && echo "Nextcloud's restored files copied into its drive."
+    else
+        echo "Nextcloud: the restore put files in \$old, but the drive already holds data. Kept the drive's."
+    fi
+fi
 for _ in \$(seq 60); do
     docker exec nextcloud-db pg_isready -h 127.0.0.1 -U nextcloud >/dev/null 2>&1 && break
     sleep 2
