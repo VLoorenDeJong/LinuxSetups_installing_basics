@@ -45,8 +45,8 @@ unset _a _dbg_args
 # being pullable. Containers are NOT stopped: a database being written during
 # the copy is captured mid-write, exactly as the mail store is.
 #
-# The repository password is printed ONCE, on the run that creates it, and must
-# go into a password vault. The copy on this machine dies with the machine.
+# The repository password is never a plain file: restic_password.sh keeps it in
+# the vault, or encrypted on this machine where there is no vault.
 #
 # Safe to re-run: an existing repository, password and timer are left alone.
 # =============================================================================
@@ -148,7 +148,10 @@ DOCKER_DATA_ROOT="$(conf_get DOCKER_DATA_ROOT /srv/docker_apps)"
 case " $EXTRA_PATHS " in *" $DOCKER_DATA_ROOT "*) ;; *) EXTRA_PATHS="$EXTRA_PATHS $DOCKER_DATA_ROOT" ;; esac
 BACKUP_REPO="${ARG_REPO:-$(conf_get DOCKER_BACKUP_REPO '')}"
 BACKUP_AT="${ARG_TIME:-$(conf_get DOCKER_BACKUP_AT '03:00')}"
-PASSWORD_FILE="$(conf_get DOCKER_BACKUP_PASSWORD_FILE /root/.docker_backup_password)"
+# The unit calls the root-owned runtime copy, never this clone's.
+PASSWORD_HELPER="/usr/local/lib/linuxbasics/hostings/scripts/restic_password.sh"
+PASSWORD_NAME="docker-backup-password"
+PASSWORD_CMD="/bin/bash $PASSWORD_HELPER get $PASSWORD_NAME"
 KEEP_DAILY="$(conf_get DOCKER_BACKUP_KEEP_DAILY 7)"
 KEEP_WEEKLY="$(conf_get DOCKER_BACKUP_KEEP_WEEKLY 4)"
 
@@ -191,6 +194,8 @@ id "$RUN_USER" >/dev/null 2>&1 \
     || ERRORS+=("Resolved user '$RUN_USER' does not exist. Set it: sudo env APP_USER=<name> $0")
 [ -d "$VOLUME_DIR" ] \
     || ERRORS+=("$VOLUME_DIR does not exist, so the unit would fail every night.")
+[ -f "$PASSWORD_HELPER" ] \
+    || ERRORS+=("$PASSWORD_HELPER is missing, so the unit could not get its password. Run: sudo bash $SCRIPT_DIR/add_pipeline_scripts.sh")
 # The list is space separated and goes into ExecStart unquoted, so a path
 # containing a space would arrive as two arguments and the unit would silently
 # back up the wrong thing. Every entry has to be absolute, which is how that
@@ -257,7 +262,7 @@ Wants=docker.service
 
 [Service]
 Type=oneshot
-Environment=RESTIC_PASSWORD_FILE=${PASSWORD_FILE}
+Environment="RESTIC_PASSWORD_COMMAND=${PASSWORD_CMD}"
 Environment=RESTIC_REPOSITORY=${BACKUP_REPO}
 # systemd gives no HOME, so without this restic runs uncached and says so nightly.
 Environment=RESTIC_CACHE_DIR=/var/cache/restic
@@ -323,17 +328,9 @@ if ! command -v restic >/dev/null 2>&1; then
     print_success "Installed restic."
 fi
 
-PASSWORD_CREATED=0
-# The vault's copy first: it is the one the existing backups were made with, and
-# restore_logins.sh runs later in the install than this.
-if [ ! -f "$PASSWORD_FILE" ] && [ -f "$SCRIPT_DIR/restore_logins.sh" ]; then
-    bash "$SCRIPT_DIR/restore_logins.sh" --only docker-backup-password || true
-fi
-if [ ! -f "$PASSWORD_FILE" ]; then
-    ( umask 077; openssl rand -base64 32 > "$PASSWORD_FILE" )
-    chmod 0600 "$PASSWORD_FILE"
-    PASSWORD_CREATED=1
-    print_success "Generated a repository password: $PASSWORD_FILE"
+if ! bash "$PASSWORD_HELPER" setup "$PASSWORD_NAME" --repo "$BACKUP_REPO"; then
+    print_error "No backup password, so the volumes would not be backed up."
+    exit 1
 fi
 
 mkdir -p "$(dirname "$BACKUP_REPO")"
@@ -342,12 +339,12 @@ if [ -f "$BACKUP_REPO/config" ]; then
     print_success "Encrypted repository already initialised."
 else
     if show_spinner_watch_only "Initialising the encrypted repository" \
-        restic init --repo "$BACKUP_REPO" --password-file "$PASSWORD_FILE"; then
+        restic init --repo "$BACKUP_REPO" --password-command "$PASSWORD_CMD"; then
         print_success "Initialised $BACKUP_REPO"
     else
         print_error "restic init failed, so the volumes would not be backed up."
         print_action "Run it by hand to see why:"
-        print_action "  sudo restic init --repo $BACKUP_REPO --password-file $PASSWORD_FILE"
+        print_action "  sudo restic init --repo $BACKUP_REPO --password-command \"$PASSWORD_CMD\""
         exit 1
     fi
 fi
@@ -408,11 +405,5 @@ else
 fi
 
 print_header "Done"
-print_info "Snapshots:  sudo restic -r $BACKUP_REPO --password-file $PASSWORD_FILE snapshots"
+print_info "Snapshots:  sudo restic -r $BACKUP_REPO --password-command \"$PASSWORD_CMD\" snapshots"
 print_info "Next run:   systemctl list-timers docker-volume-backup.timer"
-if [ "$PASSWORD_CREATED" -eq 1 ]; then
-    echo ""
-    print_action "PUT THIS PASSWORD IN A VAULT. It is the only way to read the backup:"
-    print_action "  $(cat "$PASSWORD_FILE")"
-    print_info "It is shown once. The copy in $PASSWORD_FILE dies with this machine."
-fi

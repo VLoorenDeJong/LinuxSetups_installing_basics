@@ -37,8 +37,8 @@ unset _a _dbg_args
 # is `guest ok = yes`, so anything on the LAN could read every message. A restic
 # repository is safe there because it is encrypted before it is written.
 #
-# The repository password is printed ONCE, on the run that creates it, and must
-# go into a password vault. The copy on this machine dies with the machine.
+# The repository password is never a plain file: restic_password.sh keeps it in
+# the vault, or encrypted on this machine where there is no vault.
 #
 # Safe to re-run: existing mailboxes, the repository and the timer are left
 # alone. Re-run it after adding a mailbox row.
@@ -305,12 +305,10 @@ BACKUP_GROUP="$(conf_get BACKUP_READ_GROUP "$RUN_USER")"
 # DNS and waiting for it to propagate.
 DKIM_DIR="$(resolve_quiet "" MAIL_DKIM_DIR "/var/lib/rspamd/dkim")"
 BACKUP_INTERVAL="$(resolve_quiet "$ARG_BACKUP_INTERVAL" MAIL_BACKUP_INTERVAL "15min")"
-# Never prompted for: nobody chooses where a generated secret is written, and a
-# default that is always the same is one less thing to get wrong.
-PASSWORD_FILE="/root/.mail_backup_password"
-if [ -f "$SITES_CONF" ]; then
-    PASSWORD_FILE="$(conf_get MAIL_BACKUP_PASSWORD_FILE /root/.mail_backup_password)"
-fi
+# The unit calls the root-owned runtime copy, never this clone's.
+PASSWORD_HELPER="/usr/local/lib/linuxbasics/hostings/scripts/restic_password.sh"
+PASSWORD_NAME="mail-backup-password"
+PASSWORD_CMD="/bin/bash $PASSWORD_HELPER get $PASSWORD_NAME"
 
 VMAIL_USER="vmail"
 VMAIL_UID=5000
@@ -335,6 +333,7 @@ WARNINGS=()
 [ -z "$BASE_DOMAIN" ]     && ERRORS+=("BASE_DOMAIN is not set in $SITES_CONF")
 [ -z "$MAIL_ROOT" ]       && ERRORS+=("MAIL_ROOT is not set in $SITES_CONF")
 [ -z "$BACKUP_REPO" ]     && ERRORS+=("MAIL_BACKUP_REPO is not set in $SITES_CONF")
+[ -f "$PASSWORD_HELPER" ] || ERRORS+=("$PASSWORD_HELPER is missing, so the backup could not get its password. Run: sudo bash $SCRIPT_DIR/add_pipeline_scripts.sh")
 
 case "$MAIL_ROOT" in
     */backup_files|*/backup_files/*)
@@ -554,12 +553,9 @@ done
 # archive would rewrite the whole store every time and defeat the file server's
 # own incremental copy.
 # -----------------------------------------------------------------------------
-PASSWORD_CREATED=0
-if [ ! -f "$PASSWORD_FILE" ]; then
-    ( umask 077; openssl rand -base64 32 > "$PASSWORD_FILE" )
-    chmod 0600 "$PASSWORD_FILE"
-    PASSWORD_CREATED=1
-    print_success "Generated a repository password: $PASSWORD_FILE"
+if ! bash "$PASSWORD_HELPER" setup "$PASSWORD_NAME" --repo "$BACKUP_REPO"; then
+    print_error "No backup password, so mail would not be backed up."
+    exit 1
 fi
 
 mkdir -p "$(dirname "$BACKUP_REPO")"
@@ -568,12 +564,12 @@ if [ -f "$BACKUP_REPO/config" ]; then
     print_success "Encrypted repository already initialised."
 else
     if show_spinner_watch_only "Initialising the encrypted repository" \
-        restic init --repo "$BACKUP_REPO" --password-file "$PASSWORD_FILE"; then
+        restic init --repo "$BACKUP_REPO" --password-command "$PASSWORD_CMD"; then
         print_success "Initialised $BACKUP_REPO"
     else
         print_error "restic init failed, so mail would not be backed up."
         print_action "Run it by hand to see why:"
-        print_action "  sudo restic init --repo $BACKUP_REPO --password-file $PASSWORD_FILE"
+        print_action "  sudo restic init --repo $BACKUP_REPO --password-command \"$PASSWORD_CMD\""
         exit 1
     fi
 fi
@@ -605,7 +601,7 @@ After=network.target
 
 [Service]
 Type=oneshot
-Environment=RESTIC_PASSWORD_FILE=${PASSWORD_FILE}
+Environment="RESTIC_PASSWORD_COMMAND=${PASSWORD_CMD}"
 Environment=RESTIC_REPOSITORY=${BACKUP_REPO}
 ExecStart=/usr/bin/restic backup --quiet --tag mail ${MAIL_ROOT} ${DKIM_DIR}
 ExecStart=/usr/bin/restic forget --quiet --tag mail \\
@@ -673,21 +669,6 @@ echo ""
 
 print_status "Next: add_dovecot.sh sets the passwords for these mailboxes."
 
-if [ "$PASSWORD_CREATED" -eq 1 ]; then
-    echo ""
-    print_action "================================================================"
-    print_action " PUT THIS IN YOUR PASSWORD VAULT NOW. IT IS SHOWN ONCE."
-    print_action "================================================================"
-    print_info " Without it the encrypted backup cannot be read by anyone,"
-    print_info " including you. The copy in $PASSWORD_FILE"
-    print_info " dies with this machine, which is the case it exists for."
-    echo ""
-    printf "   \033[36mrestic repository: %s\033[0m\n" "$BACKUP_REPO"
-    printf "   \033[36mpassword:          %s\033[0m\n" "$(cat "$PASSWORD_FILE")"
-    echo ""
-    print_action " Restore with:"
-    print_action "   restic -r <copy of the repo> restore latest --target /"
-    print_action "================================================================"
-fi
+print_info "Snapshots: sudo restic -r $BACKUP_REPO --password-command \"$PASSWORD_CMD\" snapshots"
 
 print_success "Mail store configured."

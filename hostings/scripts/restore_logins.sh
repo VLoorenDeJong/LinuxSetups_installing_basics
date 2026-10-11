@@ -96,12 +96,10 @@ LOGIN_FILES=(
     "htpasswd-progress|$(conf_get AUTH_USER_FILE /etc/apache2/.htpasswd-progress)|root:www-data|0640"
     "htpasswd-progress.meta|$(conf_get AUTH_USER_META /etc/apache2/.htpasswd-progress.meta)|root:www-data|0640"
     "dovecot-users|/etc/dovecot/users|root:dovecot|0640"
-    # Root-only, and 0600 rather than 0640: no group reads these, and the
-    # backup passwords existed NOWHERE but this drive until 2026-09-20, so
-    # losing it lost the ability to read the backups it had made.
+    # Root-only, and 0600 rather than 0640: no group reads it. The backup
+    # passwords are not files any more: restic_password.sh keeps them in the
+    # vault itself.
     "session-crypto-key|$(conf_get AUTH_SESSION_KEY_FILE /etc/apache2/session-crypto.key)|root:root|0600"
-    "docker-backup-password|$(conf_get DOCKER_BACKUP_PASSWORD_FILE /root/.docker_backup_password)|root:root|0600"
-    "mail-backup-password|$(conf_get MAIL_BACKUP_PASSWORD_FILE /root/.mail_backup_password)|root:root|0600"
 )
 
 # DKIM signing keys, one per domain: a reflash restores the key whose public
