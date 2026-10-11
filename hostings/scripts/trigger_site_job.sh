@@ -118,20 +118,11 @@ fi
 # Fixed paths. Nothing here is taken from the caller.
 MANAGER_HOME="/var/lib/hosting-manager"
 TOKEN_FILE="${MANAGER_HOME}/jenkins-token"
-# THE PORT COMES FROM THE JENKINS ROW, not from a number repeated here. Six
-# scripts held `http://127.0.0.1:11002` as a literal while add_jenkins.sh
-# derived it from the config, so moving the port in hostings.conf would have
-# moved Jenkins and left every one of these dialling the old one. The symptom
-# would be "Jenkins is not answering" with the config saying otherwise.
-#
-# Same awk as add_jenkins.sh:1031, deliberately duplicated rather than sourced:
-# each script here has to run alone on a machine that has only this file.
-#
-# 11002 stays as the fallback, so a machine whose config cannot be read behaves
-# exactly as it did before.
+# The jenkins row's port, else Jenkins' own default 8080. Same awk as
+# add_jenkins.sh, duplicated so this file runs alone.
 JENKINS_PORT="$(grep -v '^[[:space:]]*#' "${SITES_CONF:-$(conf_active /etc/hostings)}" 2>/dev/null | grep '|' \
     | awk -F'|' '{gsub(/ /,"",$2); gsub(/ /,"",$3); if ($2=="jenkins") print $3}' | head -1)"
-JENKINS_URL="http://127.0.0.1:${JENKINS_PORT:-11002}"
+JENKINS_URL="http://127.0.0.1:${JENKINS_PORT:-8080}"
 SITES_CONF="${SITES_CONF:-$(conf_active "/etc/hostings")}"
 
 print_header "Start '$ACTION' for $ROW"

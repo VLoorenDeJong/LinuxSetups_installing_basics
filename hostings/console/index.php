@@ -4803,7 +4803,7 @@ if ($myRole !== 'full') {
       <tr><td class="port">9000&ndash;9999</td><td data-i18n="band9">free, and less empty than it looks: Prometheus and Grafana claim 9090 and 9000.</td></tr>
       <tr><td class="port">10000+</td><td><span data-i18n="band10">the machine's own panels.</span>
         <span id="band10-list"></span></td></tr>
-      <tr><td class="port">11000+</td><td data-i18n="band11">the private half of a 10000 service, same last two digits. 11002 is Jenkins itself, which only 10002 may reach.</td></tr>
+      <tr><td class="port">11000+</td><td data-i18n="band11">the private half of a 10000 service, same last two digits: what listens on 11002 is reached only through 10002.</td></tr>
       <tr><td class="port">15000+</td><td data-i18n="band15">services living here temporarily, until the machine that should run them exists.</td></tr>
       <tr><td class="port">20000+</td><td data-i18n="band20">LAN previews. 8901 previews on 28901. No certificate, no login, this subnet only.</td></tr>
     </table>

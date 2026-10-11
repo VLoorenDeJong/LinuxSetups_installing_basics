@@ -208,7 +208,7 @@ WEBHOOK_PORT="$(conf_get WEBHOOK_PORT "")"
 # One source, so moving it there moves the door with it.
 JENKINS_PORT="$(grep -v '^[[:space:]]*#' "$SITES_CONF" 2>/dev/null | grep '|' \
     | awk -F'|' '{gsub(/ /,"",$2); gsub(/ /,"",$3); if ($2=="jenkins") print $3}' | head -1)"
-JENKINS_PORT="${JENKINS_PORT:-11002}"
+JENKINS_PORT="${JENKINS_PORT:-8080}"
 
 
 AVAILABLE_DIR="/etc/apache2/sites-available"

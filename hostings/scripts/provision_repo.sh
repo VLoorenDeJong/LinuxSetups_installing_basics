@@ -200,6 +200,13 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 . "$SCRIPT_DIR/config.sh" 2>/dev/null \
     || . /usr/local/lib/linuxbasics/hostings/scripts/config.sh 2>/dev/null \
     || conf_active() { printf '%s/hostings.conf' "$1"; }
+# The jenkins row's port, else Jenkins' own default 8080.
+jenkins_row_port() {
+    local p
+    p="$(grep -v '^[[:space:]]*#' "${SITES_CONF:-$(conf_active /etc/hostings)}" 2>/dev/null | grep '|' \
+        | awk -F'|' '{gsub(/ /,"",$2); gsub(/ /,"",$3); if ($2=="jenkins") print $3}' | head -1)"
+    printf '%s' "${p:-8080}"
+}
 SITES_CONF="${SITES_CONF:-$(conf_active "/etc/hostings")}"
 
 # The console runs the installed copy at /usr/local/sbin, where ../.. is /usr:
@@ -1538,7 +1545,7 @@ if [ "$CREATED" -gt 0 ]; then
     # slow: the queue item is created against jobs that are then re-read, and it
     # sits on "Waiting for next available executor" with both executors idle.
     if systemctl is-active --quiet jenkins; then
-        _url="${JENKINS_URL:-http://127.0.0.1:11002}"
+        _url="${JENKINS_URL:-http://127.0.0.1:$(jenkins_row_port)}"
         _tok="${TOKEN_FILE:-/var/lib/hosting-manager/jenkins-token}"
         _ready=0
         for _i in $(seq 1 60); do

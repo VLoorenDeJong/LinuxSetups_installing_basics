@@ -82,7 +82,7 @@ OP_TOKEN_FILE="$(conf_get OP_TOKEN_FILE /root/.op_service_account_token)"
 CRED_VAULT="$(conf_get OP_CONNECT_VAULT '')"
 CRED_ITEM="$(conf_get OP_CONNECT_CREDENTIALS_ITEM '')"
 TOKEN_ITEM="$(conf_get OP_CONNECT_TOKEN_ITEM '')"
-PORT="$(conf_get OP_CONNECT_PORT 11004)"
+PORT="$(conf_get OP_CONNECT_PORT 8080)"
 CONNECT_TOKEN_FILE="$(conf_get OP_CONNECT_TOKEN_FILE /root/.op_connect_token)"
 # Its own name per config, so a TEST Connect runs beside live's.
 PROJECT="$(conf_get OP_CONNECT_NAME op-connect)"

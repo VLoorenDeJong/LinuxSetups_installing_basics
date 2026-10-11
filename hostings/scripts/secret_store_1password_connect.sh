@@ -18,7 +18,7 @@
 # shellcheck source=/dev/null
 . "$(dirname "${BASH_SOURCE[0]}")/secret_store_1password.sh" || return 1
 
-_CX_URL="http://127.0.0.1:$(_op_conf_get OP_CONNECT_PORT 11004)"
+_CX_URL="http://127.0.0.1:$(_op_conf_get OP_CONNECT_PORT 8080)"
 _CX_TOKEN_FILE="$(_op_conf_get OP_CONNECT_TOKEN_FILE /root/.op_connect_token)"
 _CX_VAULT_ID=""
 declare -gA _CX_VAULT_IDS=()

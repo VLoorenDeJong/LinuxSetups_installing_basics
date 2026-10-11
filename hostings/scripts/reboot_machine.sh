@@ -58,7 +58,7 @@ DELAY_SECONDS=5
 TOKEN_FILE="/var/lib/hosting-manager/jenkins-token"
 JENKINS_PORT="$(grep -v '^[[:space:]]*#' "${SITES_CONF:-$(conf_active /etc/hostings)}" 2>/dev/null | grep '|' \
     | awk -F'|' '{gsub(/ /,"",$2); gsub(/ /,"",$3); if ($2=="jenkins") print $3}' | head -1)"
-JENKINS_URL="http://127.0.0.1:${JENKINS_PORT:-11002}"
+JENKINS_URL="http://127.0.0.1:${JENKINS_PORT:-8080}"
 
 print_header "Reboot this machine"
 

@@ -176,9 +176,31 @@ read_secret() {
     SECRET="$out"
 }
 
+# A port from this machine's hostings config when it has one, else the vendor's
+# default: a public script carries no setup's numbers. <id> is the PANEL row,
+# door its field 2, private the port in its field 5 (127.0.0.1:<port>).
+panel_port() {
+    local id="$1" which="$2" def="$3" conf="${SITES_CONF:-}" d line v
+    [ -n "$conf" ] || for d in "$SCRIPT_DIR/../hostings/scripts" /usr/local/lib/linuxbasics/hostings/scripts; do
+        if [ -f "$d/config.sh" ]; then
+            # shellcheck source=/dev/null
+            . "$d/config.sh" && conf="$(conf_active /etc/hostings)"
+            break
+        fi
+    done
+    [ -n "$conf" ] && [ -r "$conf" ] || { printf '%s' "$def"; return 0; }
+    line="$(grep -E "^[[:space:]]*PANEL[[:space:]]*=[[:space:]]*${id}[[:space:]]*\|" "$conf" | head -n 1 | tr -d '\r')"
+    if [ "$which" = door ]; then
+        v="$(printf '%s' "$line" | awk -F'|' '{ gsub(/ /, "", $2); print $2 }')"
+    else
+        v="$(printf '%s' "$line" | awk -F'|' '{ gsub(/ /, "", $5); n = split($5, a, ":"); print a[n] }')"
+    fi
+    if [[ "$v" =~ ^[0-9]+$ ]]; then printf '%s' "$v"; else printf '%s' "$def"; fi
+}
+
 # --- Arguments ---------------------------------------------------------------
 DATA_DIR="/opt/nextcloud"
-PORT="10005"
+PORT="$(panel_port nextcloud door 8080)"
 PUBLIC_HOST=""
 TRUSTED_PROXY=""
 OFFICE=1

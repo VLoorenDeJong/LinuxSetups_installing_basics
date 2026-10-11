@@ -102,6 +102,13 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 . "$SCRIPT_DIR/config.sh" 2>/dev/null \
     || . /usr/local/lib/linuxbasics/hostings/scripts/config.sh 2>/dev/null \
     || conf_active() { printf '%s/hostings.conf' "$1"; }
+# The jenkins row's port, else Jenkins' own default 8080.
+jenkins_row_port() {
+    local p
+    p="$(grep -v '^[[:space:]]*#' "${SITES_CONF:-$(conf_active /etc/hostings)}" 2>/dev/null | grep '|' \
+        | awk -F'|' '{gsub(/ /,"",$2); gsub(/ /,"",$3); if ($2=="jenkins") print $3}' | head -1)"
+    printf '%s' "${p:-8080}"
+}
 SITES_CONF="${SITES_CONF:-$(conf_active "/etc/hostings")}"
 JENKINS_HOME="${JENKINS_HOME:-/var/lib/jenkins}"
 
@@ -570,7 +577,7 @@ if [ ${#ORPHANS[@]} -gt 0 ]; then
         # doDelete makes Jenkins forget it first, which is also what keeps its
         # in-memory state consistent. The rm afterwards is the fallback for a
         # Jenkins that is stopped or does not answer.
-        _url="${JENKINS_URL:-http://127.0.0.1:11002}"
+        _url="${JENKINS_URL:-http://127.0.0.1:$(jenkins_row_port)}"
         _tok="${TOKEN_FILE:-/var/lib/hosting-manager/jenkins-token}"
         for o in "${ORPHANS[@]}"; do
             if systemctl is-active --quiet jenkins 2>/dev/null && [ -s "$_tok" ]; then
@@ -609,7 +616,7 @@ chown -R jenkins:jenkins "$JENKINS_HOME/jobs" 2>/dev/null || true
 # the API still called it building. /reload rereads every config.xml with no
 # downtime and no build lost.
 if systemctl is-active --quiet jenkins 2>/dev/null; then
-    _url="${JENKINS_URL:-http://127.0.0.1:11002}"
+    _url="${JENKINS_URL:-http://127.0.0.1:$(jenkins_row_port)}"
     _tok="${TOKEN_FILE:-/var/lib/hosting-manager/jenkins-token}"
     if [ -s "$_tok" ] && curl -fsS -o /dev/null --max-time 30 -X POST \
             -u "$(head -n1 "$_tok")" "${_url}/reload" 2>/dev/null; then

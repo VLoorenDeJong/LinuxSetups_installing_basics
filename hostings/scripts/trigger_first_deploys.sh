@@ -84,9 +84,16 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 . "$SCRIPT_DIR/config.sh" 2>/dev/null \
     || . /usr/local/lib/linuxbasics/hostings/scripts/config.sh 2>/dev/null \
     || conf_active() { printf '%s/hostings.conf' "$1"; }
+# The jenkins row's port, else Jenkins' own default 8080.
+jenkins_row_port() {
+    local p
+    p="$(grep -v '^[[:space:]]*#' "${SITES_CONF:-$(conf_active /etc/hostings)}" 2>/dev/null | grep '|' \
+        | awk -F'|' '{gsub(/ /,"",$2); gsub(/ /,"",$3); if ($2=="jenkins") print $3}' | head -1)"
+    printf '%s' "${p:-8080}"
+}
 SITES_CONF="${SITES_CONF:-$(conf_active "/etc/hostings")}"
 JENKINS_HOME="${JENKINS_HOME:-/var/lib/jenkins}"
-JENKINS_URL="${JENKINS_URL:-http://127.0.0.1:11002}"
+JENKINS_URL="${JENKINS_URL:-http://127.0.0.1:$(jenkins_row_port)}"
 TOKEN_FILE="${TOKEN_FILE:-/var/lib/hosting-manager/jenkins-token}"
 
 trim() { local s="$1"; s="${s#"${s%%[![:space:]]*}"}"; printf '%s' "${s%"${s##*[![:space:]]}"}"; }
