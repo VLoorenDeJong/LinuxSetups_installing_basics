@@ -233,7 +233,8 @@ if [ "$PORT_GIVEN" -eq 0 ] && [ -f "$SITES_CONF" ]; then
     ROW="$(grep -E '^[[:space:]]*PANEL[[:space:]]*=[[:space:]]*kuma[[:space:]]*\|' "$SITES_CONF" | head -n 1 | tr -d '\r' || true)"
     ROW_DOOR="$(printf '%s' "$ROW" | awk -F'|' '{gsub(/ /, "", $2); print $2}')"
     ROW_TARGET="$(printf '%s' "$ROW" | awk -F'|' '{gsub(/ /, "", $5); print $5}')"
-    if [[ "$ROW_TARGET" =~ ^127\.0\.0\.1:([0-9]+)$ ]] && [[ "$ROW_DOOR" =~ ^[0-9]+$ ]]; then
+    # Door first: a second =~ would overwrite BASH_REMATCH.
+    if [[ "$ROW_DOOR" =~ ^[0-9]+$ ]] && [[ "$ROW_TARGET" =~ ^127\.0\.0\.1:([0-9]+)$ ]]; then
         PORT="${BASH_REMATCH[1]}"
         DOOR="$ROW_DOOR"
     fi
