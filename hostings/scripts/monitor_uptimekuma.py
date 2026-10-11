@@ -2,7 +2,7 @@
 
     python monitor_uptimekuma.py sync <kuma-url> <prefix>   < stdin
 
-stdin: username, password, then one `name<TAB>url<TAB>host_header<TAB>answers`
+stdin: Kuma's session token, then one `name<TAB>url<TAB>host_header<TAB>answers`
 per line. A monitor that does not exist yet is added only when answers is 1.
 A host header means "probe this IP as that hostname": TLS errors are ignored,
 because the certificate names the hostname, not the IP.
@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from dataclasses import dataclass
 
 from uptime_kuma_api import MonitorType, UptimeKumaApi
@@ -35,16 +36,16 @@ class Wanted:
         }
 
 
-def read_input() -> tuple[str, str, list[Wanted]]:
+def read_input() -> tuple[str, list[Wanted]]:
     lines = sys.stdin.read().splitlines()
-    user, password, rows = lines[0], lines[1], lines[2:]
+    token, rows = lines[0], lines[1:]
     wanted = []
     for row in rows:
         if not row.strip():
             continue
         name, url, host, answers = (row.split("\t") + ["", "", ""])[:4]
         wanted.append(Wanted(name, url, host, answers == "1"))
-    return user, password, wanted
+    return token, wanted
 
 
 def differs(current: dict, want: dict) -> bool:
@@ -57,14 +58,30 @@ def differs(current: dict, want: dict) -> bool:
     return False
 
 
+def connect(url: str, token: str) -> UptimeKumaApi:
+    """Kuma answers HTTP before its socket takes commands, so the first try may time out."""
+    for attempt in range(1, 4):
+        api = None
+        try:
+            api = UptimeKumaApi(url, timeout=30)
+            api.login_by_token(token)
+            return api
+        except Exception:
+            if api is not None:
+                api.disconnect()
+            if attempt == 3:
+                raise
+            time.sleep(10)
+    raise AssertionError("unreachable")
+
+
 def sync(url: str, prefix: str) -> int:
-    user, password, wanted = read_input()
+    token, wanted = read_input()
     if not prefix.strip():
         print("Refusing an empty prefix: it would claim every monitor.", file=sys.stderr)
         return 2
     added = updated = deleted = same = waiting = 0
-    with UptimeKumaApi(url, timeout=30) as api:
-        api.login(user, password)
+    with connect(url, token) as api:
         ours = {m["name"]: m for m in api.get_monitors() if m["name"].startswith(prefix + " ")}
         for w in wanted:
             fields = w.fields()

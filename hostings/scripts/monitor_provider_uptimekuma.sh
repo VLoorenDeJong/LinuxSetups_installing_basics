@@ -8,23 +8,14 @@
 #
 # Secrets go to Python and curl on stdin, never as an argument or in the
 # environment:
-#   admin login   /etc/uptime-kuma/admin on the Kuma machine (root, 0600: user,
-#                 password), else the vault item "Uptime Kuma admin" (monitor_sync)
+#   session token /etc/uptime-kuma/token on the Kuma machine (root, 0600),
+#                 written by add_uptime_kuma.sh; no expiry, dies with a
+#                 password change (--renew-token)                (monitor_sync)
 #   API key       the vault item "Uptime Kuma API key"           (monitor_states)
 # =============================================================================
 
 MONITOR_VENV="${MONITOR_VENV:-/opt/hosting-monitor/venv}"
-MONITOR_ADMIN_FILE="${MONITOR_ADMIN_FILE:-/etc/uptime-kuma/admin}"
-
-# username or password of the admin login: the local file wins, so the Kuma
-# machine needs no vault at all.
-_kuma_admin() {
-    if [ -r "$MONITOR_ADMIN_FILE" ]; then
-        sed -n "$([ "$1" = username ] && echo 1 || echo 2)p" "$MONITOR_ADMIN_FILE"
-    elif _kuma_secrets; then
-        _kuma_field "Uptime Kuma admin" "$1"
-    fi
-}
+MONITOR_TOKEN_FILE="${MONITOR_TOKEN_FILE:-/etc/uptime-kuma/token}"
 
 _kuma_dir() { cd "$(dirname "${BASH_SOURCE[0]}")" && pwd; }
 
@@ -48,8 +39,8 @@ monitor_preflight() {
     if [ ! -x "$MONITOR_VENV/bin/python" ]; then
         echo "No Kuma client venv at $MONITOR_VENV: sudo bash add_monitor_client.sh"; bad=1
     fi
-    if [ -z "$(_kuma_admin password)" ]; then
-        echo "No Kuma admin login: neither $MONITOR_ADMIN_FILE nor the vault item 'Uptime Kuma admin'. add_uptime_kuma.sh writes the file."; bad=1
+    if [ ! -s "$MONITOR_TOKEN_FILE" ]; then
+        echo "No Kuma session token at $MONITOR_TOKEN_FILE: monitors are synced on the machine running Kuma, where add_uptime_kuma.sh writes it."; bad=1
     fi
     if ! curl -s -o /dev/null --max-time 5 "$MONITOR_URL"; then
         echo "Kuma does not answer at $MONITOR_URL"; bad=1
@@ -59,19 +50,18 @@ monitor_preflight() {
 
 # Tracing is off in both: the secrets sit in variables, and set -x prints those.
 monitor_sync() {
-    local prefix="$1" user pass rc=0 xt
+    local prefix="$1" token rc=0 xt
     { xt=$-; set +x; } 2>/dev/null
-    user="$(_kuma_admin username)"
-    pass="$(_kuma_admin password)"
-    if [ -n "$pass" ]; then
-        { printf '%s\n%s\n' "$user" "$pass"; cat; } \
+    token="$(head -n 1 "$MONITOR_TOKEN_FILE" 2>/dev/null)"
+    if [ -n "$token" ]; then
+        { printf '%s\n' "$token"; cat; } \
             | "$MONITOR_VENV/bin/python" -I "$(_kuma_dir)/monitor_uptimekuma.py" sync "$MONITOR_URL" "$prefix" \
             || rc=$?
     else
-        print_error "No Kuma admin login to sync with."
+        print_error "No Kuma session token in $MONITOR_TOKEN_FILE."
         rc=1
     fi
-    unset user pass
+    unset token
     if [[ $xt == *x* ]]; then set -x; fi
     return $rc
 }
