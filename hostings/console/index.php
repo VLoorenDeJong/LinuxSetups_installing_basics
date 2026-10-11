@@ -4355,7 +4355,7 @@ if ($myRole !== 'full') {
             </div>
           </details>
           <?php if ($swOpen || $swStuck): ?>
-            <button type="submit" form="share-window-close" class="svc-all">Lock shares</button>
+            <button type="submit" form="share-window-close" class="svc-all">🔒 Lock shares</button>
           <?php endif; ?>
         </span>
       <?php endif; ?>
