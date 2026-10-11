@@ -4299,7 +4299,7 @@ if ($myRole !== 'full') {
               id="svc-start-all">Start all</button>
       <button type="button" class="svc-all danger" data-svcpane="stop"
               id="svc-stop-all">Stop all</button>
-      <?= $bnHtml ?>
+      <?= str_replace('class="svc-all"', 'class="svc-all app"', $bnHtml) ?>
       <button type="button" class="add-btn app" data-kind="app">Add an application</button>
     </div>
 
@@ -4316,7 +4316,7 @@ if ($myRole !== 'full') {
     </div>
 
     <div class="row-actions" style="margin:.6rem 0 .85rem;display:none" data-pane="machine">
-      <?= $bnHtml ?>
+      <?= str_replace('class="svc-all"', 'class="svc-all panel"', $bnHtml) ?>
       <button type="button" class="add-btn panel" id="add-panel" data-kind="panel">Add a page</button>
     </div>
 
@@ -4364,7 +4364,7 @@ if ($myRole !== 'full') {
            into the live tree does not. -->
       <button type="submit" name="action" value="reloadsmb" class="svc-all smb"
               id="btn-smb-reload">Reload Samba</button>
-      <?= $bnHtml ?>
+      <?= str_replace('class="svc-all"', 'class="svc-all smb"', $bnHtml) ?>
       <button type="button" class="add-btn smb" id="add-smb" data-kind="smb">Add a shared folder</button>
     </div>
 
