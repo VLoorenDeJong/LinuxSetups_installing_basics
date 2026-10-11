@@ -20,9 +20,10 @@ unset _a _dbg_args
 # when one goes down. Its monitors come from hostings.conf (sync_monitors.sh),
 # never clicked in.
 #
-# LAN ONLY, ON HOST NETWORKING. Docker's IPv4 publishes bypass UFW, so Kuma
-# listens on the host itself and UFW admits the LAN subnet to its port. Never
-# forwarded by the router.
+# THE PORT COMES FROM THE HOSTINGS CONFIG when it has a `PANEL = kuma` row:
+# Kuma then listens on that row's 127.0.0.1 target for good, and the console's
+# door is the only way in. Without one, Kuma's own 3001, opened to the LAN
+# subnet in UFW. Host networking either way: Docker's IPv4 publishes bypass UFW.
 #
 # THE ADMIN IS MADE HERE, NOT ON THE FIRST PAGE VISIT, because Kuma gives admin
 # to whoever opens the page first. Until the account exists Kuma listens on
@@ -202,14 +203,15 @@ IMAGE="louislam/uptime-kuma:2"
 KEY_NAME="metrics, read only"
 TOKEN_FILE="/etc/uptime-kuma/token"
 RENEW_TOKEN=0
+PORT_GIVEN=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --port)     PORT="$2"; shift 2 ;;
+        --port)     PORT="$2"; PORT_GIVEN=1; shift 2 ;;
         --data-dir) DATA_DIR="$2"; shift 2 ;;
         --image)    IMAGE="$2"; shift 2 ;;
         --renew-token) RENEW_TOKEN=1; shift ;;
-        -h|--help)  sed -n '18,52p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help)  sed -n '18,53p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *)          print_error "Unknown argument: $1"; exit 2 ;;
     esac
 done
@@ -221,6 +223,23 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 print_header "Uptime Kuma"
+
+# --- Port: the kuma machine page's target, else Kuma's default ----------------
+. "$SCRIPT_DIR/../hostings/scripts/config.sh" 2>/dev/null \
+    || conf_active() { printf '%s/hostings.conf' "$1"; }
+SITES_CONF="${SITES_CONF:-$(conf_active /etc/hostings)}"
+DOOR=""
+if [ "$PORT_GIVEN" -eq 0 ] && [ -f "$SITES_CONF" ]; then
+    ROW="$(grep -E '^[[:space:]]*PANEL[[:space:]]*=[[:space:]]*kuma[[:space:]]*\|' "$SITES_CONF" | head -n 1 | tr -d '\r' || true)"
+    ROW_DOOR="$(printf '%s' "$ROW" | awk -F'|' '{gsub(/ /, "", $2); print $2}')"
+    ROW_TARGET="$(printf '%s' "$ROW" | awk -F'|' '{gsub(/ /, "", $5); print $5}')"
+    if [[ "$ROW_TARGET" =~ ^127\.0\.0\.1:([0-9]+)$ ]] && [[ "$ROW_DOOR" =~ ^[0-9]+$ ]]; then
+        PORT="${BASH_REMATCH[1]}"
+        DOOR="$ROW_DOOR"
+    fi
+fi
+# Behind a door Kuma never leaves loopback; alone it opens to the LAN.
+if [ -n "$DOOR" ]; then LAN_BIND="127.0.0.1"; else LAN_BIND="0.0.0.0"; fi
 
 # --- Pre-flight --------------------------------------------------------------
 ERRORS=()
@@ -279,7 +298,12 @@ if [ ${#ERRORS[@]} -gt 0 ]; then
     exit 1
 fi
 
-print_info "Web page:  http://${LAN_IP:-<this machine>}:${PORT}, LAN only"
+PAGE_URL="http://${LAN_IP:-<this machine>}:${DOOR:-$PORT}"
+if [ -n "$DOOR" ]; then
+    print_info "Web page:  $PAGE_URL, the console's door to 127.0.0.1:${PORT}"
+else
+    print_info "Web page:  $PAGE_URL, LAN only"
+fi
 print_info "Data:      $DATA_DIR/data"
 print_success "Pre-flight passed."
 
@@ -385,7 +409,7 @@ fi
 # an admin, so a running Kuma is asked; anything else starts on loopback.
 NEED="yes"
 if _is_kuma; then NEED="$(kuma_call "$(kuma_request needSetup)")" || NEED="yes"; fi
-if [ "$NEED" = "no" ]; then BIND="0.0.0.0"; else BIND="127.0.0.1"; fi
+if [ "$NEED" = "no" ]; then BIND="$LAN_BIND"; else BIND="127.0.0.1"; fi
 start_kuma "$BIND"
 
 # The page answers before the socket takes commands, on a first start by minutes.
@@ -424,7 +448,7 @@ if [ "$NEED" = "yes" ]; then
             PASSWORD="$(openssl rand -base64 24 | tr -d '/+=\n' | cut -c1-20)7k"
             if printf 'username\ttext\tadmin\npassword\tpassword\t%s\n' "$PASSWORD" \
                     | secret_entry_set "$ENTRY" "" \
-               && printf 'Uptime Kuma\t%s\n' "http://${LAN_IP}:${PORT}" \
+               && printf 'Uptime Kuma\t%s\n' "$PAGE_URL" \
                     | secret_entry_urls "$ENTRY" \
                && [ "$(entry_password)" = "$PASSWORD" ]; then
                 print_status "New admin password generated and stored in '$ENTRY'."
@@ -484,10 +508,10 @@ else
 fi
 [[ $_xt == *x* ]] && set -x
 
-if [ "$BIND" != "0.0.0.0" ]; then
-    BIND="0.0.0.0"
+if [ "$BIND" != "$LAN_BIND" ]; then
+    BIND="$LAN_BIND"
     start_kuma "$BIND"
-    print_status "Kuma now listens on the LAN."
+    [ -n "$DOOR" ] || print_status "Kuma now listens on the LAN."
 elif write_compose "$BIND"; then
     start_kuma "$BIND"
 else
@@ -495,7 +519,9 @@ else
 fi
 
 # --- Firewall ----------------------------------------------------------------
-if [ "$UFW_ON" -eq 1 ]; then
+if [ -n "$DOOR" ]; then
+    print_info "Behind the console's door on ${DOOR}: no firewall rule of its own."
+elif [ "$UFW_ON" -eq 1 ]; then
     if ufw status | grep -qE "^${PORT}/tcp[[:space:]]+ALLOW[[:space:]]+${LAN_CIDR//./\.}([[:space:]]|$)"; then
         print_success "UFW already allows port ${PORT} from $LAN_CIDR."
     elif ufw allow from "$LAN_CIDR" to any port "$PORT" proto tcp >/dev/null 2>&1; then
@@ -544,14 +570,14 @@ unset PASSWORD
 if [ "$KEY_DONE" -eq 0 ]; then
     print_action "NEEDED: a metrics key, made once on Kuma's page"
     [ "$KEY_LOST" -eq 0 ] || print_hint "  first delete the key ${HL}${KEY_NAME}${NC} there: nobody holds it"
-    print_hint "  open ${HL}http://${LAN_IP}:${PORT}${NC} and sign in as admin"
+    print_hint "  open ${HL}${PAGE_URL}${NC} and sign in as admin"
     print_hint "  ${HL}Settings > API Keys > Add API Key${NC}, name it ${HL}${KEY_NAME}${NC}, no expiry"
     print_hint "  copy the key into 1Password as ${HL}${API_ENTRY}${NC} (Password item)"
 fi
 
 echo ""
 if [ "$KEY_DONE" -eq 1 ]; then
-    print_success "Uptime Kuma is up on http://${LAN_IP}:${PORT} (LAN only)."
+    print_success "Uptime Kuma is up on ${PAGE_URL} (LAN only)."
 else
-    print_success "Uptime Kuma is up on http://${LAN_IP}:${PORT} (LAN only), without a metrics key yet."
+    print_success "Uptime Kuma is up on ${PAGE_URL} (LAN only), without a metrics key yet."
 fi
