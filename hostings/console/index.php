@@ -4264,27 +4264,27 @@ if ($myRole !== 'full') {
       <button type="button" class="tab svc panel" role="tab" data-tab="machine" data-kind="panel" aria-selected="false">
         <span data-i18n="tabMachine">Machine pages</span> <span class="count" id="count-machine"></span>
       </button>
-      <button type="button" class="tab svc smb" role="tab" data-tab="smb" data-kind="smb" aria-selected="false">
+      <button type="button" class="tab svc smb" role="tab" data-tab="smb" data-kind="smb" data-icon="folder" aria-selected="false">
         <span data-i18n="tabSmb">Shared folders</span> <span class="count" id="count-smb"></span>
       </button>
       <button type="button" class="tab svc environment" role="tab" data-tab="environments" data-kind="env" aria-selected="false">
         <span data-i18n="tabEnvironments">Environments</span> <span class="count" id="count-environments"></span>
       </button>
-      <button type="button" class="tab svc ports" role="tab" data-tab="ports" aria-selected="false">
+      <button type="button" class="tab svc ports" role="tab" data-tab="ports" data-icon="plug" aria-selected="false">
         <span data-i18n="tabPorts">Ports</span>
       </button>
-      <button type="button" class="tab svc repos" role="tab" data-tab="repos" aria-selected="false">
+      <button type="button" class="tab svc repos" role="tab" data-tab="repos" data-icon="github" aria-selected="false">
         <span data-i18n="tabRepos">Repositories</span> <span class="count" id="count-repos"></span>
       </button>
       <!-- Everybody who may sign in, anywhere on this machine. Its own hue:
            indigo, deliberately away from the app blue and the proxy lavender. -->
-      <button type="button" class="tab svc user" role="tab" data-tab="users" aria-selected="false">
+      <button type="button" class="tab svc user" role="tab" data-tab="users" data-icon="person" aria-selected="false">
         <span data-i18n="tabUsers">Users</span> <span class="count" id="count-users"></span>
       </button>
-      <button type="button" class="tab svc raw" role="tab" data-tab="raw" aria-selected="false">
+      <button type="button" class="tab svc raw" role="tab" data-tab="raw" data-icon="cog" aria-selected="false">
         <span data-i18n="tabRaw">Config file</span>
       </button>
-      <button type="button" class="tab svc audit" role="tab" data-tab="audit" aria-selected="false">
+      <button type="button" class="tab svc audit" role="tab" data-tab="audit" data-icon="log" aria-selected="false">
         <span data-i18n="tabAudit">Audit</span>
       </button>
     </div>

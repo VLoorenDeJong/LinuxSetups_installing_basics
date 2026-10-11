@@ -1,8 +1,9 @@
 // The service tabs take their icon from the same set the rows and the add
 // buttons use. Drawn once: an icon does not change with the language, and the
 // label beside it is a span applyLang() rewrites without touching this.
-document.querySelectorAll('.tab.svc[data-kind]').forEach(b => {
-  b.insertAdjacentHTML('afterbegin', I[b.dataset.kind] || '');
+// data-icon is for tabs that are not a row kind, so no kind code reacts to them.
+document.querySelectorAll('.tab.svc:is([data-kind], [data-icon])').forEach(b => {
+  b.insertAdjacentHTML('afterbegin', I[b.dataset.icon || b.dataset.kind] || '');
 });
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
