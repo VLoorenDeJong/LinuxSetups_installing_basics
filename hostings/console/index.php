@@ -4347,7 +4347,7 @@ if ($myRole !== 'full') {
             <strong>Still open after its time ran out.</strong>
           <?php endif; ?>
           <details class="sw-menu">
-            <summary class="svc-all smb">🔓 <?= $swOpen ? 'Restart timer' : 'Open without password' ?> ▾</summary>
+            <summary class="svc-all smb">🔓 <?= $swOpen ? 'Restart timer' : 'Unlock shares' ?> ▾</summary>
             <div class="sw-list">
               <?php foreach (SHAREWIN_MINUTES as $swMin => $swLabel): ?>
                 <button type="submit" form="share-window-open" name="minutes" value="<?= $swMin ?>"><?= $swLabel ?></button>
@@ -4355,7 +4355,7 @@ if ($myRole !== 'full') {
             </div>
           </details>
           <?php if ($swOpen || $swStuck): ?>
-            <button type="submit" form="share-window-close">Close now</button>
+            <button type="submit" form="share-window-close" class="svc-all">Lock shares</button>
           <?php endif; ?>
         </span>
       <?php endif; ?>
