@@ -44,11 +44,12 @@ unset _a _dbg_args
 #   add_nextcloud.sh --dump-at 01:30                 # nightly DB dump, default 02:30
 #   add_nextcloud.sh --drop-folder /srv/cloudberry   # a host folder every user
 #                     sees as /cloudberry; share it over Samba to drop files in
-#   add_nextcloud.sh --users 4                       # quota split, default 3
+#   add_nextcloud.sh --default-quota 10              # GB per new user, default 5
 #
 # DISK QUOTA. Nextcloud and its backup together get 75% of the disk, always
-# leaving 40 GB for everything else; half of that is Nextcloud's, split evenly
-# over --users as the default quota. Refuses when the quotas set add up past it.
+# leaving 40 GB for everything else; half of that is Nextcloud's. Each user gets
+# --default-quota, raised per user on Nextcloud's Users page. Refuses when the
+# quotas set add up past Nextcloud's half.
 #
 # Exit codes:
 #   0  Nextcloud (and the editor) answer through the front port
@@ -212,7 +213,7 @@ OFFICE=1
 UPDATE=0
 DUMP_AT="02:30"
 DROP_DIR=""
-USERS=3
+QUOTA_GB=5
 SHARE_PCT=75
 RESERVE_GB=40
 NC_IMAGE="nextcloud:34-apache"
@@ -234,7 +235,7 @@ while [ $# -gt 0 ]; do
         --update)        UPDATE=1; shift ;;
         --dump-at)       need_value "$1" "${2:-}"; DUMP_AT="$2"; shift 2 ;;
         --drop-folder)   need_value "$1" "${2:-}"; DROP_DIR="${2%/}"; shift 2 ;;
-        --users)         need_value "$1" "${2:-}"; USERS="$2"; shift 2 ;;
+        --default-quota) need_value "$1" "${2:-}"; QUOTA_GB="$2"; shift 2 ;;
         -h|--help)       sed -n '/^# Nextcloud with/,/^#   2  bad usage/p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *)               print_error "Unknown argument: $1"; exit 2 ;;
     esac
@@ -276,7 +277,7 @@ done
 if [ -n "$PUBLIC_HOST" ] && [ -z "$TRUSTED_PROXY" ]; then
     ERRORS+=("--public-host needs --trusted-proxy: the address of the machine whose proxy serves it")
 fi
-[[ "$USERS" =~ ^[1-9][0-9]*$ ]] || ERRORS+=("--users must be a whole number of 1 or more, not '$USERS'")
+[[ "$QUOTA_GB" =~ ^[1-9][0-9]*$ ]] || ERRORS+=("--default-quota must be a whole number of GB, 1 or more, not '$QUOTA_GB'")
 command -v curl    >/dev/null 2>&1 || ERRORS+=("curl is missing: sudo apt-get install -y curl")
 command -v openssl >/dev/null 2>&1 || ERRORS+=("openssl is missing: sudo apt-get install -y openssl")
 
@@ -689,13 +690,12 @@ DISK_GB="$(df -BG --output=size "$DATA_DIR" | tail -n 1 | tr -dc '0-9')"
 PAIR_GB=$(( DISK_GB * SHARE_PCT / 100 ))
 [ $(( DISK_GB - RESERVE_GB )) -lt "$PAIR_GB" ] && PAIR_GB=$(( DISK_GB - RESERVE_GB ))
 BUDGET_GB=$(( PAIR_GB / 2 ))
-QUOTA_GB=$(( BUDGET_GB / USERS ))
-if [ "$QUOTA_GB" -lt 1 ]; then
+if [ "$BUDGET_GB" -lt "$QUOTA_GB" ]; then
     print_error "The ${DISK_GB} GB disk leaves no room for Nextcloud after ${RESERVE_GB} GB for everything else."
     exit 1
 fi
 occ config:app:set files default_quota --value="${QUOTA_GB} GB" >/dev/null
-print_success "Disk ${DISK_GB} GB: Nextcloud may use ${BUDGET_GB} GB, ${QUOTA_GB} GB per user for ${USERS} users."
+print_success "Disk ${DISK_GB} GB: Nextcloud may use ${BUDGET_GB} GB, ${QUOTA_GB} GB per user by default."
 
 # A quota set by hand, or more users than planned, can still add up past it.
 SET_GB=0; UNLIMITED=()
@@ -713,7 +713,7 @@ done < <(occ user:list --output=json 2>/dev/null | grep -oE '"[^"]+":' | tr -d '
 if [ ${#UNLIMITED[@]} -gt 0 ] || [ "$SET_GB" -gt "$BUDGET_GB" ]; then
     [ ${#UNLIMITED[@]} -eq 0 ] || print_error "No quota on: ${UNLIMITED[*]}"
     [ "$SET_GB" -le "$BUDGET_GB" ] || print_error "The quotas add up to ${SET_GB} GB, past Nextcloud's ${BUDGET_GB} GB."
-    print_action "Lower them in Nextcloud: Users, or run this again with a higher --users."
+    print_action "Lower them in Nextcloud: Users, or run this again with a lower --default-quota."
     exit 1
 fi
 print_success "Quotas add up to ${SET_GB} GB of ${BUDGET_GB} GB."
