@@ -63,6 +63,7 @@ SIG_OFF=$'\033[90m'
 # Prompts. print_action cannot be one: it ends with a newline.
 prompt_ask()    { printf "\n   \033[33m%s\033[0m %s" "$1" "${2:-}" > /dev/tty; }
 prompt_got()    { printf "   \033[32m✅ %s\033[0m\n" "$1"; }
+prompt_retry()  { printf "   \033[33m%s\033[0m\n" "$1" > /dev/tty; }
 
 SPIN_FRAMES=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
 _SPIN_PID=""
@@ -306,9 +307,18 @@ ask_password() {
         read_secret "   Password: "
         PASS="$SECRET"; unset SECRET
         if [ -n "$PASS" ] && { [ ${#PASS} -lt 8 ] || [ ${#PASS} -gt 63 ]; }; then
-            printf "   \033[33mA Wi-Fi password is 8 to 63 characters; that was %s. Try again.\033[0m\n" "${#PASS}" > /dev/tty
+            prompt_retry "A Wi-Fi password is 8 to 63 characters; that was ${#PASS}. Try again."
             continue
         fi
+        [ -z "$PASS" ] && break
+        # Stored for good, so a typo would only show up as a failed join.
+        read_secret "   Again: "
+        if [ "$SECRET" != "$PASS" ]; then
+            unset SECRET
+            prompt_retry "They do not match. Try again."
+            continue
+        fi
+        unset SECRET
         break
     done
     if [ -z "$PASS" ]; then
