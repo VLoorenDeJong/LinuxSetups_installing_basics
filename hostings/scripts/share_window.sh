@@ -216,6 +216,7 @@ if [ "$MODE" = "open" ]; then
         echo "# Written by share_window.sh while a write window is open."
         echo "# Emptied when it closes. Never edit by hand."
         while IFS=$'\t' read -r name _path; do
+            refused_root "$(readlink -f -- "$_path" 2>/dev/null || echo "$_path")" && continue
             printf '[%s]\n   read only = No\n   force user = %s\n' "$name" "$GUEST"
         done < <(list_shares)
     } > "$OVERRIDE.tmp"
