@@ -21,9 +21,9 @@ unset _a _dbg_args
 #   restore_now.sh start    runs the restore in the background (unit restore-now)
 #   restore_now.sh run      the restore itself; what `start` runs
 #
-# THE COPY IS DROPPED IN, NEVER CHOSEN BY THE PAGE: a folder named `restore`
-# beside the backup repository (the docker-volume-backup unit's
-# RESTIC_REPOSITORY), holding a copy of that repository at any depth up to 3.
+# THE COPY IS DROPPED IN, NEVER CHOSEN BY THE PAGE: the docker-volume-backup
+# unit's RESTORE_DROP_DIR (its own share), holding a copy of the repository at
+# any depth up to 3. No RESTORE_DROP_DIR, no Restore button.
 # It must open with this machine's backup password, the one from
 # restic_password.sh, so a foreign copy is refused rather than
 # restored.
@@ -58,8 +58,9 @@ unit_env() {
 LIVE_REPO="$(unit_env RESTIC_REPOSITORY)"
 PASSWORD_HELPER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/restic_password.sh"
 PASSWORD_CMD="/bin/bash $PASSWORD_HELPER get docker-backup-password"
-DROP_DIR=""
-[ -n "$LIVE_REPO" ] && DROP_DIR="$(dirname "$LIVE_REPO")/restore"
+# Its own share, never beside the live repository: a copy dropped one folder
+# too high there overwrote the live repository's config on 2026-10-13.
+DROP_DIR="$(unit_env RESTORE_DROP_DIR)"
 
 # A restic repository is a folder holding a `config` file and a `keys` folder.
 find_copy() {

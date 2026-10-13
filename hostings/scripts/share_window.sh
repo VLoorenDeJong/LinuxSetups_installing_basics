@@ -62,6 +62,14 @@ systemd-network messagebus syslog landscape tss uuidd _apt nobody"
 # sudo grants, auth holds the login files, certbot answers certificate
 # challenges, and a dot-folder in a home holds keys and shell start-up files.
 NEVER=(/var/www/hosting-manager /var/www/auth /var/www/certbot)
+# Plus what an install registers, one absolute path per line: a live backup
+# repository is overwritten by a copy dropped one folder too high.
+NEVER_FILE="/etc/share-window.never"
+if [ -r "$NEVER_FILE" ]; then
+    while IFS= read -r n; do
+        [[ "$n" == /* ]] && NEVER+=("${n%/}")
+    done < "$NEVER_FILE"
+fi
 PRUNE=(\( -path '/home/*/.*')
 for n in "${NEVER[@]}"; do
     PRUNE+=(-o -path "$n")
