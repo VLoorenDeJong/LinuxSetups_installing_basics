@@ -38,7 +38,7 @@ unset _a _dbg_args
 #
 # Usage:
 #   add_nextcloud.sh
-#   add_nextcloud.sh --public-host cloud.example.com --trusted-proxy 192.0.2.10
+#   add_nextcloud.sh --public-host cloud.example.com --trusted-proxy proxyhost
 #   add_nextcloud.sh --no-office                     # Nextcloud alone
 #   add_nextcloud.sh --update                        # pull newer images
 #   add_nextcloud.sh --dump-at 01:30                 # nightly DB dump, default 02:30
@@ -275,10 +275,11 @@ elif [ -n "$DROP_DIR" ] && [ -e "$DROP_DIR" ] && [ "$(stat -c %u "$DROP_DIR")" !
     ERRORS+=("--drop-folder $DROP_DIR already exists and is not www-data's; pick a new folder")
 fi
 for p in $TRUSTED_PROXY; do
-    [[ "$p" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || ERRORS+=("--trusted-proxy '$p' is not an IPv4 address")
+    [[ "$p" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] \
+        || ERRORS+=("--trusted-proxy '$p' is not a machine name or IPv4 address")
 done
 if [ -n "$PUBLIC_HOST" ] && [ -z "$TRUSTED_PROXY" ]; then
-    ERRORS+=("--public-host needs --trusted-proxy: the address of the machine whose proxy serves it")
+    ERRORS+=("--public-host needs --trusted-proxy: the name of the machine whose proxy serves it")
 fi
 [[ "$QUOTA_GB" =~ ^[1-9][0-9]*$ ]] || ERRORS+=("--default-quota must be a whole number of GB, 1 or more, not '$QUOTA_GB'")
 command -v curl    >/dev/null 2>&1 || ERRORS+=("curl is missing: sudo apt-get install -y curl")
@@ -296,8 +297,8 @@ if [ "$OFFICE" -eq 1 ] && [ "${MEM_MB:-0}" -lt 3500 ]; then
     ERRORS+=("Euro-Office needs 4 GB of memory and this machine has ${MEM_MB} MB. Use --no-office")
 fi
 
-LAN_IP="$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -1)"
-[ -n "$LAN_IP" ] || ERRORS+=("No LAN address found, so Nextcloud cannot be told which name to trust")
+# Shown only: the trust list is worked out at every boot, so it is never stored.
+PAGE="http://$(hostname):${PORT}"
 
 # Optional. Without it the admin password is asked at the keyboard.
 STORE=0
@@ -326,7 +327,7 @@ if [ ${#ERRORS[@]} -gt 0 ]; then
     exit 1
 fi
 
-print_status "Front:     port ${PORT}, http://${LAN_IP}:${PORT}"
+print_status "Front:     port ${PORT}, ${PAGE}"
 print_status "Public:    ${PUBLIC_HOST:-none}${PUBLIC_HOST:+, through the proxy on $TRUSTED_PROXY}"
 print_status "Editor:    $([ "$OFFICE" -eq 1 ] && echo "Euro-Office at /eurooffice/" || echo "none (--no-office)")"
 print_status "Data:      $DATA_DIR"
@@ -367,8 +368,10 @@ chown root:root "$JWT_FILE"
 chmod 0400 "$JWT_FILE"
 
 TRUSTED_BLOCK=""
+# The addresses behind the names change with the hardware, so the list lives in
+# its own file, rewritten by nextcloud-trust-refresh at every boot and daily.
 [ -n "$TRUSTED_PROXY" ] && TRUSTED_BLOCK="    servers {
-        trusted_proxies static $(printf '%s/32 ' $TRUSTED_PROXY)
+        import /etc/caddy/trusted_proxies.caddy
     }"
 OFFICE_ROUTE=""
 [ "$OFFICE" -eq 1 ] && OFFICE_ROUTE="    route /eurooffice/* {
@@ -455,6 +458,7 @@ ${OFFICE_SERVICE}
       - \"${PORT}:80\"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./trusted_proxies.caddy:/etc/caddy/trusted_proxies.caddy:ro
     networks: [nextcloud]
 networks:
   nextcloud:
@@ -543,6 +547,8 @@ fi
 install -d -o 33 -g 33 -m 0770 "$DATA_DIR/html/data"
 print_success "Nextcloud's drive: ${BUDGET_GB} GB on $VOL_MNT, $(df -h --output=used "$VOL_MNT" | tail -n 1 | tr -d ' ') used."
 
+# Trusts only Caddy itself until the refresher has looked the names up.
+[ -s "$DATA_DIR/trusted_proxies.caddy" ] || echo "trusted_proxies static 127.0.0.1/32" > "$DATA_DIR/trusted_proxies.caddy"
 write_if_changed "$DATA_DIR/Caddyfile" "$NEW_CADDY"
 write_if_changed "$DATA_DIR/docker-compose.yml" "$NEW_COMPOSE"
 
@@ -627,7 +633,7 @@ else
             PASSWORD="$(openssl rand -base64 24 | tr -d '/+=\n' | cut -c1-20)"
             if printf 'username\ttext\tadmin\npassword\tpassword\t%s\n' "$PASSWORD" \
                     | secret_entry_set "$ENTRY" "" \
-               && printf 'Nextcloud\t%s\n' "http://$LAN_IP:$PORT" \
+               && printf 'Nextcloud\t%s\n' "$PAGE" \
                     | secret_entry_urls "$ENTRY" \
                && [ "$(entry_password)" = "$PASSWORD" ]; then
                 print_status "New admin password generated and stored in '$ENTRY'."
@@ -681,23 +687,104 @@ else
     print_success "Installed, with the account 'admin'."
 fi
 
-# --- Names and proxies, every run --------------------------------------------
-# Each address it is reached on, plus the container name the editor calls back on.
-TRUSTED=("localhost" "$LAN_IP" "nextcloud")
-[ -n "$PUBLIC_HOST" ] && TRUSTED+=("$PUBLIC_HOST")
-occ config:system:delete trusted_domains >/dev/null
-for i in "${!TRUSTED[@]}"; do
-    occ config:system:set trusted_domains "$i" --value="${TRUSTED[$i]}" >/dev/null
+# --- Names and proxies, at every boot and daily -------------------------------
+# A drive moved to other hardware gets another address, and so may the proxy's
+# machine. So nothing here stores an address: the refresher looks them up.
+REFRESH="/usr/local/sbin/nextcloud-trust-refresh"
+NEW_REFRESH="$(cat <<EOF
+#!/usr/bin/env bash
+# Generated by add_nextcloud.sh. The next run overwrites it.
+# Trusted names and proxies from the addresses this machine and the proxies have now.
+PROXIES="${TRUSTED_PROXY}"
+PUBLIC_HOST="${PUBLIC_HOST}"
+PORT="${PORT}"
+SUBNET="${SUBNET}"
+CADDY_LIST="${DATA_DIR}/trusted_proxies.caddy"
+EOF
+cat <<'EOF'
+occ() { docker exec -u www-data nextcloud php occ "$@"; }
+
+for _ in $(seq 1 60); do
+    occ status --output=json 2>/dev/null | grep -q '"installed":true' && break
+    sleep 5
 done
-# Its own front proxy. The machine in front of THAT one is trusted by Caddy,
-# which then passes on the original scheme and host.
+occ status --output=json 2>/dev/null | grep -q '"installed":true' \
+    || { echo "Nextcloud did not answer within 5 minutes"; exit 1; }
+
+# The proxy in front of Caddy, by name. An unknown name is reported, not fatal.
+ranges=""
+for p in $PROXIES; do
+    addrs="$(getent ahosts "$p" | awk '{print $1}' | sort -u)"
+    [ -n "$addrs" ] || { echo "Proxy $p: not found on the network"; continue; }
+    for a in $addrs; do
+        case "$a" in *:*) ranges="$ranges $a/128" ;; *) ranges="$ranges $a/32" ;; esac
+        echo "Proxy $p: $a"
+    done
+done
+want="trusted_proxies static${ranges:- 127.0.0.1/32}"
+# Written in place: the container mounts this one file, so a new inode is unseen.
+if [ "$(cat "$CADDY_LIST" 2>/dev/null)" != "$want" ]; then
+    printf '%s\n' "$want" > "$CADDY_LIST"
+    docker exec nextcloud-front caddy reload --config /etc/caddy/Caddyfile >/dev/null 2>&1 \
+        || { echo "Caddy refused the new proxy list"; exit 1; }
+fi
+
+# Each name it is reached on: the console links by whatever address it was opened on.
+host="$(hostname)"
+names=("localhost" "nextcloud" "$host")
+[ "${host,,}" != "$host" ] && names+=("${host,,}")
+[ -n "$PUBLIC_HOST" ] && names+=("$PUBLIC_HOST")
+dev="$(ip -4 route show default | awk '{for (i = 1; i < NF; i++) if ($i == "dev") { print $(i + 1); exit }}')"
+[ -n "$dev" ] && for a in $(ip -4 -o addr show dev "$dev" scope global | awk '{print $4}' | cut -d/ -f1); do
+    names+=("$a")
+done
+occ config:system:delete trusted_domains >/dev/null
+for i in "${!names[@]}"; do
+    occ config:system:set trusted_domains "$i" --value="${names[$i]}" >/dev/null
+done
+# Its own front proxy; Caddy passes on the original scheme and host.
 occ config:system:set trusted_proxies 0 --value="$SUBNET" >/dev/null
 if [ -n "$PUBLIC_HOST" ]; then
     occ config:system:set overwrite.cli.url --value="https://$PUBLIC_HOST" >/dev/null
 else
-    occ config:system:set overwrite.cli.url --value="http://$LAN_IP:$PORT" >/dev/null
+    occ config:system:set overwrite.cli.url --value="http://${host,,}:$PORT" >/dev/null
 fi
-print_success "Trusted names: ${TRUSTED[*]}"
+echo "Trusted names: ${names[*]}"
+EOF
+)"
+REFRESH_SERVICE="# Generated by add_nextcloud.sh. The next run overwrites it.
+[Unit]
+Description=Nextcloud's trusted names and proxies from the current addresses
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=${REFRESH}"
+REFRESH_TIMER="# Generated by add_nextcloud.sh. The next run overwrites it.
+[Unit]
+Description=Refresh Nextcloud's trusted names at boot and daily
+
+[Timer]
+OnBootSec=2min
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target"
+write_if_changed "$REFRESH" "$NEW_REFRESH"
+chmod 0755 "$REFRESH"
+write_if_changed /etc/systemd/system/nextcloud-trust-refresh.service "$REFRESH_SERVICE"
+write_if_changed /etc/systemd/system/nextcloud-trust-refresh.timer "$REFRESH_TIMER"
+systemctl daemon-reload
+if ! systemctl enable --now nextcloud-trust-refresh.timer >/dev/null 2>&1 \
+   || ! run_watched "Looking up trusted names" systemctl start nextcloud-trust-refresh.service; then
+    print_error "The trusted names could not be set: sudo journalctl -u nextcloud-trust-refresh -n 20"
+    exit 1
+fi
+journalctl -u nextcloud-trust-refresh -n 15 --no-pager -o cat --since "-2min" 2>/dev/null \
+    | grep -E "^(Proxy|Trusted)" | while IFS= read -r line; do print_status "$line"; done
+print_success "Trusted names and proxies set, and refreshed at every boot and daily."
 
 # --- The editor --------------------------------------------------------------
 if [ "$OFFICE" -eq 1 ]; then
@@ -866,7 +953,7 @@ print_success "Nextcloud answers through port ${PORT}."
 
 echo ""
 print_success "Nextcloud is up."
-print_action "Open http://${LAN_IP}:${PORT} and sign in as admin."
+print_action "Open ${PAGE} (or the console's link) and sign in as admin."
 [ -n "$PUBLIC_HOST" ] && print_info "Publicly: https://${PUBLIC_HOST}, once the proxy on ${TRUSTED_PROXY} serves it."
 print_info "Newer images: re-run with --update"
 print_info "Logs: sudo docker compose --project-directory $DATA_DIR logs --tail 30"
