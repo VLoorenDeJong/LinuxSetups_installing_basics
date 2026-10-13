@@ -137,7 +137,9 @@ done
 
 # A checkout whose origin holds the watched branches.
 REPO="$(conf_get MONITOR_REPO "")"
-[ -n "$REPO" ] && git -C "$REPO" rev-parse --git-dir >/dev/null 2>&1 \
+# Root reads a checkout its owner holds: git refuses that under systemd, where
+# no SUDO_UID vouches for it, so the trust is named per call.
+[ -n "$REPO" ] && git -c safe.directory="$REPO" -C "$REPO" rev-parse --git-dir >/dev/null 2>&1 \
     || ERRORS+=("MONITOR_REPO in $SITES_CONF names no git checkout of the config repository.")
 
 if [ ${#ERRORS[@]} -gt 0 ]; then
@@ -177,13 +179,13 @@ for s in "${SOURCES[@]}"; do
 
     # The same choice the watched machine makes: test until MACHINE_IS_LIVE = yes.
     conf="$WORK/$label.conf"
-    if ! git -C "$REPO" show "origin/$branch:$folder/hostings.conf" > "$conf" 2>/dev/null; then
+    if ! git -c safe.directory="$REPO" -C "$REPO" show "origin/$branch:$folder/hostings.conf" > "$conf" 2>/dev/null; then
         print_error "$label: origin/$branch has no $folder/hostings.conf. Its monitors are left alone."
         FAILED=1; continue
     fi
     path="$folder/hostings.conf"
     live="$(file_get "$conf" MACHINE_IS_LIVE no | tr '[:upper:]' '[:lower:]')"
-    if [ "$live" != "yes" ] && git -C "$REPO" show "origin/$branch:$folder/hostings.test.conf" > "$conf.test" 2>/dev/null; then
+    if [ "$live" != "yes" ] && git -c safe.directory="$REPO" -C "$REPO" show "origin/$branch:$folder/hostings.test.conf" > "$conf.test" 2>/dev/null; then
         mv "$conf.test" "$conf"
         path="$folder/hostings.test.conf"
     fi
