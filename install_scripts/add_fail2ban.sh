@@ -113,3 +113,73 @@ else
     print_error "fail2ban failed to start. Check: journalctl -u fail2ban -n 30"
     exit 1
 fi
+
+# Boot check. fail2ban has come up with no jails after 2 of ~5 boots on one
+# machine, cause unknown: keep the evidence, then reload so it is protected.
+CHECK="/usr/local/sbin/fail2ban_jail_check.sh"
+TMP_CHECK="$(mktemp)"
+trap 'rm -f "$TMP_JAIL" "$TMP_CHECK"' EXIT
+cat > "$TMP_CHECK" <<'EOF'
+#!/bin/bash
+# Installed by add_fail2ban.sh, run by fail2ban-jail-check.timer after boot.
+# No jails: save the boot evidence to /var/log/fail2ban-nojails/, then reload.
+set -u
+jails() { fail2ban-client status 2>/dev/null | sed -n 's/.*Jail list:[[:space:]]*//p'; }
+
+if [ -n "$(jails)" ]; then
+    echo "fail2ban jails up: $(jails)"
+    exit 0
+fi
+
+mkdir -p /var/log/fail2ban-nojails
+OUT="/var/log/fail2ban-nojails/$(date +%Y-%m-%d_%H%M%S).log"
+START="$(date -d "$(systemctl show fail2ban -p ActiveEnterTimestamp --value)" '+%F %T' 2>/dev/null)"
+{
+    echo "== fail2ban had no jails at $(date -Is)"
+    echo "== journalctl -b -u fail2ban"
+    journalctl -b -u fail2ban --no-pager -o short-precise
+    if [ -n "$START" ]; then
+        echo "== every unit, 60 s from fail2ban's start ($START)"
+        journalctl -b --since "$START" --until "$(date -d "$START 60 seconds" '+%F %T')" --no-pager -o short-precise
+    fi
+    echo "== tail of /var/log/fail2ban.log"
+    tail -n 50 /var/log/fail2ban.log
+} > "$OUT" 2>&1
+echo "fail2ban had no jails. Evidence: $OUT. Reloading." >&2
+
+fail2ban-client reload >/dev/null 2>&1 || systemctl restart fail2ban
+sleep 15
+if [ -n "$(jails)" ]; then
+    echo "fail2ban jails up after reload: $(jails)"
+else
+    echo "fail2ban still has no jails after reload. Evidence: $OUT" >&2
+    exit 1
+fi
+EOF
+
+UNIT_DIR="/etc/systemd/system"
+CHECK_CHANGED=0
+write_if_changed() {
+    local src="$1" dst="$2" mode="$3"
+    if [ -f "$dst" ] && cmp -s "$src" "$dst"; then
+        return 0
+    fi
+    install -m "$mode" -o root -g root "$src" "$dst"
+    CHECK_CHANGED=1
+}
+
+write_if_changed "$TMP_CHECK" "$CHECK" 0755
+printf '%s\n' "[Unit]" "Description=Reload fail2ban if it booted with no jails" \
+    "After=fail2ban.service" "" "[Service]" "Type=oneshot" "ExecStart=$CHECK" > "$TMP_CHECK"
+write_if_changed "$TMP_CHECK" "$UNIT_DIR/fail2ban-jail-check.service" 0644
+printf '%s\n' "[Unit]" "Description=Check fail2ban has jails, 5 min after boot" "" \
+    "[Timer]" "OnBootSec=5min" "" "[Install]" "WantedBy=timers.target" > "$TMP_CHECK"
+write_if_changed "$TMP_CHECK" "$UNIT_DIR/fail2ban-jail-check.timer" 0644
+
+if [ "$CHECK_CHANGED" = "1" ]; then
+    systemctl daemon-reload
+    print_success "Wrote $CHECK and fail2ban-jail-check.timer: 5 min after boot, no jails → evidence saved, then reload."
+else
+    print_success "fail2ban boot check already correct."
+fi
+systemctl enable fail2ban-jail-check.timer >/dev/null 2>&1
