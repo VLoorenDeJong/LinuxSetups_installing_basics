@@ -23,7 +23,7 @@ unset _a _dbg_args
 #
 # One MONITOR_SOURCE line per watched config, in this machine's hostings.conf:
 #
-#   MONITOR_SOURCE = <label> | <branch> | <path to the config> | <LAN IP or ->
+#   MONITOR_SOURCE = <label> | <branch> | <path to the config> | <machine name, IP or ->
 #
 # Monitors are named "<label> <hostname>"; a source only touches its own. The
 # IP probes that machine directly with the hostname as Host header: until a
@@ -123,7 +123,8 @@ for s in "${SOURCES[@]}"; do
     label="$(trim "$label")"; branch="$(trim "$branch")"; path="$(trim "$path")"; ip="$(trim "$ip")"
     [[ "$label" =~ ^[A-Za-z0-9._-]+$ ]] || ERRORS+=("MONITOR_SOURCE '$s': label must be letters, digits, . _ or -.")
     [ -n "$branch" ] && [ -n "$path" ] || ERRORS+=("MONITOR_SOURCE '$s': needs a branch and a config path.")
-    [ "$ip" = "-" ] || [ -z "$ip" ] || [[ "$ip" =~ ^[0-9a-fA-F.:]+$ ]] || ERRORS+=("MONITOR_SOURCE '$s': '$ip' is not an IP address or -.")
+    [ "$ip" = "-" ] || [ -z "$ip" ] || [[ "$ip" =~ ^[0-9a-fA-F.:]+$ ]] || [[ "$ip" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] \
+        || ERRORS+=("MONITOR_SOURCE '$s': '$ip' is not a machine name, an IP address or -.")
     [ -z "${SEEN[$label]:-}" ] || ERRORS+=("MONITOR_SOURCE label '$label' is used twice.")
     SEEN[$label]=1
 done
@@ -169,6 +170,13 @@ for s in "${SOURCES[@]}"; do
     [ "$ip" = "-" ] && ip=""
     echo ""
     print_status "$label: $branch:$path"
+    # A machine name stays a name in Kuma, which looks it up at every check;
+    # only this script's own probe needs the address now.
+    addr="$ip"
+    if [ -n "$ip" ] && ! [[ "$ip" =~ ^[0-9a-fA-F.:]+$ ]]; then
+        addr="$(getent ahosts "$ip" | awk 'NR == 1 { print $1 }')"
+        [ -n "$addr" ] || print_info "$label: $ip is not found on the network, so nothing answers yet."
+    fi
 
     conf="$WORK/$label.conf"
     if ! git -C "$REPO" show "origin/$branch:$path" > "$conf" 2>/dev/null; then
@@ -186,7 +194,8 @@ for s in "${SOURCES[@]}"; do
         [ -n "$h" ] || continue
         if [ -n "$ip" ]; then
             url="https://$ip/"; [[ "$ip" == *:* ]] && url="https://[$ip]/"
-            code="$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 --resolve "$h:443:$ip" "https://$h/" 2>/dev/null || true)"
+            code="000"
+            [ -n "$addr" ] && code="$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 --resolve "$h:443:$addr" "https://$h/" 2>/dev/null || true)"
             hdr="$h"
         else
             url="https://$h/"
