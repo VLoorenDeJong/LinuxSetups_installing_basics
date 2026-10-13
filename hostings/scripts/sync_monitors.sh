@@ -18,16 +18,21 @@ unset _a _dbg_args
 # =============================================================================
 # Runs on the machine with Uptime Kuma and PULLS what to watch from git:
 #
-#   git remote (the config repository) → git fetch → <branch>:<config> → list_served_hostnames.sh
+#   git remote (the config repository) → git fetch → <branch>:<folder> → list_served_hostnames.sh
 #        → probe each hostname → Kuma on this machine (monitor.sh)
 #
-# One MONITOR_SOURCE line per watched config, in this machine's hostings.conf:
+# One MONITOR_SOURCE line per watched machine, in this machine's hostings.conf:
 #
-#   MONITOR_SOURCE = <label> | <branch> | <path to the config> | <machine name, IP or ->
+#   MONITOR_SOURCE = <label> | <branch> | <config folder on that branch>
 #
-# Monitors are named "<label> <hostname>"; a source only touches its own. The
-# IP probes that machine directly with the hostname as Host header: until a
-# drive swap DNS names another machine. "-" probes through DNS.
+# THE WATCHED MACHINE DESCRIBES ITSELF, so this line never changes. Its folder
+# holds hostings.conf and maybe hostings.test.conf; the active one is chosen
+# the way that machine chooses it (MACHINE_IS_LIVE), so pressing Go live there
+# moves the monitors with it. Its LAN_NAME, the name the router lists it under,
+# is probed directly with each hostname as Host header: until a drive swap,
+# public DNS names another machine. No LAN_NAME probes through DNS.
+#
+# Monitors are named "<label> <hostname>"; a source only touches its own.
 #
 # A NEW HOSTNAME IS ADDED ONLY ONCE IT ANSWERS (any HTTP code below 500). A row
 # saved but not applied yet would otherwise page the phone for a site that was
@@ -50,7 +55,7 @@ case "${1:-}" in
     "")        ;;
     --list)    MODE=list ;;
     --install) MODE=install ;;
-    -h|--help) sed -n '18,39p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '18,44p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) print_error "Unknown option '$1'"; exit 2 ;;
 esac
 
@@ -63,14 +68,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SITES_CONF="${SITES_CONF:-$(conf_active "/etc/hostings")}"
 export SITES_CONF
 
-conf_get() {
+file_get() {
     local v
-    v="$(sed -n "s/^[[:space:]]*${1}[[:space:]]*=//p" "$SITES_CONF" 2>/dev/null | head -n 1)"
+    v="$(sed -n "s/^[[:space:]]*${2}[[:space:]]*=//p" "$1" 2>/dev/null | head -n 1)"
     v="${v//$'\r'/}"; v="${v%%#*}"
     v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"
     [ "$v" = "-" ] && v=""
-    printf '%s' "${v:-$2}"
+    printf '%s' "${v:-$3}"
 }
+conf_get() { file_get "$SITES_CONF" "$1" "$2"; }
 trim() { local v="$1"; v="${v#"${v%%[![:space:]]*}"}"; printf '%s' "${v%"${v##*[![:space:]]}"}"; }
 
 print_header "Uptime monitors"
@@ -119,12 +125,12 @@ ERRORS=()
 [ ${#SOURCES[@]} -gt 0 ] || ERRORS+=("No MONITOR_SOURCE line in $SITES_CONF: nothing to watch.")
 declare -A SEEN=()
 for s in "${SOURCES[@]}"; do
-    IFS='|' read -r label branch path ip _extra <<< "$s"
-    label="$(trim "$label")"; branch="$(trim "$branch")"; path="$(trim "$path")"; ip="$(trim "$ip")"
+    IFS='|' read -r label branch folder extra <<< "$s"
+    label="$(trim "$label")"; branch="$(trim "$branch")"; folder="$(trim "$folder")"
     [[ "$label" =~ ^[A-Za-z0-9._-]+$ ]] || ERRORS+=("MONITOR_SOURCE '$s': label must be letters, digits, . _ or -.")
-    [ -n "$branch" ] && [ -n "$path" ] || ERRORS+=("MONITOR_SOURCE '$s': needs a branch and a config path.")
-    [ "$ip" = "-" ] || [ -z "$ip" ] || [[ "$ip" =~ ^[0-9a-fA-F.:]+$ ]] || [[ "$ip" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] \
-        || ERRORS+=("MONITOR_SOURCE '$s': '$ip' is not a machine name, an IP address or -.")
+    [ -n "$branch" ] && [ -n "$folder" ] || ERRORS+=("MONITOR_SOURCE '$s': needs a branch and a config folder.")
+    [[ "$folder" == *.conf ]] && ERRORS+=("MONITOR_SOURCE '$s': name the folder, not the file: the watched machine's MACHINE_IS_LIVE picks the file.")
+    [ -z "$(trim "$extra")" ] || ERRORS+=("MONITOR_SOURCE '$s': drop the 4th field; the machine's name now comes from LAN_NAME in its own config.")
     [ -z "${SEEN[$label]:-}" ] || ERRORS+=("MONITOR_SOURCE label '$label' is used twice.")
     SEEN[$label]=1
 done
@@ -165,24 +171,33 @@ trap 'rm -rf "$WORK"' EXIT
 FAILED=0
 
 for s in "${SOURCES[@]}"; do
-    IFS='|' read -r label branch path ip _extra <<< "$s"
-    label="$(trim "$label")"; branch="$(trim "$branch")"; path="$(trim "$path")"; ip="$(trim "$ip")"
-    [ "$ip" = "-" ] && ip=""
+    IFS='|' read -r label branch folder _extra <<< "$s"
+    label="$(trim "$label")"; branch="$(trim "$branch")"; folder="$(trim "$folder")"; folder="${folder%/}"
     echo ""
+
+    # The same choice the watched machine makes: test until MACHINE_IS_LIVE = yes.
+    conf="$WORK/$label.conf"
+    if ! git -C "$REPO" show "origin/$branch:$folder/hostings.conf" > "$conf" 2>/dev/null; then
+        print_error "$label: origin/$branch has no $folder/hostings.conf. Its monitors are left alone."
+        FAILED=1; continue
+    fi
+    path="$folder/hostings.conf"
+    live="$(file_get "$conf" MACHINE_IS_LIVE no | tr '[:upper:]' '[:lower:]')"
+    if [ "$live" != "yes" ] && git -C "$REPO" show "origin/$branch:$folder/hostings.test.conf" > "$conf.test" 2>/dev/null; then
+        mv "$conf.test" "$conf"
+        path="$folder/hostings.test.conf"
+    fi
     print_status "$label: $branch:$path"
-    # A machine name stays a name in Kuma, which looks it up at every check;
-    # only this script's own probe needs the address now.
+
+    # A name stays a name in Kuma, which looks it up at every check; only this
+    # script's own probe needs the address now.
+    ip="$(file_get "$conf" LAN_NAME "")"
     addr="$ip"
     if [ -n "$ip" ] && ! [[ "$ip" =~ ^[0-9a-fA-F.:]+$ ]]; then
         addr="$(getent ahosts "$ip" | awk 'NR == 1 { print $1 }')"
         [ -n "$addr" ] || print_info "$label: $ip is not found on the network, so nothing answers yet."
     fi
-
-    conf="$WORK/$label.conf"
-    if ! git -C "$REPO" show "origin/$branch:$path" > "$conf" 2>/dev/null; then
-        print_error "$label: origin/$branch has no $path. Its monitors are left alone."
-        FAILED=1; continue
-    fi
+    [ -n "$ip" ] || print_info "$label: no LAN_NAME in $path, so it is probed through public DNS."
     if ! hosts="$(SITES_CONF="$conf" bash "$SCRIPT_DIR/list_served_hostnames.sh" 2>"$WORK/err")"; then
         print_error "$label: the hostname list failed, so its monitors are left alone:"
         tail -n 5 "$WORK/err"
