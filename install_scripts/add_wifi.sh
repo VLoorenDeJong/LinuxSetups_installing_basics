@@ -136,29 +136,54 @@ fi
 NETPLAN="/etc/netplan/60-wifi-${IFACE}.yaml"
 SYSCTL="/etc/sysctl.d/60-wifi-${IFACE}.conf"
 
+# The firewall's view of this interface. `status numbered` is the listing that
+# spells an inbound rule as DENY IN; plain `status` does not.
+deny_present() { ufw status numbered 2>/dev/null | grep -qE "Anywhere on ${IFACE}[[:space:]]+DENY IN"; }
+deny_remove()  { while deny_present; do ufw --force delete deny in on "$IFACE" >/dev/null 2>&1 || break; done; }
+side_remove()  { rm -f "$SYSCTL"; deny_remove; }
+
 # --- Removing ----------------------------------------------------------------
 if [ "$REMOVE" -eq 1 ]; then
-    rm -f "$NETPLAN" "$SYSCTL"
-    while ufw status 2>/dev/null | grep -qE "^Anywhere on ${IFACE}[[:space:]]+DENY IN"; do
-        ufw --force delete deny in on "$IFACE" >/dev/null 2>&1 || break
-    done
+    rm -f "$NETPLAN"
+    side_remove
     netplan generate && networkctl reload >/dev/null 2>&1
     ip link set "$IFACE" down 2>/dev/null || true
     print_success "Wi-Fi on $IFACE removed."
     exit 0
 fi
 
+ip_num() { local a b c d; IFS=. read -r a b c d <<< "$1"; echo $(( (a << 24) + (b << 16) + (c << 8) + d )); }
+in_range() {
+    local net="${2%/*}" bits="${2#*/}" mask
+    mask=$(( bits == 0 ? 0 : (0xFFFFFFFF << (32 - bits)) & 0xFFFFFFFF ))
+    [ $(( $(ip_num "$1") & mask )) -eq $(( $(ip_num "$net") & mask )) ]
+}
+
 # --- Pre-flight --------------------------------------------------------------
 ERRORS=()
 [ -n "$IFACE" ] && [ -d "/sys/class/net/$IFACE" ] \
     || ERRORS+=("No Wi-Fi interface found. List them: ip -br link")
 command -v netplan >/dev/null 2>&1 || ERRORS+=("No netplan: this script expects Ubuntu's network setup.")
-command -v networkctl >/dev/null 2>&1 || ERRORS+=("No networkctl: this script expects systemd-networkd.")
+systemctl is-active --quiet systemd-networkd \
+    || ERRORS+=("systemd-networkd is not running, so netplan's file would be written and never used. On NetworkManager, use nmtui.")
 { : < /dev/tty; } 2>/dev/null || ERRORS+=("No terminal to choose a network on. Run it from an SSH session or the keyboard.")
 if [ -n "$ONLY" ]; then
-    [[ "$ONLY" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}/([0-9]|[12][0-9]|3[0-2])$ ]] \
-        || ERRORS+=("--only '$ONLY' is not a range like 192.168.2.192/27")
+    if ! [[ "$ONLY" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}/([0-9]|[12][0-9]|3[0-2])$ ]]; then
+        ERRORS+=("--only '$ONLY' is not a range like 192.168.2.192/27")
+    else
+        # A route through Wi-Fi for these would take the cable's own traffic with it.
+        SSH_FROM="${SSH_CLIENT%% *}"
+        GATEWAY="$(ip -4 route show default | awk '{print $3; exit}')"
+        for who in "SSH session:$SSH_FROM" "default gateway:$GATEWAY" \
+                   $(ip -4 -o addr show scope global | awk -v w="$IFACE" '$2 != w {split($4, a, "/"); print "this machine:" a[1]}'); do
+            addr="${who##*:}"
+            [[ "$addr" =~ ^[0-9.]+$ ]] && in_range "$addr" "$ONLY" \
+                && ERRORS+=("--only $ONLY holds the ${who%:*} ($addr); it would be cut off. Pick a range only the Wi-Fi devices use.")
+        done
+    fi
     command -v ufw >/dev/null 2>&1 || ERRORS+=("--only needs UFW to refuse what comes in: sudo apt-get install -y ufw")
+    ufw status 2>/dev/null | grep -q "Status: active" \
+        || ERRORS+=("--only needs UFW active, or the deny rule protects nothing: sudo ufw enable")
 fi
 if [ ${#ERRORS[@]} -gt 0 ]; then
     print_error "Pre-flight failed, nothing was changed:"
@@ -182,14 +207,28 @@ if ! command -v iw >/dev/null 2>&1; then
 fi
 print_success "Pre-flight passed: $IFACE${ONLY:+, side network for $ONLY}."
 
-# --- The ARP and firewall side of --only: once, before any attempt ------------
+# --- The ARP and firewall side: --only sets it up, a plain run clears it -------
 if [ -n "$ONLY" ]; then
     # Two interfaces in one subnet: each answers ARP only for its own address.
     printf 'net.ipv4.conf.%s.arp_ignore = 1\nnet.ipv4.conf.%s.arp_announce = 2\n' "$IFACE" "$IFACE" > "$SYSCTL"
     sysctl -q -p "$SYSCTL"
-    ufw status | grep -qE "^Anywhere on ${IFACE}[[:space:]]+DENY IN" \
-        || ufw insert 1 deny in on "$IFACE" >/dev/null
+    if ! deny_present; then
+        # insert 1 refuses an empty rule list, so the first rule is added plainly.
+        if ufw status numbered | grep -q '^\[ *1\]'; then
+            out="$(ufw insert 1 deny in on "$IFACE" 2>&1)"
+        else
+            out="$(ufw deny in on "$IFACE" 2>&1)"
+        fi
+        if ! deny_present; then
+            print_error "UFW did not take the deny rule for $IFACE, so nothing was connected:"
+            printf '%s\n' "$out" | tail -n 5
+            exit 1
+        fi
+    fi
     print_success "UFW refuses everything that comes in on $IFACE."
+elif [ -f "$SYSCTL" ] || deny_present; then
+    side_remove
+    print_status "Cleared the earlier --only settings: $IFACE is a normal connection now."
 fi
 
 # Four bars like a phone: -55 dBm and better is full, -80 and worse is one.
@@ -247,16 +286,20 @@ choose_network() {
         if [[ "$pick" =~ ^[Rr]$ ]]; then
             scan_networks; choose_network; return
         elif [[ "$pick" =~ ^[0-9]+$ ]] && [ "$pick" -ge 1 ] && [ "$pick" -lt "$other" ]; then
-            SSID="${NETS[$((pick - 1))]#*$'\t'}"
+            # iw writes é or an emoji as \xNN; the network has the real bytes.
+            SSID="$(printf '%b' "${NETS[$((pick - 1))]#*$'\t'}")"; HIDDEN=0
         elif [ "$pick" = "$other" ]; then
             prompt_ask "Network name (the 'SSID'), exactly as written:" ""
             read -r SSID < /dev/tty || exit 1
+            HIDDEN=1
         fi
     done
     prompt_got "Network: $SSID"
 }
 
 ask_password() {
+    # A -d trace would print every keystroke; write_netplan turns it back on.
+    { set +x; } 2>/dev/null
     while true; do
         print_action "NEEDED: the password of '$SSID'"
         print_hint "Enter alone for an open network."
@@ -271,8 +314,8 @@ ask_password() {
     if [ -z "$PASS" ]; then
         prompt_got "Password: none, an open network"
     else
-        # Enough to recognise, not enough to rebuild: first two, last two.
-        prompt_got "Password: ${PASS:0:2}$(printf '%*s' $(( ${#PASS} - 4 )) '' | tr ' ' '*')${PASS: -2} (${#PASS} characters)"
+        # The length only: any characters shown stay in the scrollback.
+        prompt_got "Password: ${#PASS} characters"
     fi
 }
 
@@ -290,6 +333,12 @@ write_netplan() {
         route-metric: 600"
     fi
     { set +x; } 2>/dev/null
+    # The access point's settings; an open, visible network has none: {}.
+    local ap=""
+    [ -n "$PASS" ] && ap+="          password: $(yaml_q "$PASS")"$'\n'
+    # Typed under Other: a network that hides its name is only found by asking.
+    [ "$HIDDEN" -eq 1 ] && ap+="          hidden: true"$'\n'
+    [ -n "$ap" ] || ap="          {}"$'\n'
     ( umask 077; cat > "$NETPLAN" <<NP
 # Generated by add_wifi.sh. The next run overwrites it.
 network:
@@ -301,7 +350,7 @@ network:
 ${extra}
       access-points:
         $(yaml_q "$SSID"):
-$( [ -n "$PASS" ] && printf '          password: %s\n' "$(yaml_q "$PASS")" || printf '          {}\n' )
+${ap}
 NP
     )
     unset PASS
@@ -345,9 +394,9 @@ retry_or_quit() {
         read -r answer < /dev/tty || answer=2
         case "$answer" in
             ""|1) prompt_got "Trying again."; return 0 ;;
-            2)    rm -f "$NETPLAN"; netplan generate >/dev/null 2>&1; networkctl reload >/dev/null 2>&1
+            2)    rm -f "$NETPLAN"; side_remove; netplan generate >/dev/null 2>&1; networkctl reload >/dev/null 2>&1
                   ip link set "$IFACE" down 2>/dev/null || true
-                  print_info "Stopped. Nothing of this attempt is left in $NETPLAN."
+                  print_info "Stopped. Nothing of this attempt is left: no $NETPLAN, no --only firewall rule."
                   exit 1 ;;
         esac
     done
