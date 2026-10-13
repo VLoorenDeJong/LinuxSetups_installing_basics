@@ -99,6 +99,7 @@ print(int(datetime.datetime.fromisoformat(re.sub(r"\.\d+", "", s[-1]["time"]).re
 
     start)
         COPY="$(find_copy || true)"
+        [ -n "$DROP_DIR" ] || { print_error "No drop folder set up. Re-run add_docker_volume_backup.sh."; exit 1; }
         [ -n "$COPY" ] || { print_error "No backup copy in $DROP_DIR."; exit 1; }
         running && { print_error "A restore is already running."; exit 1; }
         if [ "$(systemctl show "$BACKUP_UNIT" -p ActiveState --value)" = "activating" ]; then

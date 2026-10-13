@@ -66,8 +66,8 @@ NEVER=(/var/www/hosting-manager /var/www/auth /var/www/certbot)
 # repository is overwritten by a copy dropped one folder too high.
 NEVER_FILE="/etc/share-window.never"
 if [ -r "$NEVER_FILE" ]; then
-    while IFS= read -r n; do
-        [[ "$n" == /* ]] && NEVER+=("${n%/}")
+    while IFS= read -r n || [ -n "$n" ]; do
+        [[ "$n" == /* ]] && NEVER+=("$(readlink -f -- "$n" 2>/dev/null || echo "${n%/}")")
     done < "$NEVER_FILE"
 fi
 PRUNE=(\( -path '/home/*/.*')

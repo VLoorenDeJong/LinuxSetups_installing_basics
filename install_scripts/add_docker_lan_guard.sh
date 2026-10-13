@@ -1,4 +1,18 @@
 #!/usr/bin/env bash
+
+# -d / --debug: trace every command. Stripped from "$@" so it never reaches the
+# script's own argument parsing.
+DEBUG_MODE=0
+_dbg_args=()
+for _a in "$@"; do
+    case "$_a" in
+        -d|--debug) DEBUG_MODE=1 ;;
+        *)          _dbg_args+=("$_a") ;;
+    esac
+done
+set -- ${_dbg_args+"${_dbg_args[@]}"}
+unset _a _dbg_args
+[ "$DEBUG_MODE" = "1" ] && set -x
 # =============================================================================
 # Container ports reachable from the home network and the VPN only, without
 # naming this machine's address anywhere.
@@ -41,6 +55,29 @@ print_status()  { printf "\033[34m🔧 %s\033[0m\n" "$1"; }
 print_success() { printf "\033[32m✅ %s\033[0m\n" "$1"; }
 print_action()  { printf "\033[33m👉 %s\033[0m\n" "$1"; }
 print_error()   { printf "\033[31m❌ %s\033[0m\n" "$1"; }
+
+SPIN_FRAMES=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+_SPIN_PID=""
+spinner_start() {
+    [ "${DEBUG_MODE:-0}" = "1" ] && return 0
+    local message="$1"
+    (
+        local i=0
+        while true; do
+            printf '\r\033[K\033[34m%s %s\033[0m' "${SPIN_FRAMES[i % 10]}" "$message"
+            i=$((i + 1))
+            sleep 0.2
+        done
+    ) &
+    _SPIN_PID=$!
+}
+spinner_stop() {
+    [ -n "$_SPIN_PID" ] || return 0
+    kill "$_SPIN_PID" 2>/dev/null || true
+    wait "$_SPIN_PID" 2>/dev/null || true
+    _SPIN_PID=""
+    printf '\r\033[K'
+}
 
 UNIT="docker-lan-guard.service"
 UNIT_FILE="/etc/systemd/system/$UNIT"
@@ -99,7 +136,7 @@ rebuild() {
     "$ipt" -N "$CHAIN" 2>/dev/null || "$ipt" -F "$CHAIN"
     "$ipt" -A "$CHAIN" -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
     "$ipt" -A "$CHAIN" -i docker0 -j RETURN
-    "$ipt" -A "$CHAIN" -i br+ -j RETURN
+    "$ipt" -A "$CHAIN" -i br-+ -j RETURN
     "$ipt" -A "$CHAIN" -i wg+ -j RETURN
     dev="$(lan_dev "$fam")"
     if [ -n "$dev" ]; then
@@ -163,10 +200,14 @@ if ! out="$(systemctl enable "$UNIT" 2>&1)"; then
     printf '%s\n' "$out"
     exit 1
 fi
+# Up to a minute when the network has no address yet.
+spinner_start "Applying the rules"
 if ! systemctl restart "$UNIT"; then
+    spinner_stop
     print_error "The guard did not apply. Why: journalctl -u $UNIT -n 20"
     exit 1
 fi
+spinner_stop
 journalctl -u "$UNIT" -n 10 --no-pager -o cat 2>/dev/null | grep -E "allowed|no default" \
     | while IFS= read -r line; do print_status "$line"; done
 print_status "Also allowed: WireGuard (wg*), container to container, replies."

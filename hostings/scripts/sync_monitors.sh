@@ -192,8 +192,13 @@ for s in "${SOURCES[@]}"; do
     # A name stays a name in Kuma, which looks it up at every check; only this
     # script's own probe needs the address now.
     ip="$(file_get "$conf" LAN_NAME "")"
+    # Read from another branch, so checked before it reaches a URL.
+    if [ -n "$ip" ] && ! [[ "$ip" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$|^[0-9a-fA-F:]*:[0-9a-fA-F:]*$ ]]; then
+        print_error "$label: LAN_NAME '$ip' in $path is not a machine name or address. Its monitors are left alone."
+        FAILED=1; continue
+    fi
     addr="$ip"
-    if [ -n "$ip" ] && ! [[ "$ip" =~ ^[0-9a-fA-F.:]+$ ]]; then
+    if [ -n "$ip" ] && ! [[ "$ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$|: ]]; then
         addr="$(getent ahosts "$ip" | awk 'NR == 1 { print $1 }')"
         [ -n "$addr" ] || print_info "$label: $ip is not found on the network, so nothing answers yet."
     fi
