@@ -21,9 +21,10 @@ unset _a _dbg_args
 # platform reads from. Keeping the bus separate from the platform is what lets
 # the platform be swapped without touching a device.
 #
-# LAN ONLY, AND NEVER ANONYMOUS. The listener is published on this machine's
-# LAN address, so devices on Wi-Fi can reach it and nothing outside can: the
-# router forwards nothing to it. Every client needs an account.
+# LAN ONLY, AND NEVER ANONYMOUS. The listener is published on every interface,
+# so no address is written down that a drive swap would make wrong, and
+# add_docker_lan_guard.sh limits it to the home network and the VPN. Every
+# client needs an account. --bind still pins it to one address.
 #
 # ACCOUNTS. Each --user is an account a device logs in with; its password is
 # asked for here and typed again into that device's own settings page. Service
@@ -178,7 +179,7 @@ read_secret() {
 secret_quiet()  { { set +x; } 2>/dev/null; }
 secret_loud()   { [ "$DEBUG_MODE" = "1" ] && set -x; return 0; }
 
-restore_tty() { stty echo < /dev/tty 2>/dev/null || true; }
+restore_tty() { { stty echo < /dev/tty; } 2>/dev/null || true; }
 trap restore_tty EXIT
 trap 'restore_tty; exit 130' INT TERM
 
@@ -232,15 +233,15 @@ elif ! docker compose version >/dev/null 2>&1; then
 fi
 
 if [ -z "$BIND" ]; then
-    BIND="$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -1)"
-    [ -n "$BIND" ] || ERRORS+=("Could not work out this machine's LAN address. Give it: --bind 192.168.1.10")
+    systemctl is-active --quiet docker-lan-guard.service \
+        || ERRORS+=("Nothing limits container ports to the home network yet. Add it first: sudo bash $SCRIPT_DIR/add_docker_lan_guard.sh")
 elif [ -z "$(ip -4 addr show to "$BIND" 2>/dev/null)" ]; then
     ERRORS+=("This machine does not hold $BIND. List its addresses: ip -4 addr")
 fi
 
 if ! [[ "$PORT" =~ ^[0-9]+$ ]] || [ "$PORT" -lt 1024 ] || [ "$PORT" -gt 65535 ]; then
     ERRORS+=("--port must be a number between 1024 and 65535, not '$PORT'")
-elif [ -n "$BIND" ] && ss -lnt 2>/dev/null | grep -qE "(${BIND//./\\.}|0\.0\.0\.0|\*):${PORT} " && ! is_ours; then
+elif ss -lntH "sport = :$PORT" 2>/dev/null | grep -q . && ! is_ours; then
     ERRORS+=("Something that is not Mosquitto already listens on port $PORT. Find it: sudo ss -lntp | grep :$PORT")
 fi
 
@@ -264,7 +265,7 @@ if ! run_pull "$IMAGE"; then
     exit 1
 fi
 print_status "Image:     $IMAGE"
-print_status "Listener:  ${BIND}:${PORT}, LAN only, accounts required"
+print_status "Listener:  ${BIND:-every interface}:${PORT}, home network and VPN only, accounts required"
 print_status "Accounts:  ${USERS[*]:-none asked for here}"
 print_status "Data:      $DATA_DIR"
 print_success "Pre-flight passed."
@@ -302,8 +303,8 @@ services:
     image: ${IMAGE}
     restart: unless-stopped
     ports:
-      # Bound to the LAN address on purpose: Docker's IPv4 publishes bypass UFW.
-      - \"${BIND}:${PORT}:1883\"
+      # Every interface unless --bind: Docker bypasses UFW, add_docker_lan_guard.sh limits it.
+      - \"${BIND:+$BIND:}${PORT}:1883\"
     volumes:
       - ./config:/mosquitto/config
       - ./data:/mosquitto/data
@@ -417,10 +418,14 @@ print_success "Mosquitto answers and refuses anonymous clients."
 # --- Firewall ----------------------------------------------------------------
 # IPv4 publishes bypass UFW, so this rule only makes `ufw status` tell the truth.
 if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
-    BIND_DEV="$(ip -4 -o addr show to "$BIND" 2>/dev/null | awk '{print $2; exit}')"
+    if [ -n "$BIND" ]; then
+        BIND_DEV="$(ip -4 -o addr show to "$BIND" 2>/dev/null | awk '{print $2; exit}')"
+    else
+        BIND_DEV="$(ip -4 route show default 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "dev") { print $(i + 1); exit }}')"
+    fi
     LAN_CIDR="$(ip -4 route show dev "$BIND_DEV" proto kernel 2>/dev/null | awk '{print $1; exit}')"
     if [ -z "$LAN_CIDR" ]; then
-        print_info "No subnet found for $BIND, so no UFW rule was added."
+        print_info "No subnet found on ${BIND_DEV:-the LAN}, so no UFW rule was added."
     elif ufw status | grep -qE "^${PORT}/tcp[[:space:]]+ALLOW[[:space:]]+${LAN_CIDR}"; then
         print_success "UFW already allows MQTT from $LAN_CIDR."
     elif ufw allow from "$LAN_CIDR" to any port "$PORT" proto tcp >/dev/null 2>&1; then
@@ -432,6 +437,7 @@ fi
 
 echo ""
 print_success "Mosquitto is up."
-print_info "Devices connect to:  ${BIND}:${PORT}, with their account and password"
+print_info "Devices connect to:  $(hostname):${PORT}, with their account and password"
+print_info "Same machine:        127.0.0.1:${PORT}, so a drive swap changes nothing"
 print_info "Accounts:            $(cut -d: -f1 "$PASSWD_FILE" | tr '\n' ' ')"
 print_info "Logs:                sudo docker logs mosquitto"
