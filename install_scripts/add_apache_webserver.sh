@@ -172,6 +172,32 @@ else
     echo -e "\e[32m✅ ServerName already set.\e[0m"
 fi
 
+# No version in headers or error pages, and no MIME sniffing, for every site.
+# zz-, so it loads after the package's security.conf, which says the opposite.
+# Frame and referrer policies stay per vhost: a second value here would clash.
+HARDEN_CONF="/etc/apache2/conf-available/zz-hardening.conf"
+HARDEN_BODY='# Written by add_apache_webserver.sh; a re-run overwrites it.
+ServerTokens Prod
+ServerSignature Off
+<IfModule mod_headers.c>
+    Header always setifempty X-Content-Type-Options "nosniff"
+</IfModule>'
+if [ "$(cat "$HARDEN_CONF" 2>/dev/null)" = "$HARDEN_BODY" ]; then
+    echo -e "\e[32m✅ Server version hidden, nosniff on every site.\e[0m"
+else
+    printf '%s\n' "$HARDEN_BODY" | sudo tee "$HARDEN_CONF" >/dev/null
+    sudo a2enmod headers >/dev/null 2>&1
+    sudo a2enconf zz-hardening >/dev/null 2>&1
+    if sudo apache2ctl configtest >/dev/null 2>&1; then
+        sudo systemctl reload apache2 >/dev/null 2>&1 || true
+        echo -e "\e[32m✅ Server version hidden, nosniff on every site.\e[0m"
+    else
+        sudo a2disconf zz-hardening >/dev/null 2>&1
+        sudo rm -f "$HARDEN_CONF"
+        echo -e "\e[33m⚠️ The hardening config was rejected by configtest, so it was removed again.\e[0m"
+    fi
+fi
+
 echo -e "\e[34m🛡️ Configuring firewall...\e[0m"
 
 # Allow Apache through firewall if UFW is active
