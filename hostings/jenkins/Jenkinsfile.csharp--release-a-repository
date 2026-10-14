@@ -59,6 +59,13 @@ pipeline {
                         error('REPOSITORY is empty. Fill in the ninth column of hostings.conf ' +
                               'for at least one row, then pass the same URL here.')
                     }
+                    // Both go into a shell step below; a quote in either is code.
+                    if (!params.REPOSITORY.matches('[A-Za-z0-9@:/._~+-]+')) {
+                        error('REPOSITORY holds characters a clone URL does not need. Refused.')
+                    }
+                    if (!params.BRANCH.matches('[A-Za-z0-9._/-]+') || params.BRANCH.startsWith('-')) {
+                        error('BRANCH may hold only letters, digits, dot, underscore, hyphen and /. Refused.')
+                    }
 
                     def out = sh(returnStdout: true, script:
                         "bash hostings/scripts/rows_for_repo.sh " +

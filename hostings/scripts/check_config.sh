@@ -740,9 +740,9 @@ while IFS='|' read -r c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c11 c12 c13 c14 c15 c16 c17
     # A Branch override is a git branch name, not an environment. Catching a
     # typo here beats a Jenkins job that checks out nothing.
     _trim rowbranch "$c10"
-    case "$rowbranch" in
-        *[[:space:]]*) err "$label: Branch '$rowbranch' contains whitespace" ;;
-    esac
+    # It reaches Jenkins and a shell step, so the same allow-list as Path.
+    [[ -z "$rowbranch" || ( "$rowbranch" =~ ^[A-Za-z0-9._/-]+$ && "$rowbranch" != -* ) ]] \
+        || err "$label: Branch '$rowbranch' may hold only letters, digits, dot, underscore, hyphen and /, and not start with -"
 done < <(conf_rows)
 
 # Checked after the loop, because a DataSource may legitimately name a row that
