@@ -56,7 +56,8 @@ unit_env() {
         | tr ' ' '\n' | sed -n "s/^$1=//p" | head -n 1
 }
 LIVE_REPO="$(unit_env RESTIC_REPOSITORY)"
-PASSWORD_HELPER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/restic_password.sh"
+# The runtime copy, as the backup unit uses: this file runs from /usr/local/sbin.
+PASSWORD_HELPER="/usr/local/lib/linuxbasics/hostings/scripts/restic_password.sh"
 PASSWORD_CMD="/bin/bash $PASSWORD_HELPER get docker-backup-password"
 # Its own share, never beside the live repository: a copy dropped one folder
 # too high there overwrote the live repository's config on 2026-10-13.
