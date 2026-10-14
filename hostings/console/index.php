@@ -328,6 +328,47 @@ date_default_timezone_set(machine_timezone()->getName());
 // survived it.
 const KICK_SECS = 15;
 $kickFile = WORKDIR . '/' . auditId($me) . '.kick';
+
+// IDLE SIGN-OUT. The owner, 2026-10-14: after 2 h without a click, or 12 h
+// since the last "still here", the page asks for 10 s, then kicks, logged with
+// the IP. Background polls are not clicks; a gap in them means no tab was open,
+// so the next request starts the clocks again.
+const IDLE_SECS = 7200, CONFIRM_SECS = 43200, ASK_SECS = 10, NO_TAB_SECS = 120;
+$aliveAsk = null;
+if ($me !== '' && !is_file($kickFile)) {
+    $aliveFile = WORKDIR . '/' . auditId($me) . '.alive';
+    $now = time();
+    [$act, $conf, $asked, $seen] = array_map('intval', explode(' ', (string) @file_get_contents($aliveFile)) + [0, 0, 0, 0]);
+    if ($now - $seen > NO_TAB_SECS) { $act = $conf = $now; $asked = 0; }
+    $isPoll = $_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['ask']);
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'alive') {
+        @file_put_contents($aliveFile, "$now $now 0 $now");
+        header('Content-Type: application/json');
+        echo json_encode(['ok' => true]);
+        exit;
+    }
+    if ($asked > 0 && $now - $asked > ASK_SECS + 5) {
+        openlog('hosting-manager', LOG_PID, LOG_USER);
+        syslog(LOG_NOTICE, json_encode([
+            'user'   => auditId($me),
+            'action' => 'idle-signout',
+            'target' => ['ip' => auditId($_SERVER['REMOTE_ADDR'] ?? ''),
+                         'reason' => $now - $conf > CONFIRM_SECS ? '12 h without confirming' : '2 h without a click'],
+            'result' => 'ok',
+        ], JSON_UNESCAPED_SLASHES));
+        closelog();
+        @unlink($aliveFile);
+        @file_put_contents($kickFile, (string) $now);
+    } else {
+        if (!$isPoll) {
+            $act = $now;
+            if ($now - $conf <= CONFIRM_SECS) $asked = 0;
+        }
+        if ($asked === 0 && ($now - $act > IDLE_SECS || $now - $conf > CONFIRM_SECS)) $asked = $now;
+        @file_put_contents($aliveFile, "$act $conf $asked $now");
+        if ($asked > 0) $aliveAsk = max(0, $asked + ASK_SECS - $now);
+    }
+}
 if ($me !== '' && is_file($kickFile)
     && time() - (int) @file_get_contents($kickFile) > KICK_SECS) {
     @unlink($kickFile);
@@ -1358,7 +1399,7 @@ if (($_GET['ask'] ?? '') === 'status') {
     $live = statusFor($live, $myRole, $me);
     if ($me !== '') @touch(WORKDIR . '/' . auditId($me) . '.seen');
     echo json_encode(['ok' => $live !== null, 'status' => $live, 'work' => workInProgress($myRole, $me),
-                      'online' => $myRole === 'full' ? onlineUsers() : []]);
+                      'online' => $myRole === 'full' ? onlineUsers() : [], 'confirm' => $aliveAsk]);
     exit;
 }
 

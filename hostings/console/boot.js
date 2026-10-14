@@ -406,6 +406,44 @@ function showWork(work) {
   document.getElementById('work-banner-text').textContent = lines.join(' ');
 }
 
+// IDLE SIGN-OUT: the server asks after 2 h without a click or 12 h since the
+// last confirm; the count is the seconds it still waits before the kick.
+let aliveTimer = null;
+function askAlive(secs) {
+  let box = document.getElementById('alive-ask');
+  if (secs === null || secs === undefined) {
+    if (box) box.remove();
+    clearInterval(aliveTimer); aliveTimer = null;
+    return;
+  }
+  if (box) return;
+  const t = T[lang];
+  box = document.createElement('div');
+  box.id = 'alive-ask';
+  box.setAttribute('role', 'alertdialog');
+  box.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);z-index:9999';
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.style.cssText = 'max-width:22rem;text-align:center';
+  const msg = document.createElement('p');
+  const stay = document.createElement('button');
+  stay.type = 'button';
+  stay.textContent = t.aliveStay;
+  card.append(msg, stay);
+  box.append(card);
+  document.body.append(box);
+  let left = Math.max(0, Math.round(secs));
+  const draw = () => { msg.textContent = t.aliveAsk.replace('%s', left); };
+  draw();
+  aliveTimer = setInterval(() => { left = Math.max(0, left - 1); draw(); }, 1000);
+  stay.focus();
+  stay.addEventListener('click', async () => {
+    await fetch(location.pathname, { method: 'POST', body: new URLSearchParams({ action: 'alive' }),
+      headers: { 'Accept': 'application/json' } }).catch(() => {});
+    askAlive(null);
+  });
+}
+
 // WHO ELSE HAS THE PAGE OPEN, for a full admin, with a Kick each. The
 // server answers from the status poll every page makes, so "online" means a
 // page asked in the last 90 seconds.
@@ -479,6 +517,7 @@ async function refreshStatus() {
     const d = await r.json();
     showWork(d && d.work);
     showOnline(d && d.online);
+    askAlive(d && d.confirm);
     // Not while a save or dialog has the page locked: a redraw rebuilds the
     // rows and drops the sweep. Left unseen, so it redraws once unlocked.
     if (d && d.ok && d.status && !document.body.classList.contains('locked')) {
