@@ -65,8 +65,12 @@ class Umbraco:
         return r.status, r.headers, r.read()
 
     def sign_in(self):
-        unit = open(os.environ['UPSTREAM_UNIT']).read()
-        email = re.search(r'UnattendedUserEmail=([^"\s]+)', unit).group(1)
+        # Once installed, the unit no longer carries the install settings; they stay in <row>.install.env.
+        sources = [os.environ['UPSTREAM_SECRETS'][:-len('.env')] + '.install.env', os.environ['UPSTREAM_UNIT']]
+        found = (re.search(r'UnattendedUserEmail=([^"\s]+)', open(f).read()) for f in sources if os.path.isfile(f))
+        email = next((m.group(1) for m in found if m), None)
+        if not email:
+            sys.exit(f'No Admin e-mail (UnattendedUserEmail) in {" or ".join(sources)}.')
         password = next(l.split('=', 1)[1].strip() for l in open(os.environ['UPSTREAM_SECRETS'])
                         if l.startswith('Umbraco__CMS__Unattended__UnattendedUserPassword='))
         self.call('POST', f'{API}/security/back-office/login', {'username': email, 'password': password}, auth=False)
