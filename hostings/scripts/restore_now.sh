@@ -71,7 +71,10 @@ find_copy() {
         | while read -r c; do [ -d "$(dirname "$c")/keys" ] && { dirname "$c"; break; }; done)"
     [ -n "$cfg" ] && printf '%s' "$cfg"
 }
-restic_copy() { restic -r "$COPY" --password-command "$PASSWORD_CMD" --no-cache "$@"; }
+restic_copy() {
+    if [ -n "${PW_FILE:-}" ]; then restic -r "$COPY" --password-file "$PW_FILE" --no-cache "$@"
+    else restic -r "$COPY" --password-command "$PASSWORD_CMD" --no-cache "$@"; fi
+}
 running() {
     local s; s="$(systemctl show "$RESTORE_UNIT" -p ActiveState --value 2>/dev/null)"
     [ "$s" = "active" ] || [ "$s" = "activating" ]
@@ -126,9 +129,29 @@ print("\n".join(s[-1]["paths"]) if s else "")')
         SNAP="$(printf '%s' "$SNAP_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)[-1]["short_id"])')"
         print_status "Restoring snapshot $SNAP from $COPY"
 
+        # Read now: the vault can be a container (1Password Connect) that the
+        # stop below takes away.
+        PW_FILE="$(mktemp -p /run restore-now-pw.XXXXXX)"
+        WAS_UNITS=() WAS_RUNNING=() RESTARTED=0
+        restart_all() {
+            RESTARTED=1
+            local rc=0
+            [ ${#WAS_RUNNING[@]} -eq 0 ] || docker start "${WAS_RUNNING[@]}" >/dev/null || { print_error "Some containers did not start again."; rc=1; }
+            [ ${#WAS_UNITS[@]} -eq 0 ] || systemctl start "${WAS_UNITS[@]}" || { print_error "Some app units did not start again."; rc=1; }
+            return "$rc"
+        }
+        # A crash after the stop must not leave every app down.
+        trap 'rm -f "$PW_FILE"; [ "$RESTARTED" = 1 ] || restart_all || true' EXIT
+        $PASSWORD_CMD > "$PW_FILE" 2>/dev/null && [ -s "$PW_FILE" ] \
+            || { print_error "No backup password, so nothing was stopped or moved."; finish false; exit 1; }
+
+        # App containers are units' `docker run --rm`: stopped through docker,
+        # they are gone, and their unit starts a new one on an empty folder.
+        mapfile -t WAS_UNITS < <(systemctl list-units --type=service --state=active --no-legend --plain 'app-*.service' | awk '{print $1}')
+        [ ${#WAS_UNITS[@]} -eq 0 ] || { print_status "Stopping ${#WAS_UNITS[@]} app unit(s)."; systemctl stop "${WAS_UNITS[@]}"; }
         mapfile -t WAS_RUNNING < <(docker ps -q 2>/dev/null)
         if [ ${#WAS_RUNNING[@]} -gt 0 ]; then
-            print_status "Stopping ${#WAS_RUNNING[@]} container(s)."
+            print_status "Stopping ${#WAS_RUNNING[@]} other container(s)."
             docker stop "${WAS_RUNNING[@]}" >/dev/null
         fi
         ok=true
@@ -142,13 +165,13 @@ print("\n".join(s[-1]["paths"]) if s else "")')
             if restic_copy restore "$SNAP" --target / --include "$p" >/dev/null; then
                 print_success "Restored $p"
             else
-                print_error "Restoring $p failed; its old folder is $p.before-restore-$STAMP"
+                print_error "Restoring $p failed, so its old folder is put back."
+                [ -e "$p" ] && mv -- "$p" "$p.failed-restore-$STAMP"
+                [ -e "$p.before-restore-$STAMP" ] && mv -- "$p.before-restore-$STAMP" "$p"
                 ok=false
             fi
         done
-        if [ ${#WAS_RUNNING[@]} -gt 0 ]; then
-            docker start "${WAS_RUNNING[@]}" >/dev/null || { print_error "Some containers did not start again."; ok=false; }
-        fi
+        restart_all || ok=false
         if [ -d "$HOOK_DIR" ]; then
             for h in "$HOOK_DIR"/*; do
                 [ -f "$h" ] && [ -x "$h" ] || continue
