@@ -342,6 +342,20 @@ if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: a
         print_error "UFW refused the rule, so the LAN cannot reach the page."
         print_action "Add it by hand: sudo ufw allow from $LAN_CIDR to any port ${PORT} proto tcp"
     fi
+    # Tapo replies to a broadcast from port 20002, and conntrack does not match
+    # it. Only the ephemeral range, so a faked source port reaches no service.
+    EPHEMERAL="$(awk '{print $1":"$2}' /proc/sys/net/ipv4/ip_local_port_range 2>/dev/null)"
+    TAPO_RULE="proto udp from ${LAN_CIDR:-<your-lan>/24} port 20002 to any port ${EPHEMERAL:-32768:60999}"
+    if [ -z "$LAN_CIDR" ]; then
+        print_action "HA cannot find Tapo plugs by itself until: sudo ufw allow $TAPO_RULE"
+    elif ufw status | grep -qE "ALLOW[[:space:]]+${LAN_CIDR//./\.} 20002/udp"; then
+        print_success "UFW already lets TP-Link discovery replies in from $LAN_CIDR."
+    elif ufw allow $TAPO_RULE comment 'TP-Link discovery replies' >/dev/null 2>&1; then
+        print_success "UFW now lets TP-Link discovery replies in from $LAN_CIDR."
+    else
+        print_error "UFW refused the TP-Link discovery rule, so HA cannot find Tapo plugs by itself."
+        print_action "Add it by hand: sudo ufw allow $TAPO_RULE"
+    fi
 fi
 
 # --- Prove it ----------------------------------------------------------------
