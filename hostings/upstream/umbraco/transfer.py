@@ -13,7 +13,7 @@ Import makes, once, a document type "Transfer page" with one rich-text field
 and a template that prints it, then one published page per bundle page.
 Export reads every document's text and rich-text values.
 """
-import argparse, base64, hashlib, http.cookiejar, json, os, re, secrets, sys, urllib.error, urllib.parse, urllib.request, uuid
+import argparse, base64, hashlib, http.cookiejar, json, mimetypes, os, re, secrets, sys, urllib.error, urllib.parse, urllib.request, uuid
 
 API = '/umbraco/management/api/v1'
 DOCTYPE_ALIAS = 'transferPage'
@@ -155,6 +155,18 @@ def ensure_page_type(u):
     return dt_id, template_id
 
 
+def inline_assets(html, bundle):
+    # The page is one rich-text value with no media folder behind it; small
+    # images travel inside it, as they do into Oqtane.
+    def repl(m):
+        p = os.path.join(bundle, 'assets', m.group(2))
+        if not os.path.isfile(p) or os.path.getsize(p) > 2_000_000:
+            return m.group(0)
+        mime = mimetypes.guess_type(p)[0] or 'application/octet-stream'
+        return m.group(1) + f'data:{mime};base64,' + base64.b64encode(open(p, 'rb').read()).decode()
+    return re.sub(r'(["(])assets/([^"?)]+)', repl, html)
+
+
 def import_(data, bundle, name):
     site = json.load(open(os.path.join(bundle, 'site.json')))
     u = Umbraco()
@@ -164,7 +176,7 @@ def import_(data, bundle, name):
         html = open(os.path.join(bundle, 'pages', p['slug'] + '.html'), encoding='utf-8').read()
         css_file = os.path.join(bundle, 'pages', p['slug'] + '.css')
         css = open(css_file, encoding='utf-8').read() if os.path.isfile(css_file) else ''
-        markup = (f'<style>{css}</style>' if css.strip() else '') + html
+        markup = inline_assets((f'<style>{css}</style>' if css.strip() else '') + html, bundle)
         doc_id = u.create('/document', {
             'parent': None, 'documentType': {'id': dt_id}, 'template': {'id': template_id},
             'values': [{'alias': 'body', 'culture': None, 'segment': None, 'value': {'markup': markup, 'blocks': None}}],
