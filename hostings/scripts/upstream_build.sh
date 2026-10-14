@@ -190,6 +190,18 @@ else
     docker tag "$IMAGE-candidate" "$IMAGE"
     docker image rm "$IMAGE-candidate" >/dev/null
 fi
+RUN_AS="$(recipe_get USER)"
+# Node's os.userInfo() and the like fail for a uid with no passwd line.
+if [ "$CHECK_ONLY" != "1" ] && [ -n "$RUN_AS" ]; then
+    [[ $RUN_AS =~ ^[0-9]+(:[0-9]+)?$ ]] || { print_error "USER must be uid[:gid] in $RECIPE, not $RUN_AS."; exit 1; }
+    uid="${RUN_AS%%:*}" gid="${RUN_AS#*:}"
+    mkdir -p "$WORK/account"
+    printf '%s\n' "FROM $IMAGE" "USER root" \
+        "RUN awk -F: '\$3==$uid{f=1}END{exit !f}' /etc/passwd || echo 'upstream:x:$uid:$gid::/nonexistent:/usr/sbin/nologin' >> /etc/passwd; awk -F: '\$3==$gid{f=1}END{exit !f}' /etc/group || echo 'upstream:x:$gid:' >> /etc/group" \
+        "USER $RUN_AS" > "$WORK/account/Dockerfile"
+    run_logged "Adding account $RUN_AS to $IMAGE" 600 "$STATE/build-$VERSION-user.log" \
+        docker build -t "$IMAGE" "$WORK/account" || exit 1
+fi
 [ "$CHECK_ONLY" = "1" ] || print_status "Built $IMAGE ($(docker image inspect -f '{{.Size}}' "$IMAGE" | awk '{printf "%d MB", $1/1048576}'))"
 
 # --- Health: a throwaway copy with empty data must answer ---------------------
@@ -205,7 +217,6 @@ if [ "$(recipe_get READ_ONLY yes)" = "yes" ]; then
     for w in $(recipe_get WRITABLE); do run_args+=(--tmpfs "$w"); done
 fi
 [ "$(recipe_get EGRESS no)" = "yes" ] || run_args+=(--network upstream-net)
-RUN_AS="$(recipe_get USER)"
 [ -z "$RUN_AS" ] || run_args+=(--user "$RUN_AS")
 while IFS= read -r m; do
     [ -n "$m" ] || continue
