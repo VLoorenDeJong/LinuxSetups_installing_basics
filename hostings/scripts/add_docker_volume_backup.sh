@@ -154,6 +154,9 @@ PASSWORD_NAME="docker-backup-password"
 PASSWORD_CMD="/bin/bash $PASSWORD_HELPER get $PASSWORD_NAME"
 KEEP_DAILY="$(conf_get DOCKER_BACKUP_KEEP_DAILY 7)"
 KEEP_WEEKLY="$(conf_get DOCKER_BACKUP_KEEP_WEEKLY 4)"
+# Where a copy is dropped for the console's Restore (restore_now.sh): its own
+# share, never the backup one, where a dropped copy can overwrite the live config.
+RESTORE_DROP_DIR="$(conf_get RESTORE_DROP_DIR /srv/restore)"
 
 SERVICE_FILE="/etc/systemd/system/docker-volume-backup.service"
 TIMER_FILE="/etc/systemd/system/docker-volume-backup.timer"
@@ -233,6 +236,7 @@ print_info "$VOLUME_COUNT named volume(s) on this machine right now."
 SOURCES=("$VOLUME_DIR")
 # Made now rather than by the first docker row, so it is in the unit from the start.
 [ "$DRY_RUN" -eq 1 ] || install -d -m 750 "$DOCKER_DATA_ROOT"
+[ "$DRY_RUN" -eq 1 ] || install -d -m 0755 -o "$RUN_USER" -g "$RUN_USER" "$RESTORE_DROP_DIR"
 for p in $EXTRA_PATHS; do
     if [ -d "$p" ]; then
         SOURCES+=("$p")
@@ -266,6 +270,8 @@ Environment="RESTIC_PASSWORD_COMMAND=${PASSWORD_CMD}"
 Environment=RESTIC_REPOSITORY=${BACKUP_REPO}
 # systemd gives no HOME, so without this restic runs uncached and says so nightly.
 Environment=RESTIC_CACHE_DIR=/var/cache/restic
+# Read by restore_now.sh: where a copy for the console's Restore is dropped.
+Environment=RESTORE_DROP_DIR=${RESTORE_DROP_DIR}
 ExecStart=/usr/bin/restic backup --quiet --tag docker-volumes \\
     --exclude backingFsBlockDev ${SOURCES[*]}
 ExecStart=/usr/bin/restic forget --quiet --tag docker-volumes \\
