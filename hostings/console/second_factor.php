@@ -465,15 +465,19 @@ function gate_target(): string {
     return '';
 }
 
-// Apache compares against %{TIME}, which is local time, so the stamp is too.
-function gate_stamp(int $t): string {
+// The machine's own zone; PHP's default is UTC whatever the clock says.
+function machine_timezone(): DateTimeZone {
     $name = '';
     $link = @readlink('/etc/localtime');
     if (is_string($link) && ($p = strpos($link, 'zoneinfo/')) !== false) $name = substr($link, $p + 9);
     if ($name === '') $name = trim((string) @file_get_contents('/etc/timezone'));
-    try { $tz = new DateTimeZone($name !== '' ? $name : 'UTC'); }
-    catch (Exception $e) { $tz = new DateTimeZone('UTC'); }
-    return (new DateTime('@' . $t))->setTimezone($tz)->format('YmdHis');
+    try { return new DateTimeZone($name !== '' ? $name : 'UTC'); }
+    catch (Exception $e) { return new DateTimeZone('UTC'); }
+}
+
+// Apache compares against %{TIME}, which is local time, so the stamp is too.
+function gate_stamp(int $t): string {
+    return (new DateTime('@' . $t))->setTimezone(machine_timezone())->format('YmdHis');
 }
 
 function gate_handoff(string $user): void {

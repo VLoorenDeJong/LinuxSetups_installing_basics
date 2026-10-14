@@ -318,6 +318,7 @@ if ($myRole !== 'full' && $myRole !== 'admin') {
 
 // The second factor: nothing below answers until it has passed.
 require __DIR__ . '/second_factor.php';
+date_default_timezone_set(machine_timezone()->getName());
 
 // KICKED: signed out once. The owner, 2026-09-18. The session lives in the
 // browser's cookie, so it cannot be deleted here. Every request from that name
